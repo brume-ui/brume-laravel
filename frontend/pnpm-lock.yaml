@@ -9,20 +9,20 @@ importers:
   .:
     dependencies:
       '@brume-ui/brume-inertia':
-        specifier: 0.1.0-alpha.5
-        version: 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: 0.1.0-alpha.6
+        version: 0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@brume-ui/brume-react':
-        specifier: 0.1.0-alpha.5
-        version: 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: 0.1.0-alpha.6
+        version: 0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@brume-ui/brume-renderer':
-        specifier: 0.1.0-alpha.5
-        version: 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: 0.1.0-alpha.6
+        version: 0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@brume-ui/brume-schema':
-        specifier: 0.1.0-alpha.5
-        version: 0.1.0-alpha.5
+        specifier: 0.1.0-alpha.6
+        version: 0.1.0-alpha.6
       '@brume-ui/brume-tokens':
-        specifier: 0.1.0-alpha.5
-        version: 0.1.0-alpha.5
+        specifier: 0.1.0-alpha.6
+        version: 0.1.0-alpha.6
       '@inertiajs/react':
         specifier: 2.3.29
         version: 2.3.29(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -51,29 +51,29 @@ importers:
 
 packages:
 
-  '@brume-ui/brume-inertia@0.1.0-alpha.5':
-    resolution: {integrity: sha512-PideHTr91K5EmCmyvDSofP8wx+LwoeJWKHEuxAhN05j5P5O9XmCXaIfD4cVwTBLimDwWRDgLn0QaDnWvuxBanQ==}
+  '@brume-ui/brume-inertia@0.1.0-alpha.6':
+    resolution: {integrity: sha512-Yo8ihqdaaaj4LYwmXBi7tWgY+yNK9ZwgBPBjZ5By98LkQGzetXUaY0axYlBh7cahRRtB9A5bQElOeLyl+5ihww==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
 
-  '@brume-ui/brume-react@0.1.0-alpha.5':
-    resolution: {integrity: sha512-ypB9FMo9w4tTMSSFBTmrMbM3Ve6VyeRfrqrzEIq+C7AZ1/3gFYF9VAQYJAtWc+vIaKx9HTh10e/c86y6DYO9dw==}
+  '@brume-ui/brume-react@0.1.0-alpha.6':
+    resolution: {integrity: sha512-8UEf+2WFT+b5Ie4uqXyHXGR2w/rMHUWSY6XSFbmuXqomzIIsV8dsq97m22jpaytR6TH5inTwUhjeqkbI5BTAuQ==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
 
-  '@brume-ui/brume-renderer@0.1.0-alpha.5':
-    resolution: {integrity: sha512-uiIlef0HhZfPAy5ATxSMmmhyQOzwVjMw2TwD8TCqJymKGJHwWroEz4WcY3Xx+kTC/zIPFA0fjeP6F8Z7u4TL1Q==}
+  '@brume-ui/brume-renderer@0.1.0-alpha.6':
+    resolution: {integrity: sha512-tA/sXSVMt1kCxmaexAqlS/TW8TXIFBc5JIm0zsz//4e22ZNqNM49F1/uISOEqAmXsKmpIBfYdRtP5wvnYJW4aQ==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
 
-  '@brume-ui/brume-schema@0.1.0-alpha.5':
-    resolution: {integrity: sha512-UeGyQlX7uQ7vRDg7N8waGemg/ty9ZDbpjV1zUGK1RhzWlrdpu/pFk+E94pKp3KbsYP7XKaJf6Db45JYu2gWA7A==}
+  '@brume-ui/brume-schema@0.1.0-alpha.6':
+    resolution: {integrity: sha512-WcBn/jrJByHLu2eFGSQNXtggSqK6Em+ZzHp0bVyIBKAt5lTmyTXbbBKHWZSIJLwaTWiFsYMH/YPY/fDktHUYNw==}
 
-  '@brume-ui/brume-tokens@0.1.0-alpha.5':
-    resolution: {integrity: sha512-nKupXLo8XManCjrLVYbEnxNwh4liaLeCtd+rNWQ+4pscm2i287E7/g1cmI4VHlQuQ1schXaYvmrSRoXQZeIanA==}
+  '@brume-ui/brume-tokens@0.1.0-alpha.6':
+    resolution: {integrity: sha512-yiRtSw4M2swr2PJQ71w9b0PPJqgy0cKavJ5/NBxqrM6DEMC5O+1IgG97AJqFjTf7HZWZxIBPrTSXMJiHRBUjVA==}
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -1198,11 +1198,11 @@ packages:
 
 snapshots:
 
-  '@brume-ui/brume-inertia@0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@brume-ui/brume-inertia@0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
-      '@brume-ui/brume-react': 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@brume-ui/brume-renderer': 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@brume-ui/brume-schema': 0.1.0-alpha.5
+      '@brume-ui/brume-react': 0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-renderer': 0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-schema': 0.1.0-alpha.6
       '@inertiajs/react': 2.3.29(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
@@ -1212,10 +1212,10 @@ snapshots:
       - debug
       - supports-color
 
-  '@brume-ui/brume-react@0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@brume-ui/brume-react@0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
-      '@brume-ui/brume-schema': 0.1.0-alpha.5
-      '@brume-ui/brume-tokens': 0.1.0-alpha.5
+      '@brume-ui/brume-schema': 0.1.0-alpha.6
+      '@brume-ui/brume-tokens': 0.1.0-alpha.6
       '@fontsource-variable/nunito': 5.3.0
       '@radix-ui/react-alert-dialog': 1.2.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@radix-ui/react-checkbox': 1.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -1233,21 +1233,21 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  '@brume-ui/brume-renderer@0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@brume-ui/brume-renderer@0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
-      '@brume-ui/brume-react': 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@brume-ui/brume-schema': 0.1.0-alpha.5
+      '@brume-ui/brume-react': 0.1.0-alpha.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-schema': 0.1.0-alpha.6
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
     transitivePeerDependencies:
       - '@types/react'
       - '@types/react-dom'
 
-  '@brume-ui/brume-schema@0.1.0-alpha.5':
+  '@brume-ui/brume-schema@0.1.0-alpha.6':
     dependencies:
       '@sinclair/typebox': 0.34.52
 
-  '@brume-ui/brume-tokens@0.1.0-alpha.5': {}
+  '@brume-ui/brume-tokens@0.1.0-alpha.6': {}
 
   '@floating-ui/core@1.8.0':
     dependencies:
