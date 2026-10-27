@@ -46,6 +46,7 @@ test('switching the language to English translates the menu', async ({ page }) =
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeVisible();
   await expect(nav.getByRole('button', { name: 'System' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 });
 
 test('the collapsed sidebar stays collapsed after a reload', async ({ page }) => {
