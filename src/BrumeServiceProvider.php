@@ -2,9 +2,13 @@
 
 namespace Brume;
 
+use Brume\Console\InstallCommand;
+use Brume\Console\PasswordCommand;
+use Brume\Console\UserCommand;
 use Brume\Http\Middleware\Authenticate;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Http\Middleware\RedirectIfAuthenticated;
+use Brume\Support\Assets;
 use Brume\Support\Color;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Routing\Router;
@@ -40,17 +44,13 @@ class BrumeServiceProvider extends ServiceProvider
         }
 
         if ($this->app->runningInConsole()) {
-            $this->publishes([
-                __DIR__.'/../config/brume.php' => config_path('brume.php'),
-            ], 'brume-config');
+            $this->registerPublishing();
 
-            $this->publishes([
-                __DIR__.'/../database/migrations' => database_path('migrations'),
-            ], 'brume-migrations');
-
-            $this->publishes([
-                __DIR__.'/../dist' => public_path('vendor/brume'),
-            ], 'brume-assets');
+            $this->commands([
+                InstallCommand::class,
+                UserCommand::class,
+                PasswordCommand::class,
+            ]);
         }
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
@@ -65,6 +65,29 @@ class BrumeServiceProvider extends ServiceProvider
         $router->aliasMiddleware('brume.guest', RedirectIfAuthenticated::class);
 
         $this->registerRoutes();
+    }
+
+    /**
+     * Destinations are resolved against the current base path, so calling this again after
+     * the base path changed points every tag at the new project.
+     */
+    public function registerPublishing(): void
+    {
+        $this->publishes([
+            __DIR__.'/../config/brume.php' => config_path('brume.php'),
+        ], 'brume-config');
+
+        $this->publishes([
+            __DIR__.'/../stubs/routes/brume.php' => base_path('routes/brume.php'),
+        ], 'brume-routes');
+
+        $this->publishes([
+            __DIR__.'/../database/migrations' => database_path('migrations'),
+        ], 'brume-migrations');
+
+        $this->publishes([
+            __DIR__.'/../dist' => public_path(Assets::PUBLISH_DIR),
+        ], 'brume-assets');
     }
 
     /**
