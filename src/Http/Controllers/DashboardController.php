@@ -2,28 +2,20 @@
 
 namespace Brume\Http\Controllers;
 
-use Brume\Contracts\Renderable;
+use Brume\Dashboard\Dashboard;
 use Brume\Facades\Brume;
-use Illuminate\Http\Request;
 use Inertia\Response;
 
 /**
- * Default home page. Placeholder until the Dashboard DSL exists.
+ * Default home page: a welcome card. Point `brume.home` at your own controller to replace it.
  */
 class DashboardController
 {
     public function __invoke(): Response
     {
-        return Brume::render(new class implements Renderable
-        {
-            public function toSchema(Request $request): array
-            {
-                return [
-                    'type' => 'dashboard',
-                    'title' => __('brume::menu.dashboard'),
-                    'blocks' => [],
-                ];
-            }
-        });
+        return Brume::render(
+            Dashboard::make(__('brume::menu.dashboard'))
+                ->card(__('brume::dashboard.welcome_title'), __('brume::dashboard.welcome_body'))
+        );
     }
 }
