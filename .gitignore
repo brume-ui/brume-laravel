@@ -9,3 +9,4 @@
 .idea/
 /.env
 /workbench/database/*.sqlite
+/frontend/node_modules/
