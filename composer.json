@@ -11,6 +11,7 @@
     "require-dev": {
         "laravel/framework": "^12.0|^13.0",
         "laravel/pint": "^1.18",
+        "opis/json-schema": "^2.6",
         "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^3.0|^4.0",
         "pestphp/pest-plugin-laravel": "^3.0|^4.0"
@@ -39,6 +40,7 @@
     "scripts": {
         "test": "pest",
         "lint": "pint --test",
+        "sync-schema": "@php -r \"copy('frontend/node_modules/@herb09638/brume-schema/schema/v0.json', 'resources/schema/v0.json') || exit(1);\"",
         "serve": [
             "Composer\\Config::disableProcessTimeout",
             "@build",

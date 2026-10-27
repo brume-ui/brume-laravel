@@ -1,0 +1,481 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/PageEnvelope",
+  "$defs": {
+    "PageEnvelope": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "page"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "title",
+                "columns",
+                "rows",
+                "pagination"
+              ],
+              "properties": {
+                "type": {
+                  "const": "list",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "columns": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "numeric": {
+                        "type": "boolean"
+                      },
+                      "display": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "text",
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "name"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "component",
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "props": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {}
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "rows": {
+                  "type": "array",
+                  "items": {
+                    "allOf": [
+                      {
+                        "type": "object",
+                        "required": [
+                          "id"
+                        ],
+                        "properties": {
+                          "id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        }
+                      }
+                    ]
+                  }
+                },
+                "pagination": {
+                  "type": "object",
+                  "required": [
+                    "page",
+                    "perPage",
+                    "total",
+                    "lastPage"
+                  ],
+                  "properties": {
+                    "page": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "perPage": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "total": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "lastPage": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "title",
+                "blocks"
+              ],
+              "properties": {
+                "type": {
+                  "const": "dashboard",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "blocks": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": [
+                          "type",
+                          "title",
+                          "body"
+                        ],
+                        "properties": {
+                          "type": {
+                            "const": "card",
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "type",
+                          "name"
+                        ],
+                        "properties": {
+                          "type": {
+                            "const": "component",
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "props": {
+                            "type": "object",
+                            "patternProperties": {
+                              "^(.*)$": {}
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "SharedProps": {
+      "type": "object",
+      "required": [
+        "brume"
+      ],
+      "properties": {
+        "brume": {
+          "type": "object",
+          "required": [
+            "schemaVersion",
+            "app",
+            "auth",
+            "menu",
+            "breadcrumbs",
+            "flash"
+          ],
+          "properties": {
+            "schemaVersion": {
+              "type": "string"
+            },
+            "app": {
+              "type": "object",
+              "required": [
+                "name",
+                "locale",
+                "locales",
+                "homeUrl",
+                "logoutUrl",
+                "layout"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "locale": {
+                  "anyOf": [
+                    {
+                      "const": "zh-TW",
+                      "type": "string"
+                    },
+                    {
+                      "const": "en",
+                      "type": "string"
+                    },
+                    {
+                      "const": "zh-CN",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "locales": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "const": "zh-TW",
+                        "type": "string"
+                      },
+                      {
+                        "const": "en",
+                        "type": "string"
+                      },
+                      {
+                        "const": "zh-CN",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "homeUrl": {
+                  "type": "string"
+                },
+                "logoutUrl": {
+                  "type": "string"
+                },
+                "layout": {
+                  "type": "object",
+                  "required": [
+                    "menuPosition",
+                    "accent",
+                    "sidebarCollapsible",
+                    "breadcrumbs"
+                  ],
+                  "properties": {
+                    "menuPosition": {
+                      "anyOf": [
+                        {
+                          "const": "side",
+                          "type": "string"
+                        },
+                        {
+                          "const": "top",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "accent": {
+                      "type": "string"
+                    },
+                    "sidebarCollapsible": {
+                      "type": "boolean"
+                    },
+                    "breadcrumbs": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            },
+            "auth": {
+              "type": "object",
+              "required": [
+                "user"
+              ],
+              "properties": {
+                "user": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "name",
+                        "username",
+                        "avatar"
+                      ],
+                      "properties": {
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            }
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        },
+                        "avatar": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "menu": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MenuItem"
+              }
+            },
+            "breadcrumbs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "flash": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "type",
+                    "message"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "const": "success",
+                          "type": "string"
+                        },
+                        {
+                          "const": "error",
+                          "type": "string"
+                        },
+                        {
+                          "const": "info",
+                          "type": "string"
+                        },
+                        {
+                          "const": "warning",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "MenuItem": {
+      "type": "object",
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MenuItem"
+          }
+        }
+      }
+    }
+  }
+}

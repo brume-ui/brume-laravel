@@ -1,0 +1,9 @@
+{
+  "stubs/frontend/app.tsx": {
+    "file": "assets/app-B1x2y3z4.js",
+    "name": "app",
+    "src": "stubs/frontend/app.tsx",
+    "isEntry": true,
+    "css": ["assets/app-C5d6e7f8.css"]
+  }
+}
