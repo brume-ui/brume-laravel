@@ -17,7 +17,10 @@
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
     "@vitejs/plugin-react": "6.1.2",
+    "laravel-vite-plugin": "3.2.0",
+    "tailwindcss": "4.3.3",
     "vite": "8.3.5"
   },
   "packageManager": "pnpm@10.28.1"

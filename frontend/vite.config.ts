@@ -2,6 +2,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
@@ -15,16 +16,33 @@ const stubs = resolve(packageRoot, 'stubs/frontend');
 /**
  * The stubs live outside frontend/, so Node resolution from them would never reach
  * frontend/node_modules. Resolve their bare imports as if they were imported from here.
+ * Tailwind resolves CSS @import itself (relative to the CSS file), so bare CSS imports in the
+ * stubs are rewritten to absolute paths before Tailwind sees them; must run before tailwindcss().
  */
 function resolveStubImportsFromFrontend(): Plugin {
+  const fromFrontend = resolve(frontend, 'vite.config.ts');
+  const isBare = (source: string) => !source.startsWith('.') && !source.startsWith('/');
   return {
     name: 'brume:resolve-stub-imports',
     enforce: 'pre',
     async resolveId(source, importer, options) {
-      if (!importer?.startsWith(stubs) || source.startsWith('.') || source.startsWith('/')) {
+      if (!importer?.startsWith(stubs) || !isBare(source)) {
         return null;
       }
-      return this.resolve(source, resolve(frontend, 'vite.config.ts'), { ...options, skipSelf: true });
+      return this.resolve(source, fromFrontend, { ...options, skipSelf: true });
+    },
+    async transform(code, id) {
+      if (!id.startsWith(stubs) || !id.endsWith('.css')) {
+        return null;
+      }
+      let out = code;
+      for (const [, source] of code.matchAll(/@import\s+["']([^"']+)["']/g)) {
+        if (!isBare(source)) continue;
+        const resolved = await this.resolve(source, fromFrontend, { skipSelf: true });
+        if (!resolved) this.error(`Cannot resolve ${source} from frontend/`);
+        out = out.replace(`"${source}"`, JSON.stringify(resolved.id));
+      }
+      return out;
     },
   };
 }
@@ -63,7 +81,8 @@ export default defineConfig({
   define: {
     'import.meta.env.VITE_BRUME_MODE': JSON.stringify('precompiled'),
   },
-  plugins: [resolveStubImportsFromFrontend(), react(), fontLicenses()],
+  // Same Tailwind setup as the --frontend stub (stubs/frontend/vite.brume.config.ts).
+  plugins: [resolveStubImportsFromFrontend(), react(), tailwindcss(), fontLicenses()],
   build: {
     outDir: resolve(packageRoot, 'dist'),
     emptyOutDir: true,
