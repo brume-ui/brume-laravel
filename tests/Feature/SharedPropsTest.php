@@ -4,6 +4,7 @@ use Brume\Facades\Brume;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Tests\Support\JsonSchema;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Vite;
 use Inertia\Testing\AssertableInertia;
 
 function sharedBrumeProps($response): array
@@ -106,6 +107,15 @@ it('falls back to the default locale for an unknown brume_locale cookie', functi
     expect(sharedBrumeProps($response)['app']['locale'])->toBe('zh-TW');
 });
 
+it('falls back to the default locale for a malformed (array) brume_locale cookie', function () {
+    $this->actingAs(brumeUser(), 'brume');
+
+    // What a client sending `Cookie: brume_locale[x]=y` produces in PHP.
+    $response = $this->call('GET', '/admin', cookies: ['brume_locale' => ['x' => 'y']])->assertOk();
+
+    expect(sharedBrumeProps($response)['app']['locale'])->toBe('zh-TW');
+});
+
 it('ignores a locale the project did not enable', function () {
     config(['brume.locales' => ['zh_TW', 'en']]);
     $this->actingAs(brumeUser(), 'brume');
@@ -140,4 +150,29 @@ it('escapes the accent in the root view', function () {
 
     expect($this->get('/admin/login')->getContent())
         ->not->toContain('"><script>x</script>');
+});
+
+it('falls back to the default accent at render time for a non-hex value', function () {
+    config(['brume.layout.accent' => 'red; background: url(//evil.test/x)']);
+    $this->actingAs(brumeUser(), 'brume');
+
+    $response = $this->get('/admin');
+
+    expect($response->getContent())->toContain('style="--br-accent-custom: #0e7490"')
+        ->not->toContain('evil.test')
+        ->and(sharedBrumeProps($response)['app']['layout']['accent'])->toBe('#0e7490');
+});
+
+it('adds the CSP nonce to the inline color-scheme script and asset tags when one is set', function () {
+    Vite::useCspNonce('abc');
+
+    $html = $this->get('/admin/login')->getContent();
+
+    expect($html)->toMatch('/<head>\\s*<script nonce="abc">[^<]*brume\\.color-scheme/')
+        ->toContain('<script type="module" src="http://localhost/vendor/brume/assets/app-B1x2y3z4.js" nonce="abc">')
+        ->toContain('<link rel="stylesheet" href="http://localhost/vendor/brume/assets/app-C5d6e7f8.css" nonce="abc">');
+});
+
+it('omits the nonce attribute when no CSP nonce is set', function () {
+    expect($this->get('/admin/login')->getContent())->not->toContain('nonce=');
 });

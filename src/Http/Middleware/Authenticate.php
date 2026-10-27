@@ -12,12 +12,19 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class Authenticate
 {
+    /** Session key for the page to return to after login; separate from the host's url.intended. */
+    public const INTENDED_KEY = 'brume.intended';
+
     public function handle(Request $request, Closure $next): Response
     {
         $guard = config('brume.auth.guard');
 
         if (! Auth::guard($guard)->check()) {
-            return redirect()->guest(route('brume.login'));
+            if ($request->isMethod('GET') && ! $request->expectsJson()) {
+                $request->session()->put(self::INTENDED_KEY, $request->fullUrl());
+            }
+
+            return redirect()->route('brume.login');
         }
 
         Auth::shouldUse($guard);

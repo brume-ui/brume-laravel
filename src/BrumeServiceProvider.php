@@ -8,6 +8,7 @@ use Brume\Http\Middleware\RedirectIfAuthenticated;
 use Brume\Support\Color;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Inertia\ServiceProvider as InertiaServiceProvider;
@@ -32,6 +33,8 @@ class BrumeServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->ensureValidAccent();
+
         if ($this->app->environment('local')) {
             $this->ensureAccentContrast();
         }
@@ -85,6 +88,32 @@ class BrumeServiceProvider extends ServiceProvider
                 'model' => config('brume.auth.model'),
             ]]);
         }
+    }
+
+    /**
+     * The accent is written into an inline style, so only #rgb / #rrggbb is allowed. Local fails
+     * loudly; other environments log and fall back to the default instead of breaking the panel.
+     */
+    protected function ensureValidAccent(): void
+    {
+        $accent = config('brume.layout.accent');
+
+        if (Color::isHex($accent)) {
+            return;
+        }
+
+        $message = sprintf(
+            'Brume 主色「%s」不是有效的色碼。請在 config/brume.php 的 layout.accent 使用 #rrggbb 或 #rgb 格式，例如 %s。',
+            is_scalar($accent) ? $accent : get_debug_type($accent),
+            Color::DEFAULT_ACCENT,
+        );
+
+        if ($this->app->environment('local')) {
+            throw new RuntimeException($message);
+        }
+
+        Log::warning($message.' 目前先改用預設主色 '.Color::DEFAULT_ACCENT.'。');
+        config(['brume.layout.accent' => Color::DEFAULT_ACCENT]);
     }
 
     protected function ensureAccentContrast(): void

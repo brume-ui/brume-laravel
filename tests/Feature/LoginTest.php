@@ -1,10 +1,13 @@
 <?php
 
+use Brume\Facades\Brume;
+use Brume\Http\Middleware\HandleBrumeRequests;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia;
 
 beforeEach(function () {
-    RateLimiter::clear('admin|127.0.0.1');
+    RateLimiter::clear('brume-login:admin|127.0.0.1');
 });
 
 it('redirects guests from the admin home to the login page', function () {
@@ -108,4 +111,43 @@ it('only authenticates the brume guard, leaving the web guard a guest', function
 
     $this->assertAuthenticated('brume');
     $this->assertGuest('web');
+});
+
+it('namespaces the throttle key so host login limiters are not affected', function () {
+    brumeUser();
+
+    $this->post('/admin/login', ['username' => 'admin', 'password' => 'wrong']);
+
+    expect(RateLimiter::attempts('brume-login:admin|127.0.0.1'))->toBe(1)
+        ->and(RateLimiter::attempts('admin|127.0.0.1'))->toBe(0);
+});
+
+it('returns to the brume page the guest originally asked for', function () {
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->get('reports', fn () => Brume::page('demo/reports'));
+    brumeUser();
+
+    $this->get('/admin/reports?range=week')->assertRedirect('/admin/login');
+
+    $this->post('/admin/login', ['username' => 'admin', 'password' => 'secret-password'])
+        ->assertRedirect('/admin/reports?range=week');
+});
+
+it('does not let the host app intended url hijack the brume login redirect', function () {
+    brumeUser();
+
+    $this->withSession(['url.intended' => 'http://localhost/dashboard'])
+        ->post('/admin/login', ['username' => 'admin', 'password' => 'secret-password'])
+        ->assertRedirect('/admin');
+
+    expect(session('url.intended'))->toBe('http://localhost/dashboard');
+});
+
+it('ignores a brume intended url that points outside the admin prefix', function () {
+    brumeUser();
+
+    $this->withSession(['brume.intended' => 'http://localhost/dashboard'])
+        ->post('/admin/login', ['username' => 'admin', 'password' => 'secret-password'])
+        ->assertRedirect('/admin');
 });

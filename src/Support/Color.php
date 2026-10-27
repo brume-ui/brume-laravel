@@ -6,6 +6,24 @@ use InvalidArgumentException;
 
 final class Color
 {
+    public const DEFAULT_ACCENT = '#0e7490';
+
+    public static function isHex(mixed $value): bool
+    {
+        return is_string($value) && preg_match('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $value) === 1;
+    }
+
+    /**
+     * The configured accent if it is a hex color, else the default. It ends up in an inline
+     * style on <html>, so anything else must never reach the page.
+     */
+    public static function accent(): string
+    {
+        $accent = config('brume.layout.accent');
+
+        return self::isHex($accent) ? $accent : self::DEFAULT_ACCENT;
+    }
+
     /**
      * WCAG 2.x contrast ratio between two hex colors (#rgb or #rrggbb), from 1.0 to 21.0.
      */

@@ -5,6 +5,7 @@ namespace Brume\Http\Middleware;
 use Brume\BrumeManager;
 use Brume\Facades\Brume;
 use Brume\Support\Assets;
+use Brume\Support\Color;
 use Brume\Support\LocaleMap;
 use Brume\Support\Menu;
 use Closure;
@@ -22,7 +23,10 @@ class HandleBrumeRequests extends Middleware
 
     public function handle(Request $request, Closure $next)
     {
-        app()->setLocale(LocaleMap::resolve($request->cookie(self::LOCALE_COOKIE)));
+        // Unencrypted, so a client can send anything, including brume_locale[x]=y (an array).
+        $cookie = $request->cookie(self::LOCALE_COOKIE);
+
+        app()->setLocale(LocaleMap::resolve(is_string($cookie) ? $cookie : null));
 
         return parent::handle($request, $next);
     }
@@ -63,7 +67,7 @@ class HandleBrumeRequests extends Middleware
                 'logoutUrl' => route('brume.logout', absolute: false),
                 'layout' => [
                     'menuPosition' => config('brume.layout.menu_position'),
-                    'accent' => config('brume.layout.accent'),
+                    'accent' => Color::accent(),
                     'sidebarCollapsible' => (bool) config('brume.layout.sidebar_collapsible'),
                     'breadcrumbs' => (bool) config('brume.layout.breadcrumbs'),
                 ],

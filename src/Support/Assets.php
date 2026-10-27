@@ -55,11 +55,13 @@ final class Assets
         $manifest = json_decode(file_get_contents(self::$manifestPath), true, 512, JSON_THROW_ON_ERROR);
         $entry = $manifest[self::ENTRY] ?? throw new RuntimeException('Brume 的前端資源清單缺少入口 '.self::ENTRY.'，請重新安裝 brume/laravel。');
 
+        $nonce = ($value = app(Vite::class)->cspNonce()) ? ' nonce="'.e($value).'"' : '';
+
         $tags = array_map(
-            fn (string $css) => '<link rel="stylesheet" href="'.e(asset(self::PUBLISH_DIR.'/'.$css)).'">',
+            fn (string $css) => '<link rel="stylesheet" href="'.e(asset(self::PUBLISH_DIR.'/'.$css)).'"'.$nonce.'>',
             $entry['css'] ?? [],
         );
-        $tags[] = '<script type="module" src="'.e(asset(self::PUBLISH_DIR.'/'.$entry['file'])).'"></script>';
+        $tags[] = '<script type="module" src="'.e(asset(self::PUBLISH_DIR.'/'.$entry['file'])).'"'.$nonce.'></script>';
 
         return new HtmlString(implode("\n", $tags));
     }
