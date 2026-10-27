@@ -34,7 +34,7 @@ final class ScratchProject
             'private' => true,
             'type' => 'module',
             'scripts' => ['build' => 'vite build', 'dev' => 'vite'],
-            'devDependencies' => ['axios' => '^1.11.0', 'vite' => '^7.0.4'],
+            'devDependencies' => ['axios' => '^1.11.0', 'vite' => '^8.0.0'],
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
         File::put($path.'/config/database.php', "<?php\n\nreturn [];\n");
 

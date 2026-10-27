@@ -131,57 +131,178 @@ it('scaffolds the project frontend with --frontend', function () use ($packageRo
     ]);
 });
 
-it('adds the same dependency versions as frontend/package.json without downgrading the project', function () use ($packageRoot) {
-    $package = $this->project->json('package.json');
-    $package['dependencies'] = ['react' => '^20.1.0', 'lodash' => '^4.17.21'];
-    $this->project->put('package.json', json_encode($package));
-
+it('adds every missing package at the version frontend/package.json uses', function () use ($packageRoot) {
     $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
-        ->expectsOutputToContain('專案已有 ^20.1.0')
         ->assertSuccessful();
 
     $ours = json_decode(file_get_contents($packageRoot.'/frontend/package.json'), true);
     $host = $this->project->json('package.json');
 
-    $expected = [...$ours['dependencies'], ...$ours['devDependencies']];
-    $actual = [...$host['dependencies'], ...$host['devDependencies']];
-
-    // Every package Brume needs, at the version the precompiled build uses...
-    foreach ($expected as $name => $version) {
-        expect($actual)->toHaveKey($name);
-
-        if ($name !== 'react') {
-            expect($actual[$name])->toBe($version, $name);
+    foreach (['dependencies', 'devDependencies'] as $section) {
+        foreach ($ours[$section] as $name => $version) {
+            if ($name !== 'vite') {
+                expect($host[$section][$name] ?? null)->toBe($version, $name);
+            }
         }
     }
 
-    // ...except a newer version the project already had, and its own packages untouched.
-    expect($host['dependencies']['react'])->toBe('^20.1.0')
-        ->and($host['dependencies']['lodash'])->toBe('^4.17.21')
-        ->and($host['devDependencies']['axios'])->toBe('^1.11.0')
-        // The project had vite ^7, older than Brume needs, so it is raised.
-        ->and($host['devDependencies']['vite'])->toBe($ours['devDependencies']['vite']);
+    // The project's own specs are untouched, even where Brume pins an exact version.
+    expect($host['devDependencies']['vite'])->toBe('^8.0.0')
+        ->and($host['devDependencies']['axios'])->toBe('^1.11.0');
 });
 
-it('is idempotent for .npmrc, .env and package.json', function () {
-    $this->project->put('.npmrc', "engine-strict=true\n");
-    $this->project->put('.env', "APP_NAME=Scratch\nBRUME_FRONTEND=precompiled\nAPP_DEBUG=true\n");
+it('reports incompatible dependencies, changes none of them and fails after setting up the rest', function () {
+    $package = $this->project->json('package.json');
+    $package['dependencies'] = ['react' => '^18.3.1', 'lodash' => '^4.17.21'];
+    $package['devDependencies']['vite'] = '^7.0.4';
+    $package['devDependencies']['tailwindcss'] = '^3.4.17';
+    $this->project->put('package.json', json_encode($package, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+    $before = $this->project->json('package.json');
 
-    foreach ([1, 2] as $run) {
-        $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
-            ->assertSuccessful();
+    $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
+        ->expectsOutputToContain('package.json 裡有 3 個套件的版本和 Brume 不相容')
+        ->expectsTable(['套件', '專案目前', 'Brume 需要', '怎麼處理'], [
+            ['react', '^18.3.1', '19.3.1', '把版本改成 ^19.3.1'],
+            ['tailwindcss', '^3.4.17', '4.3.3', '把版本改成 ^4.3.3'],
+            ['vite', '^7.0.4', '8.3.5', '把版本改成 ^8.3.5'],
+        ])
+        ->assertFailed();
+
+    $host = $this->project->json('package.json');
+
+    foreach (['react', 'lodash'] as $name) {
+        expect($host['dependencies'][$name])->toBe($before['dependencies'][$name]);
     }
 
-    expect($this->project->read('.npmrc'))->toBe(implode("\n", [
-        'engine-strict=true',
-        '@herb09638:registry=https://npm.pkg.github.com',
-        '//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}',
-    ])."\n")
-        ->and($this->project->read('.env'))->toBe("APP_NAME=Scratch\nBRUME_FRONTEND=vite\nAPP_DEBUG=true\n");
+    expect($host['devDependencies']['vite'])->toBe('^7.0.4')
+        ->and($host['devDependencies']['tailwindcss'])->toBe('^3.4.17')
+        ->and($host['dependencies']['@herb09638/brume-react'])->toBe(Version::UI)
+        ->and($this->project->file('resources/js/brume/app.tsx'))->toBeFile()
+        ->and(envLines($this->project, 'BRUME_FRONTEND'))->toBe(['BRUME_FRONTEND=vite'])
+        ->and(User::query()->count())->toBe(1);
+});
 
+it('raises older dependencies keeping their operator with --force but never downgrades', function () {
     $package = $this->project->json('package.json');
+    $package['dependencies'] = ['react' => '~18.3.1', 'react-dom' => '^20.0.0'];
+    $package['devDependencies']['vite'] = '^7.0.4';
+    $this->project->put('package.json', json_encode($package, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
 
-    expect(array_keys($package['scripts']))->toBe(['build', 'dev', 'brume:dev', 'brume:build']);
+    $this->artisan('brume:install', ['--frontend' => true, '--force' => true, '--username' => 'root', '--password' => 'secret-password'])
+        ->expectsOutputToContain('package.json 裡有 1 個套件的版本和 Brume 不相容')
+        ->assertSuccessful();
+
+    $host = $this->project->json('package.json');
+
+    expect($host['dependencies']['react'])->toBe('~19.3.1')
+        ->and($host['devDependencies']['vite'])->toBe('^8.3.5')
+        ->and($host['dependencies']['react-dom'])->toBe('^20.0.0');
+});
+
+it('is idempotent for .npmrc, .env, .gitignore and package.json', function () {
+    $this->project->put('.npmrc', "engine-strict=true\n");
+    $this->project->put('.env', "APP_NAME=Scratch\nBRUME_FRONTEND=precompiled\nAPP_DEBUG=true\n");
+    $this->project->put('.gitignore', "/node_modules\n/public/build");
+
+    $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
+        ->assertSuccessful();
+
+    $first = array_map(fn (string $file) => $this->project->read($file), ['package.json', '.npmrc', '.env', '.gitignore']);
+
+    $this->artisan('brume:install', ['--frontend' => true])->assertSuccessful();
+
+    expect(array_map(fn (string $file) => $this->project->read($file), ['package.json', '.npmrc', '.env', '.gitignore']))->toBe($first)
+        ->and($this->project->read('.npmrc'))->toBe(implode("\n", [
+            'engine-strict=true',
+            '@herb09638:registry=https://npm.pkg.github.com',
+            '//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}',
+        ])."\n")
+        ->and($this->project->read('.env'))->toBe("APP_NAME=Scratch\nBRUME_FRONTEND=vite\nAPP_DEBUG=true\n")
+        ->and($this->project->read('.gitignore'))->toBe("/node_modules\n/public/build\n/public/build-brume\n/public/brume.hot\n")
+        ->and(array_keys($this->project->json('package.json')['scripts']))->toBe(['build', 'dev', 'brume:dev', 'brume:build']);
+});
+
+it('does not create a .gitignore the project does not have', function () {
+    $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
+        ->assertSuccessful();
+
+    expect($this->project->file('.gitignore'))->not->toBeFile();
+});
+
+it('keeps the package.json indentation and key order of the project', function (string $indent) {
+    $original = str_replace('    ', $indent, <<<'JSON'
+        {
+            "name": "shop",
+            "devDependencies": {
+                "vite": "^8.0.0",
+                "axios": "^1.11.0"
+            },
+            "scripts": {
+                "dev": "vite"
+            }
+        }
+        JSON);
+    $this->project->put('package.json', $original);
+
+    $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
+        ->assertSuccessful();
+
+    $written = $this->project->read('package.json');
+
+    expect($written)->toStartWith(str_replace('    ', $indent, "{\n    \"name\": \"shop\",\n    \"devDependencies\": {\n        \"vite\": \"^8.0.0\",\n        \"axios\": \"^1.11.0\",\n        \"@tailwindcss/vite\""))
+        ->and($written)->not->toEndWith("\n")
+        ->and(array_keys(json_decode($written, true)))->toBe(['name', 'devDependencies', 'scripts', 'dependencies']);
+})->with([
+    'two spaces' => '  ',
+    'four spaces' => '    ',
+    'tabs' => "\t",
+]);
+
+it('fails before writing anything when package.json cannot be used', function (?string $packageJson, string $message, bool $breakFrontend = false) {
+    if ($packageJson !== null) {
+        $this->project->put('package.json', $packageJson);
+    }
+
+    $frontendPackagePath = InstallCommand::$frontendPackagePath;
+
+    if ($breakFrontend) {
+        InstallCommand::$frontendPackagePath = $this->project->file('missing/package.json');
+    }
+
+    $env = $this->project->read('.env');
+
+    try {
+        $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
+            ->expectsOutputToContain($message)
+            ->assertFailed();
+    } finally {
+        InstallCommand::$frontendPackagePath = $frontendPackagePath;
+    }
+
+    expect($this->project->file('config/brume.php'))->not->toBeFile()
+        ->and($this->project->file('routes/brume.php'))->not->toBeFile()
+        ->and($this->project->file('resources/js/brume'))->not->toBeDirectory()
+        ->and($this->project->file('.npmrc'))->not->toBeFile()
+        ->and($this->project->read('.env'))->toBe($env)
+        ->and(User::query()->count())->toBe(0);
+
+    if ($packageJson !== null) {
+        expect($this->project->read('package.json'))->toBe($packageJson);
+    }
+})->with([
+    'invalid JSON' => ["{\n  \"name\": \"shop\",\n}\n", 'package.json 不是有效的 JSON'],
+    'not an object' => ["[\"shop\"]\n", 'package.json 的最外層必須是物件'],
+    'dependencies not an object' => ["{\"dependencies\": [\"react\"]}\n", 'package.json 的 "dependencies" 必須是物件'],
+    'missing frontend/package.json' => [null, '找不到 Brume 的 frontend/package.json', true],
+]);
+
+it('installs without an admin when not interactive and no credentials are given', function () {
+    $this->artisan('brume:install', ['--no-interaction' => true])
+        ->expectsOutputToContain('請加上 --username 與 --password，或之後執行 php artisan brume:user 建立管理員。')
+        ->assertSuccessful();
+
+    expect(User::query()->count())->toBe(0)
+        ->and($this->project->file('config/brume.php'))->toBeFile();
 });
 
 it('adds BRUME_FRONTEND to a .env without one and creates a missing .env', function () {

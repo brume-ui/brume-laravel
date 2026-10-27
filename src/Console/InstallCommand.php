@@ -3,8 +3,12 @@
 namespace Brume\Console;
 
 use Brume\Console\Concerns\ManagesAdmins;
+use Brume\Console\Support\MergeResult;
+use Brume\Console\Support\PackageJsonFile;
+use Brume\Console\Support\PackageJsonMerger;
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
+use InvalidArgumentException;
 use stdClass;
 
 use function Laravel\Prompts\confirm;
@@ -19,16 +23,24 @@ class InstallCommand extends Command
         {--precompiled : 使用 Brume 內附的預編譯前端（預設），可從 --frontend 切回來}
         {--username= : 第一個管理員的帳號}
         {--password= : 第一個管理員的密碼（至少 8 碼）}
-        {--force : 覆蓋已存在的前端檔案，切回預編譯時不再詢問}';
+        {--force : 覆蓋已存在的前端檔案、切回預編譯時不再詢問、把太舊的依賴升到 Brume 需要的版本}';
 
     protected $description = '安裝 Brume：發布設定與路由、建立資料表和第一個管理員，並設定前端編譯方式';
 
     /** Overrides PHP_VERSION_ID in tests. */
     public static ?int $phpVersionId = null;
 
+    /** Brume's own frontend manifest: the single source of the versions --frontend adds. */
+    public static string $frontendPackagePath = __DIR__.'/../../frontend/package.json';
+
     public const NPMRC_LINES = [
         '@herb09638:registry=https://npm.pkg.github.com',
         '//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}',
+    ];
+
+    public const GITIGNORE_LINES = [
+        '/public/build-brume',
+        '/public/brume.hot',
     ];
 
     public const SCRIPTS = [
@@ -70,6 +82,12 @@ class InstallCommand extends Command
             default => $current,
         };
 
+        if ($mode === 'vite' && ($error = $this->frontendPreflightError($files)) !== null) {
+            $this->message('error', $error);
+
+            return self::FAILURE;
+        }
+
         if ($current === 'vite' && $mode === 'precompiled' && ! $this->confirmSwitchToPrecompiled($files)) {
             $this->message('warn', '已取消，沒有變更任何檔案。');
 
@@ -82,8 +100,10 @@ class InstallCommand extends Command
 
         $this->call('migrate', ['--force' => true]);
 
+        $merge = new MergeResult;
+
         if ($mode === 'vite') {
-            $this->installFrontend($files);
+            $merge = $this->installFrontend($files);
         } else {
             // --force so a reinstall after composer update replaces outdated assets.
             $this->callSilently('vendor:publish', ['--tag' => 'brume-assets', '--force' => true]);
@@ -104,7 +124,7 @@ class InstallCommand extends Command
             $this->printFrontendNextSteps();
         }
 
-        return self::SUCCESS;
+        return $this->reportDependencyConflicts($merge) ? self::SUCCESS : self::FAILURE;
     }
 
     protected function phpVersionId(): int
@@ -166,7 +186,30 @@ class InstallCommand extends Command
         return count(array_filter(array_map('trim', explode(',', $match[1])), fn (string $entry) => $entry !== ''));
     }
 
-    private function installFrontend(Filesystem $files): void
+    /**
+     * Everything --frontend reads must be usable before anything is written, so a broken
+     * package.json never leaves a half-installed project.
+     */
+    private function frontendPreflightError(Filesystem $files): ?string
+    {
+        if (! is_readable(self::$frontendPackagePath)) {
+            return '找不到 Brume 的 frontend/package.json（'.self::$frontendPackagePath.'），請重新安裝 brume/laravel。';
+        }
+
+        try {
+            PackageJsonFile::parse($files->get(self::$frontendPackagePath), 'Brume 的 frontend/package.json');
+
+            if ($files->exists($path = base_path('package.json'))) {
+                PackageJsonFile::parse($files->get($path));
+            }
+        } catch (InvalidArgumentException $e) {
+            return $e->getMessage();
+        }
+
+        return null;
+    }
+
+    private function installFrontend(Filesystem $files): MergeResult
     {
         foreach (self::FRONTEND_STUBS as $stub => $destination) {
             $target = base_path($destination);
@@ -182,30 +225,46 @@ class InstallCommand extends Command
             $this->components->twoColumnDetail($destination, '已建立');
         }
 
-        $this->updatePackageJson($files);
+        $merge = $this->updatePackageJson($files);
         $this->components->task('在 package.json 加入 @herb09638/brume-* 依賴與 brume:dev、brume:build');
 
-        $this->updateNpmrc($files);
+        $this->appendMissingLines($files, base_path('.npmrc'), self::NPMRC_LINES, create: true);
         $this->components->task('在 .npmrc 設定 GitHub Packages 的 registry');
+
+        if ($files->exists(base_path('.gitignore'))) {
+            $this->appendMissingLines($files, base_path('.gitignore'), self::GITIGNORE_LINES, create: false);
+            $this->components->task('在 .gitignore 忽略 public/build-brume 與 public/brume.hot');
+        }
+
+        return $merge;
     }
 
     /**
-     * Adds the packages and versions the precompiled build uses (frontend/package.json is the
-     * single source of truth), never downgrading a package the project already has.
+     * Adds missing packages (frontend/package.json is the single source of truth) and scripts.
+     * Existing specs are only changed with --force; see PackageJsonMerger.
      */
-    private function updatePackageJson(Filesystem $files): void
+    private function updatePackageJson(Filesystem $files): MergeResult
     {
         $path = base_path('package.json');
-        $package = $files->exists($path)
-            ? json_decode($files->get($path), false, 512, JSON_THROW_ON_ERROR)
-            : (object) ['private' => true, 'type' => 'module'];
+        $original = $files->exists($path) ? $files->get($path) : null;
+        $package = $original !== null ? PackageJsonFile::parse($original) : (object) ['private' => true, 'type' => 'module'];
+        $ours = json_decode($files->get(self::$frontendPackagePath), true, 512, JSON_THROW_ON_ERROR);
+        $host = json_decode(json_encode($package, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
 
-        $ours = json_decode($files->get(self::PACKAGE_ROOT.'/frontend/package.json'), true, 512, JSON_THROW_ON_ERROR);
+        $merge = (new PackageJsonMerger)->merge($host, $ours, (bool) $this->option('force'));
 
-        foreach (['dependencies', 'devDependencies'] as $section) {
-            foreach ($ours[$section] ?? [] as $name => $version) {
-                $this->mergeDependency($package, $section, $name, $version);
-            }
+        foreach ($merge->added as $add) {
+            $package->{$add['section']} ??= new stdClass;
+            $package->{$add['section']}->{$add['name']} = $add['version'];
+        }
+
+        foreach ($merge->raised as $raise) {
+            $package->{$raise['section']}->{$raise['name']} = $raise['to'];
+            $this->components->twoColumnDetail($raise['name'], "{$raise['from']} → {$raise['to']}（--force）");
+        }
+
+        foreach ($merge->unverified as $item) {
+            $this->components->twoColumnDetail($item['name'], "專案指定 {$item['host']}，無法自動比對，請確認相容於 {$item['needs']}");
         }
 
         $package->scripts ??= new stdClass;
@@ -214,91 +273,77 @@ class InstallCommand extends Command
             $package->scripts->{$name} ??= $command;
         }
 
-        $json = json_encode($package, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        // npm writes package.json with 2-space indentation.
-        $json = preg_replace_callback('/^( {4})+/m', fn (array $m) => str_repeat('  ', strlen($m[0]) / 4), $json);
+        $json = PackageJsonFile::format($package, $original);
 
-        $files->put($path, $json."\n");
-    }
-
-    private function mergeDependency(stdClass $package, string $section, string $name, string $version): void
-    {
-        foreach (['dependencies', 'devDependencies'] as $existingSection) {
-            $existing = $package->{$existingSection}->{$name} ?? null;
-
-            if ($existing === null) {
-                continue;
-            }
-
-            $parsed = $this->parseSpec($existing);
-
-            if ($parsed === null) {
-                // Tags, workspace:, git urls … are the project's call.
-                $this->components->twoColumnDetail($name, "專案已有 {$existing}，保留不變（Brume 使用 {$version}）");
-            } elseif (version_compare($parsed['version'], $version, '>')) {
-                $this->components->twoColumnDetail($name, "專案已有 {$existing}，比 Brume 使用的 {$version} 新，保留不變");
-            } elseif (! $this->rangeIncludes($parsed, $version)) {
-                $this->components->twoColumnDetail($name, "從 {$existing} 更新為 Brume 需要的 {$version}");
-                $package->{$existingSection}->{$name} = $version;
-            }
-
-            return;
+        if ($json !== $original) {
+            $files->put($path, $json);
         }
 
-        $package->{$section} ??= new stdClass;
-        $package->{$section}->{$name} = $version;
-        $package->{$section} = $this->sortKeys($package->{$section});
+        return $merge;
     }
 
     /**
-     * Whether a ^ / ~ / >= / exact spec whose base version is not newer than ours already admits ours.
-     *
-     * @param  array{operator: string, version: string}  $spec
+     * Prints conflicts as a table. Without --force they fail the install (after everything else
+     * was set up), so the developer fixes package.json before running pnpm install.
      */
-    private function rangeIncludes(array $spec, string $ours): bool
+    private function reportDependencyConflicts(MergeResult $merge): bool
     {
-        [$major, $minor] = array_map('intval', explode('.', $spec['version'].'.0.0'));
-        [$ourMajor, $ourMinor] = array_map('intval', explode('.', $ours));
-
-        return match ($spec['operator']) {
-            '>=' => true,
-            '^' => $major === $ourMajor && ($major > 0 || $minor === $ourMinor),
-            '~' => $major === $ourMajor && $minor === $ourMinor,
-            default => $spec['version'] === $ours,
-        };
-    }
-
-    /** @return array{operator: string, version: string}|null */
-    private function parseSpec(string $spec): ?array
-    {
-        if (! preg_match('/^\s*(\^|~|>=)?\s*v?(\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?)\s*$/', $spec, $match)) {
-            return null;
+        if ($merge->conflicts === []) {
+            return true;
         }
 
-        return ['operator' => $match[1], 'version' => $match[2]];
+        $force = (bool) $this->option('force');
+
+        $this->message($force ? 'warn' : 'error', 'package.json 裡有 '.count($merge->conflicts).' 個套件的版本和 Brume 不相容，沒有自動修改：');
+        $this->table(
+            ['套件', '專案目前', 'Brume 需要', '怎麼處理'],
+            array_map(fn (array $conflict) => [
+                $conflict['name'],
+                $conflict['host'],
+                $conflict['needs'],
+                $conflict['newer']
+                    ? 'Brume 還沒支援這個版本：改用相容的版本，或等 Brume 更新'
+                    : '把版本改成 '.$this->suggestedSpec($conflict['host'], $conflict['needs']),
+            ], $merge->conflicts),
+        );
+
+        if ($force) {
+            return true;
+        }
+
+        $this->line('  其他檔案都已設定好；修正 package.json 後再執行 pnpm install。');
+        $this->line('  也可以加 --force 重跑，讓 brume:install 改寫太舊的版本；注意 --force 也會覆蓋 resources/js/brume/ 與 vite.brume.config.ts。');
+        $this->newLine();
+
+        return false;
     }
 
-    private function sortKeys(stdClass $object): stdClass
+    /** The project's own operator with Brume's version, e.g. ^18.3.1 → ^19.3.1. */
+    private function suggestedSpec(string $host, string $needs): string
     {
-        $array = (array) $object;
-        ksort($array);
-
-        return (object) $array;
+        return (PackageJsonMerger::parse($host)['operator'] ?? '').$needs;
     }
 
-    private function updateNpmrc(Filesystem $files): void
+    /** @param  list<string>  $lines */
+    private function appendMissingLines(Filesystem $files, string $path, array $lines, bool $create): void
     {
-        $path = base_path('.npmrc');
-        $contents = $files->exists($path) ? $files->get($path) : '';
-        $existing = array_map('trim', explode("\n", $contents));
+        if (! $create && ! $files->exists($path)) {
+            return;
+        }
 
-        foreach (self::NPMRC_LINES as $line) {
+        $original = $files->exists($path) ? $files->get($path) : '';
+        $existing = array_map('trim', preg_split('/\R/', $original));
+        $contents = $original;
+
+        foreach ($lines as $line) {
             if (! in_array($line, $existing, true)) {
                 $contents = $this->appendLine($contents, $line);
             }
         }
 
-        $files->put($path, $contents);
+        if ($contents !== $original || ! $files->exists($path)) {
+            $files->put($path, $contents);
+        }
     }
 
     private function writeEnv(Filesystem $files, string $key, string $value): void
@@ -329,6 +374,13 @@ class InstallCommand extends Command
 
         if ($model::query()->exists()) {
             $this->components->twoColumnDetail('第一個管理員', '已有管理員，略過；要再新增請用 php artisan brume:user');
+
+            return;
+        }
+
+        if (! $this->input->isInteractive() && ($this->option('username') === null || $this->option('password') === null)) {
+            $this->components->twoColumnDetail('第一個管理員', '沒有建立');
+            $this->message('warn', '請加上 --username 與 --password，或之後執行 php artisan brume:user 建立管理員。');
 
             return;
         }
