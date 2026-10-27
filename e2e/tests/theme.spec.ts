@@ -3,6 +3,9 @@ import { expect, type Page, test } from '@playwright/test';
 import { login, useScheme } from './support';
 
 async function axeViolations(page: Page): Promise<unknown[]> {
+  // Inertia's progress bar (NProgress, `.bar[role="bar"]`) stays in the DOM until the visit
+  // finishes. Audit the settled page, not the transient indicator from @inertiajs/react.
+  await expect(page.locator('#nprogress')).toHaveCount(0);
   const { violations } = await new AxeBuilder({ page }).analyze();
   return violations.map((v) => ({
     url: new URL(page.url()).pathname,
