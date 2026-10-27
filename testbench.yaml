@@ -1,0 +1,22 @@
+laravel: '@testbench'
+
+providers:
+  - Workbench\App\Providers\WorkbenchServiceProvider
+  - Brume\BrumeServiceProvider
+
+migrations:
+  - workbench/database/migrations
+
+workbench:
+  start: '/admin'
+  install: false
+  health: false
+  discovers:
+    web: false
+    api: false
+    commands: false
+    components: false
+    views: false
+  build:
+    - create-sqlite-db
+    - migrate-fresh

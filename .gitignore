@@ -1,0 +1,10 @@
+/vendor/
+/.phpunit.cache/
+/.phpunit.result.cache
+/.pint.cache
+/build/
+/workbench/storage/
+/workbench/bootstrap/cache/
+.DS_Store
+.idea/
+/.env

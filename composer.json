@@ -1,0 +1,63 @@
+{
+    "name": "brume/laravel",
+    "description": "Brume admin panel for Laravel (Inertia + React).",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "illuminate/support": "^12.0|^13.0",
+        "inertiajs/inertia-laravel": "^2.0.28"
+    },
+    "require-dev": {
+        "laravel/framework": "^12.0|^13.0",
+        "laravel/pint": "^1.18",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0",
+        "pestphp/pest-plugin-laravel": "^3.0|^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Brume\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Brume\\Tests\\": "tests/",
+            "Workbench\\App\\": "workbench/app/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Brume\\BrumeServiceProvider"
+            ],
+            "aliases": {
+                "Brume": "Brume\\Facades\\Brume"
+            }
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "lint": "pint --test",
+        "serve": [
+            "Composer\\Config::disableProcessTimeout",
+            "@build",
+            "@php vendor/bin/testbench serve --ansi"
+        ],
+        "post-autoload-dump": [
+            "@clear",
+            "@prepare"
+        ],
+        "clear": "@php vendor/bin/testbench package:purge-skeleton --ansi",
+        "prepare": "@php vendor/bin/testbench package:discover --ansi",
+        "build": "@php vendor/bin/testbench workbench:build --ansi"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
