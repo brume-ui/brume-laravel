@@ -32,7 +32,7 @@ on npmjs.com, so no registry token or `.npmrc` entry is needed.
 
 Laravel 12's skeleton pins vite 7 and laravel-vite-plugin 2; Brume's toolchain needs vite 8, so
 `--upgrade-deps` raises those versions in `package.json` (it keeps your `^`/`~` and never
-downgrades). Without it the installer stops and lists the conflicts.
+downgrades). Without it the installer finishes the rest of the setup, then lists the conflicts and exits with a failure status.
 
 Both modes publish `config/brume.php` and `routes/brume.php`, run the migrations and create the
 first admin (it asks, or pass `--username=` and `--password=`, 8+ characters). Other options:
@@ -74,7 +74,8 @@ class OrderController
 
         $grid->column('number', '訂單編號');
         $grid->column('total', '金額')->numeric();
-        $grid->column('created_at', '建立時間');
+        $grid->column('created_at', '建立時間')
+            ->display(fn ($value) => $value?->format('Y-m-d H:i'));
 
         return $grid->perPage(20);
     }

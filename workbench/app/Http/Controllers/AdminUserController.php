@@ -13,7 +13,7 @@ class AdminUserController
         // `WORKBENCH_EMPTY_LIST=1 composer serve` filters every row out, to look at the list's empty
         // state (the admin you sign in as always exists, so seeding fewer admins can't empty it).
         // getenv(): the dev server receives it as a process variable, which env() does not read here.
-        $empty = (bool) getenv('WORKBENCH_EMPTY_LIST');
+        $empty = filter_var(getenv('WORKBENCH_EMPTY_LIST'), FILTER_VALIDATE_BOOL);
         $query = User::query()->when($empty, fn ($q) => $q->whereRaw('1 = 0'));
 
         $grid = Grid::make($query)->title('管理員');
