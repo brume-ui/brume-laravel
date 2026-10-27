@@ -23,5 +23,11 @@
     "tailwindcss": "4.3.3",
     "vite": "8.3.5"
   },
-  "packageManager": "pnpm@10.28.1"
+  "packageManager": "pnpm@10.28.1",
+  "brume": {
+    "conflictReasons": {
+      "vite": "Brume 的 @vitejs/plugin-react 6 與 laravel-vite-plugin 3 只支援 vite 8；vite 7 在載入 vite.brume.config.ts 時就會失敗。",
+      "laravel-vite-plugin": "laravel-vite-plugin 2 不支援 vite 8，Brume 需要 3.x。"
+    }
+  }
 }

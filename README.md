@@ -29,7 +29,10 @@ first; the suite never reuses a running server.
 
 `bin/smoke-install.sh` creates a new Laravel app in `$TMPDIR`, installs this checkout through a
 path repository, runs `brume:install`, serves it on port 8101 and checks login, `/admin` and an
-`X-Inertia` request with curl. Set `KEEP=1` to keep the scratch app.
+`X-Inertia` request with curl. Set `KEEP=1` to keep the scratch app. If `brume:install --frontend`
+stops on package.json conflicts (the Laravel 12 skeleton pins vite 7 and laravel-vite-plugin 2,
+which Brume's vite 8 toolchain cannot use), the script re-runs it with `--upgrade-deps` and prints
+a WARN; add `--no-upgrade` as a third argument to fail instead.
 
 ## Frontend assets
 

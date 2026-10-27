@@ -35,6 +35,11 @@ return [
 
     'home' => DashboardController::class,
 
+    'routes' => [
+        // The project's admin routes, loaded inside the Brume group (prefix, middleware, brume.auth).
+        'host' => base_path('routes/brume.php'),
+    ],
+
     // url is relative to route.prefix
     'menu' => [
         ['title' => 'brume::menu.dashboard', 'icon' => 'layout-dashboard', 'url' => '/'],

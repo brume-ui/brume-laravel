@@ -308,15 +308,42 @@ class InstallCommand extends Command
             ], $merge->conflicts),
         );
 
+        foreach ($this->conflictReasons($merge) as $name => $reason) {
+            $this->line("  {$name}：{$reason}");
+        }
+
         if ($upgrade) {
             return true;
         }
 
+        $this->newLine();
         $this->line('  其他檔案都已設定好；修正 package.json 後再執行 pnpm install。');
         $this->line('  也可以加 --upgrade-deps 重跑，讓 brume:install 把太舊的版本升上來。');
         $this->newLine();
 
         return false;
+    }
+
+    /**
+     * Why an older version cannot be kept, from "brume": {"conflictReasons": {...}} in
+     * frontend/package.json (next to the versions they explain).
+     *
+     * @return array<string, string>
+     */
+    private function conflictReasons(MergeResult $merge): array
+    {
+        $ours = json_decode((string) file_get_contents(self::$frontendPackagePath), true);
+        $reasons = is_array($ours['brume']['conflictReasons'] ?? null) ? $ours['brume']['conflictReasons'] : [];
+
+        $found = [];
+
+        foreach ($merge->conflicts as $conflict) {
+            if (! $conflict['newer'] && is_string($reason = $reasons[$conflict['name']] ?? null)) {
+                $found[$conflict['name']] = $reason;
+            }
+        }
+
+        return $found;
     }
 
     /** The project's own operator with Brume's version, e.g. ^18.3.1 → ^19.3.1. */

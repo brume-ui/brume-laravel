@@ -4,6 +4,7 @@ use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 function seedUsers(int $n): void
@@ -167,4 +168,27 @@ it('accepts null, bool, int, float and string from a display closure', function 
     }
 
     expect(array_values(array_slice(schemaFor($grid)['rows'][0], 1)))->toBe([null, true, 3, 1.5, 'x']);
+});
+
+it('orders by the qualified primary key when the query has no order', function () {
+    seedUsers(3);
+    DB::enableQueryLog();
+
+    $schema = Grid::make(User::class)->toSchema(Request::create('/'));
+
+    $select = collect(DB::getQueryLog())->pluck('query')->first(fn ($sql) => str_contains($sql, 'limit'));
+    expect($select)->toContain('order by "brume_users"."id" asc')
+        ->and(array_column($schema['rows'], 'id'))->toBe([1, 2, 3]);
+});
+
+it('keeps an order the query already has', function () {
+    seedUsers(3);
+    DB::enableQueryLog();
+
+    $schema = Grid::make(User::query()->orderByDesc('username'))->toSchema(Request::create('/'));
+
+    $select = collect(DB::getQueryLog())->pluck('query')->first(fn ($sql) => str_contains($sql, 'limit'));
+    expect($select)->toContain('order by "username" desc')
+        ->not->toContain('"brume_users"."id"')
+        ->and(array_column($schema['rows'], 'id'))->toBe([3, 2, 1]);
 });

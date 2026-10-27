@@ -107,7 +107,15 @@ class Grid implements Renderable, Responsable
 
     protected function paginate(int $page): LengthAwarePaginator
     {
-        return (clone $this->query)->paginate($this->perPage, ['*'], 'page', $page);
+        $query = clone $this->query;
+
+        // Without an ORDER BY, databases like MySQL may return rows in any order, so pages could
+        // repeat or skip rows. Ascending primary key unless the query brings its own order.
+        if (empty($query->getQuery()->orders) && empty($query->getQuery()->unionOrders)) {
+            $query->orderBy($query->getModel()->getQualifiedKeyName());
+        }
+
+        return $query->paginate($this->perPage, ['*'], 'page', $page);
     }
 
     /**

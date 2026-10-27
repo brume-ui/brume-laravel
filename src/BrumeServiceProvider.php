@@ -167,7 +167,7 @@ class BrumeServiceProvider extends ServiceProvider
         ], function () {
             $this->loadRoutesFrom(__DIR__.'/../routes/brume.php');
 
-            if (file_exists($project = base_path('routes/brume.php'))) {
+            if (is_string($project = config('brume.routes.host')) && file_exists($project)) {
                 Route::middleware('brume.auth')->group($project);
             }
         });

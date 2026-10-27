@@ -1,7 +1,7 @@
 <?php
 
-// Workbench admin routes. WorkbenchServiceProvider loads this file the way Brume loads a
-// project's routes/brume.php: inside the Brume route group, behind brume.auth.
+// Workbench admin routes. workbench/config/brume.php points brume.routes.host here, so Brume
+// loads this file inside its route group, behind brume.auth.
 
 use Brume\Facades\Brume;
 use Illuminate\Support\Facades\Route;

@@ -41,6 +41,11 @@ test('pagination writes ?page=2, keeps the scroll position and Back returns to p
   await expect(page.getByRole('cell', { name: 'admin', exact: true })).toBeVisible();
 });
 
+// Guards output printed BEFORE Laravel's HandleExceptions takes over (autoloaded files, config
+// files, compile-time deprecations): with display_errors=1 (e2e/php.ini) PHP writes those straight
+// into the response. Request-time deprecations after boot are logged by Laravel, never printed, so
+// they cannot break this. The PDO::MYSQL_ATTR_SSL_CA case (spec §11) is a host config file and is
+// covered by brume:install's check, not by the workbench.
 test('partial visit returns clean JSON', async ({ page }) => {
   await page.goto('/admin/users');
   const version = await page.evaluate(() => {
@@ -53,10 +58,11 @@ test('partial visit returns clean JSON', async ({ page }) => {
   });
   const body = await response.text();
 
-  expect(response.status(), body.slice(0, 500)).toBe(200);
-  expect(response.headers()['x-inertia']).toBe('true');
-  // Throws (and fails the test) if a PHP warning or deprecation was printed before the JSON.
+  expect(body, 'PHP printed a message into the response').not.toMatch(/(Deprecated|Warning|Notice)(<\/b>)?:/);
+  expect(body.startsWith('{'), `body does not start with JSON: ${body.slice(0, 200)}`).toBe(true);
   const json = JSON.parse(body);
+  expect(response.status()).toBe(200);
+  expect(response.headers()['x-inertia']).toBe('true');
   expect(json.component).toBe('brume/page');
   expect(json.props.envelope.page.pagination).toMatchObject({ page: 2, perPage: 10, total: 36, lastPage: 4 });
 });

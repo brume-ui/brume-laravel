@@ -2,20 +2,28 @@
 # Installs brume/laravel (this checkout) into a brand-new Laravel app and checks that the admin
 # answers over HTTP.
 #
-#   bin/smoke-install.sh <12|13> <precompiled|vite>
+#   bin/smoke-install.sh <12|13> <precompiled|vite> [--no-upgrade]
+#
+# By default, if brume:install stops on package.json conflicts it is re-run with --upgrade-deps
+# (and a WARN is printed). --no-upgrade fails instead: the plain documented quick start.
 #
 # vite mode installs @herb09638/brume-* from GitHub Packages, so GITHUB_PACKAGES_TOKEN must be set
 # (locally: export GITHUB_PACKAGES_TOKEN=$(gh auth token)). Set KEEP=1 to keep the scratch app.
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 <12|13> <precompiled|vite>" >&2
+  echo "usage: $0 <12|13> <precompiled|vite> [--no-upgrade]" >&2
   exit 2
 }
 
-[[ $# -eq 2 ]] || usage
+[[ $# -eq 2 || $# -eq 3 ]] || usage
 LARAVEL="$1"
 MODE="$2"
+NO_UPGRADE=0
+if [[ $# -eq 3 ]]; then
+  [[ "$3" == --no-upgrade ]] || usage
+  NO_UPGRADE=1
+fi
 [[ "$LARAVEL" == 12 || "$LARAVEL" == 13 ]] || usage
 [[ "$MODE" == precompiled || "$MODE" == vite ]] || usage
 
@@ -39,8 +47,10 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/brume-smoke-${LARAVEL}-${MODE}-XXXXXX")"
 APP="$WORK/app"
 JAR="$WORK/cookies.txt"
 SERVER_PID=""
+UPGRADE_RETRY=0
 
 LABEL="Laravel ${LARAVEL} / ${MODE}"
+[[ $NO_UPGRADE == 1 ]] && LABEL+=" (no --upgrade-deps)"
 
 cleanup() {
   local status=$?
@@ -51,6 +61,7 @@ cleanup() {
   # artisan serve starts php -S as a child; make sure nothing is left on the port.
   pkill -f "127.0.0.1:${PORT}" 2>/dev/null || true
   if [[ $status -eq 0 ]]; then
+    [[ $UPGRADE_RETRY == 1 ]] && LABEL+=" (WARN: needed --upgrade-deps)"
     echo "PASS: ${LABEL}"
   else
     echo "FAIL: ${LABEL} (exit ${status}; scratch app kept at ${APP}, server log ${WORK}/server.log)"
@@ -94,7 +105,10 @@ install_args=(--username=admin --password=admin1234 --no-interaction)
 if ! php artisan brume:install "${install_args[@]}" | tee "$WORK/install.log"; then
   # A fresh skeleton can pin older vite / laravel-vite-plugin than Brume needs. The installer then
   # stops with a conflict table and suggests --upgrade-deps; follow that advice like a user would.
-  [[ "$MODE" == vite ]] && grep -q -- '--upgrade-deps' "$WORK/install.log" || fail "brume:install failed"
+  [[ $NO_UPGRADE == 0 && "$MODE" == vite ]] && grep -q -- '--upgrade-deps' "$WORK/install.log" || fail "brume:install failed"
+  echo "WARN: brume:install --frontend stopped on package.json conflicts; retrying with --upgrade-deps." >&2
+  echo "WARN: the plain quick start does not work on this skeleton (see the table above)." >&2
+  UPGRADE_RETRY=1
   step "php artisan brume:install --upgrade-deps (as the installer suggested)"
   php artisan brume:install "${install_args[@]}" --upgrade-deps
 fi
@@ -103,6 +117,7 @@ grep -q "^BRUME_FRONTEND=${MODE}$" .env || fail ".env does not contain BRUME_FRO
 if [[ "$MODE" == vite ]]; then
   step "pnpm install && pnpm brume:build"
   pnpm install --silent
+  pnpm list vite laravel-vite-plugin @vitejs/plugin-react --depth 0 | grep -E "^(vite|laravel-vite-plugin|@vitejs)" || true
   pnpm brume:build
 fi
 

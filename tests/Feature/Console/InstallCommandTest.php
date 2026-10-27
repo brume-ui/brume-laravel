@@ -182,6 +182,18 @@ it('reports incompatible dependencies, changes none of them and fails after sett
         ->and(User::query()->count())->toBe(1);
 });
 
+it('explains why a conflicting vite or laravel-vite-plugin cannot be kept', function () {
+    $package = $this->project->json('package.json');
+    $package['devDependencies']['vite'] = '^7.0.7';
+    $package['devDependencies']['laravel-vite-plugin'] = '^2.0.0';
+    $this->project->put('package.json', json_encode($package, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+
+    $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
+        ->expectsOutputToContain('laravel-vite-plugin：laravel-vite-plugin 2 不支援 vite 8，Brume 需要 3.x。')
+        ->expectsOutputToContain('vite：Brume 的 @vitejs/plugin-react 6 與 laravel-vite-plugin 3 只支援 vite 8')
+        ->assertFailed();
+});
+
 it('raises older dependencies keeping their operator with --upgrade-deps but never downgrades', function () {
     $package = $this->project->json('package.json');
     $package['dependencies'] = ['react' => '~18.3.1', 'react-dom' => '^20.0.0'];
