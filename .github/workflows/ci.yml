@@ -1,0 +1,162 @@
+name: CI
+
+on:
+  push:
+    branches: [main, phase-1]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    name: php ${{ matrix.php }} / laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4', '8.5']
+        laravel: ['12.*', '13.*']
+        include:
+          - laravel: '12.*'
+            testbench: '^10.0'
+          - laravel: '13.*'
+            testbench: '^11.0'
+        # Laravel 12 needs PHP ^8.2 and Laravel 13 needs PHP ^8.3, so every combination is supported.
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_sqlite, sqlite3, mbstring, intl
+          coverage: none
+          tools: composer:v2
+
+      - name: Pin laravel/framework ${{ matrix.laravel }}
+        run: |
+          composer require --dev --no-update --no-interaction \
+            "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}"
+          composer update --prefer-dist --with-all-dependencies --no-interaction --no-progress
+          composer show laravel/framework | grep -E '^versions'
+
+      - run: composer lint
+
+      - run: composer test
+
+  frontend:
+    name: frontend dist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: '@herb09638'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm --dir frontend install --frozen-lockfile
+
+      # Rebuilds the precompiled frontend and compares it byte for byte with the committed dist/.
+      - run: node frontend/scripts/check-dist.mjs
+
+  e2e:
+    name: e2e (playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_sqlite, sqlite3, mbstring, intl
+          coverage: none
+          tools: composer:v2
+
+      - run: composer install --prefer-dist --no-interaction --no-progress
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: e2e/package.json
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: e2e/pnpm-lock.yaml
+
+      - run: pnpm --dir e2e install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --dir e2e exec playwright install --with-deps chromium
+
+      - name: E2E
+        run: pnpm --dir e2e exec playwright test
+
+      - name: Upload Playwright report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 14
+
+  smoke:
+    name: install smoke (laravel ${{ matrix.laravel }} / ${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        laravel: ['12', '13']
+        mode: [precompiled, vite]
+    env:
+      # vite mode installs @herb09638/brume-* from GitHub Packages into the scratch app.
+      GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_sqlite, sqlite3, mbstring, intl
+          coverage: none
+          tools: composer:v2
+
+      - uses: pnpm/action-setup@v4
+        if: ${{ matrix.mode == 'vite' }}
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v5
+        if: ${{ matrix.mode == 'vite' }}
+        with:
+          node-version: 24
+
+      - run: bin/smoke-install.sh ${{ matrix.laravel }} ${{ matrix.mode }}
