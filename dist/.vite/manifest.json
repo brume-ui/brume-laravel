@@ -176,12 +176,12 @@
     "src": "frontend/node_modules/.pnpm/@herb09638+brume-react@0.1.0-alpha.0_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/@herb09638/brume-react/dist/fonts/jf-openhuninn-41.woff2"
   },
   "stubs/frontend/app.tsx": {
-    "file": "assets/app-Cu4BNpHa.js",
+    "file": "assets/app-DQUFAycd.js",
     "name": "app",
     "src": "stubs/frontend/app.tsx",
     "isEntry": true,
     "css": [
-      "assets/app-Dqo46Ide.css"
+      "assets/app-Cl0mmxE2.css"
     ],
     "assets": [
       "assets/jf-openhuninn-00-U4jDIsYY.woff2",

@@ -28,3 +28,14 @@ it('ships a precompiled build whose manifest has the entry Assets loads', functi
         expect($root.'/dist/'.$file)->toBeFile();
     }
 });
+
+it('references fonts relative to the built css so ASSET_URL and subpaths keep working', function () use ($root) {
+    $manifest = json_decode(file_get_contents($root.'/dist/.vite/manifest.json'), true, 512, JSON_THROW_ON_ERROR);
+
+    foreach ($manifest[Assets::ENTRY]['css'] as $css) {
+        $content = file_get_contents($root.'/dist/'.$css);
+
+        expect(str_contains($content, 'url(./'))->toBeTrue("{$css} has no relative url()")
+            ->and(preg_match('/url\(\s*["\']?\//', $content))->toBe(0, "{$css} has an absolute url(/…)");
+    }
+});

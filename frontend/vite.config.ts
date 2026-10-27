@@ -56,7 +56,8 @@ function fontLicenses(): Plugin {
 export default defineConfig({
   // Root is the package root so the manifest key is `stubs/frontend/app.tsx` (read by Brume\Support\Assets).
   root: packageRoot,
-  base: '/vendor/brume/',
+  // Relative, so CSS font urls resolve next to the CSS wherever asset() puts it (ASSET_URL, CDN, subpath).
+  base: './',
   publicDir: false,
   envDir: frontend,
   define: {

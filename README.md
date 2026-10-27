@@ -20,7 +20,7 @@ copies into projects) with an empty component registry, against the exact
 `@herb09638/brume-*` version in `Brume\Version::UI`.
 
     export GITHUB_PACKAGES_TOKEN=$(gh auth token)   # needs read:packages
-    pnpm --dir frontend install
+    pnpm --dir frontend install --frozen-lockfile
     pnpm --dir frontend build        # rebuild dist/
     pnpm --dir frontend check-dist   # fails if dist/ differs from a fresh build
 
