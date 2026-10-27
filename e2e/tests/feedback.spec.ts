@@ -20,8 +20,10 @@ test('the same flash message twice shows a toast both times', async ({ page }) =
   expect(new Set(seen).size).toBe(2);
 });
 
-test('an unregistered component on the dashboard explains how to fix it', async ({ page }) => {
-  const alert = page.getByRole('alert').filter({ hasText: 'demo-chart' });
+test('an unregistered component explains how to register it', async ({ page }) => {
+  // Workbench-only route (not in the menu): a dashboard referencing a name nobody registered.
+  await page.goto('/admin/_demo/missing-component');
+  const alert = page.getByRole('alert').filter({ hasText: 'not-registered' });
   await expect(alert).toBeVisible();
-  await expect(alert).toContainText('--frontend');
+  await expect(alert).toContainText('resources/js/brume/components.ts');
 });

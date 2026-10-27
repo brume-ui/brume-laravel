@@ -1,0 +1,16 @@
+/*
+ * Tailwind for the project's own Brume components and pages (resources/js/brume/).
+ * No preflight and no prefix: Brume's built-in UI ships its own styles, so this only adds the
+ * utilities your files use. The token theme maps Brume tokens to utilities, so your components
+ * can write bg-surface, text-text-muted, border-border, rounded-card, shadow-row, …
+ * source(none) turns off scanning the whole project; only this directory is scanned.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "@brume-ui/brume-tokens/theme.css";
+@source "./";
+
+/*
+ * Project-level overrides for Brume, loaded after Brume's own styles.
+ * Override tokens here, e.g. :root { --br-radius-card: 10px; }
+ */

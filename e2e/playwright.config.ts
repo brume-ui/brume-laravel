@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 8100;
+// E2E_PORT lets the suite run next to a `composer serve` already listening on 8100.
+const PORT = Number(process.env.E2E_PORT ?? 8100);
 
 export default defineConfig({
   testDir: './tests',
@@ -17,7 +18,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    // Publishes dist/, migrates and seeds a fresh database, then serves the workbench.
+    // Builds the workbench frontend, migrates and seeds a fresh database, then serves the workbench.
     command: './serve.sh',
     url: `http://127.0.0.1:${PORT}/admin/login`,
     // Never reuse: a server left running from `composer serve` has a different database and

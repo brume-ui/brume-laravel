@@ -133,21 +133,49 @@ switch to `--frontend`, instead of an empty slot.
     composer lint      # Pint
     composer serve     # workbench at http://127.0.0.1:8100/admin
 
-The workbench uses SQLite and the session cookie `brume_workbench_session`, so it does not
-clash with other local Laravel apps. It is a small demo admin (sign in as `admin` / `admin1234`):
-a dashboard, 系統 → 管理員 with 36 seeded admins, and `/admin/_demo/toast`. The demo menu, routes
-and dashboard live in `workbench/` and are only active on the dev server, not under Pest.
-`WORKBENCH_EMPTY_LIST=1 composer serve` empties the 管理員 list, to check its empty state.
+### Workbench
+
+The workbench is a demo admin (sign in as `admin` / `admin1234`) that runs the way a project
+installed with `brume:install --frontend` does: its own frontend entry in
+`workbench/resources/js/brume/` (`app.tsx` as in the stub, plus `components.ts` registering the
+demo components) is built by Vite into the testbench skeleton's `public/build-brume`. You need
+PHP and pnpm; `composer serve` (and `composer build`) installs `frontend/` with the frozen
+lockfile, builds the workbench frontend (`composer build-frontend`, i.e.
+`pnpm --dir frontend build:workbench`), recreates the SQLite database with seeded demo data and
+serves it. After editing the workbench's `.tsx` files, run `composer build-frontend` and reload.
+
+What's in it:
+
+- **儀表板**: text cards with order figures and `demo-chart`, a registered component
+  (`components/DemoChart.tsx`) drawing monthly revenue from PHP-supplied props.
+- **訂單**: a Grid over 60 seeded orders (`workbench/database`): numeric amount, a status
+  column rendered by the registered `OrderStatus` cell component, `created_at` formatted with
+  `display()`, 15 per page.
+- **元件展示**: every public brume-react component (buttons, inputs, Field, Card, EmptyState,
+  Skeleton, DataTable + Pagination, Dialog, confirm, toasts, PageHeader; breadcrumbs come from
+  the shell) in the real shell, as one registered component (`components/ComponentShowcase.tsx`).
+- **系統 → 管理員**: the admins list with 36 seeded admins.
+- Not in the menu, used by the e2e suite: `/admin/_demo/toast` (flashes the same toast every
+  time) and `/admin/_demo/missing-component` (the guidance shown for an unregistered component).
+
+The demo menu, routes and dashboard live in `workbench/` and are only active on the dev server,
+not under Pest. `WORKBENCH_EMPTY_LIST=1 composer serve` empties the 管理員 list, to check its
+empty state. The workbench uses SQLite and the session cookie `brume_workbench_session`, so it
+does not clash with other local Laravel apps.
+
+Precompiled mode (`dist/`) is what `brume:install` without `--frontend` uses; it is covered by
+`check-dist` and the install smoke tests below, not by the workbench.
 
 ## End-to-end and install smoke tests
 
-    vendor/bin/testbench vendor:publish --tag=brume-assets --force   # once, for composer serve
-    pnpm --dir e2e exec playwright install chromium                  # once
+    pnpm --dir e2e exec playwright install chromium   # once
     composer e2e      # Playwright + axe against the workbench on port 8100
 
-`composer e2e` starts its own server (`e2e/serve.sh`: publish assets, fresh seeded database,
-`display_errors=1` so PHP warnings printed into a response fail the suite). Stop `composer serve`
-first; the suite never reuses a running server.
+`composer e2e` starts its own server (`e2e/serve.sh`: builds the workbench frontend, fresh seeded
+database, `display_errors=1` so PHP warnings printed into a response fail the suite). It never
+reuses a running server: stop `composer serve` first, or run the suite on another port with
+`E2E_PORT=8103 composer e2e`. Both use the same SQLite file, so the suite reseeds the database a
+running `composer serve` reads.
 
     composer smoke -- 12 precompiled                # or: 12 vite, 13 precompiled, 13 vite
 

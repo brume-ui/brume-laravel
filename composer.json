@@ -26,6 +26,7 @@
         "psr-4": {
             "Brume\\Tests\\": "tests/",
             "Workbench\\App\\": "workbench/app/",
+            "Workbench\\Database\\Factories\\": "workbench/database/factories/",
             "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
         }
     },
@@ -63,7 +64,15 @@
         ],
         "clear": "@php vendor/bin/testbench package:purge-skeleton --ansi",
         "prepare": "@php vendor/bin/testbench package:discover --ansi",
-        "build": "@php vendor/bin/testbench workbench:build --ansi"
+        "build": [
+            "@build-frontend",
+            "@php vendor/bin/testbench workbench:build --ansi"
+        ],
+        "build-frontend": [
+            "Composer\\Config::disableProcessTimeout",
+            "pnpm --dir frontend install --frozen-lockfile",
+            "pnpm --dir frontend build:workbench"
+        ]
     },
     "config": {
         "sort-packages": true,

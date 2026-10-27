@@ -14,8 +14,16 @@ return [
         'host' => workbench_path('routes', 'brume.php'),
     ],
 
+    // Runs like a project installed with `brume:install --frontend`: workbench/resources/js/brume is
+    // built by `composer build` (pnpm --dir frontend build:workbench) into public/build-brume.
+    'frontend' => [
+        'mode' => 'vite',
+    ],
+
     'menu' => [
         ['title' => 'brume::menu.dashboard', 'icon' => 'layout-dashboard', 'url' => '/'],
+        ['title' => 'workbench::menu.orders', 'icon' => 'receipt', 'url' => '/orders'],
+        ['title' => 'workbench::menu.components', 'icon' => 'blocks', 'url' => '/components'],
         ['title' => 'workbench::menu.system', 'icon' => 'settings', 'children' => [
             ['title' => 'workbench::menu.admins', 'icon' => 'users', 'url' => '/users'],
         ]],

@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "build:workbench": "vite build --config vite.workbench.config.ts",
     "check-dist": "node scripts/check-dist.mjs"
   },
   "dependencies": {

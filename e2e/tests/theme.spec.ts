@@ -73,6 +73,14 @@ for (const scheme of ['light', 'dark'] as const) {
     await expect(page.getByRole('cell', { name: 'admin', exact: true })).toBeVisible();
     violations.push(...(await axeViolations(page)));
 
+    await page.goto('/admin/orders');
+    await expect(page.getByRole('cell', { name: 'BR-20261027-060' })).toBeVisible();
+    violations.push(...(await axeViolations(page)));
+
+    await page.goto('/admin/components');
+    await expect(page.locator('[data-component-showcase]')).toBeVisible();
+    violations.push(...(await axeViolations(page)));
+
     expect(violations).toEqual([]);
   });
 }

@@ -96,9 +96,14 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: e2e/pnpm-lock.yaml
+          cache-dependency-path: |
+            e2e/pnpm-lock.yaml
+            frontend/pnpm-lock.yaml
 
       - run: pnpm --dir e2e install --frozen-lockfile
+
+      # The workbench runs in vite (--frontend) mode; e2e/serve.sh builds it from frontend/.
+      - run: pnpm --dir frontend install --frozen-lockfile
 
       - name: Install Playwright Chromium
         run: pnpm --dir e2e exec playwright install --with-deps chromium
