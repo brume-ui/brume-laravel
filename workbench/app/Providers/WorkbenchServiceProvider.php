@@ -2,6 +2,7 @@
 
 namespace Workbench\App\Providers;
 
+use Illuminate\Foundation\Console\ServeCommand;
 use Illuminate\Support\ServiceProvider;
 
 use function Orchestra\Testbench\workbench_path;
@@ -22,6 +23,9 @@ class WorkbenchServiceProvider extends ServiceProvider
         foreach (require workbench_path('config', 'brume.php') as $key => $value) {
             config(["brume.{$key}" => $value]);
         }
+
+        // `serve` only hands an allow-list of env vars to the PHP server it starts.
+        ServeCommand::$passthroughVariables[] = 'WORKBENCH_EMPTY_LIST';
     }
 
     public function boot(): void
