@@ -42,7 +42,7 @@
         "serve": [
             "Composer\\Config::disableProcessTimeout",
             "@build",
-            "@php vendor/bin/testbench serve --ansi"
+            "@php vendor/bin/testbench serve --port=8100 --ansi"
         ],
         "post-autoload-dump": [
             "@clear",
