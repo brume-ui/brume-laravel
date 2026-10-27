@@ -10,7 +10,26 @@ Brume admin panel for Laravel (Inertia + React). Work in progress (phase 1).
     composer serve     # workbench at http://127.0.0.1:8100/admin
 
 The workbench uses SQLite and the session cookie `brume_workbench_session`, so it does not
-clash with other local Laravel apps.
+clash with other local Laravel apps. It is a small demo admin (sign in as `admin` / `admin1234`):
+a dashboard, 系統 → 管理員 with 36 seeded admins, and `/admin/_demo/toast`. The demo menu, routes
+and dashboard live in `workbench/` and are only active on the dev server, not under Pest.
+
+## End-to-end and install smoke tests
+
+    vendor/bin/testbench vendor:publish --tag=brume-assets --force   # once, for composer serve
+    pnpm --dir e2e exec playwright install chromium                  # once
+    composer e2e      # Playwright + axe against the workbench on port 8100
+
+`composer e2e` starts its own server (`e2e/serve.sh`: publish assets, fresh seeded database,
+`display_errors=1` so PHP warnings printed into a response fail the suite). Stop `composer serve`
+first; the suite never reuses a running server.
+
+    export GITHUB_PACKAGES_TOKEN=$(gh auth token)   # vite mode only
+    composer smoke -- 12 precompiled                # or: 12 vite, 13 precompiled, 13 vite
+
+`bin/smoke-install.sh` creates a new Laravel app in `$TMPDIR`, installs this checkout through a
+path repository, runs `brume:install`, serves it on port 8101 and checks login, `/admin` and an
+`X-Inertia` request with curl. Set `KEEP=1` to keep the scratch app.
 
 ## Frontend assets
 

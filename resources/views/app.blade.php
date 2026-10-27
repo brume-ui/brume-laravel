@@ -8,7 +8,9 @@
     {{ \Brume\Support\Assets::tags() }}
     @inertiaHead
 </head>
-<body>
+{{-- The stylesheet defines the token but nothing paints <body> until React mounts .br-root;
+     without this a dark-mode reload shows the browser's white canvas first. --}}
+<body style="background-color: var(--br-surface-canvas)">
     @inertia
 </body>
 </html>

@@ -19,4 +19,6 @@ workbench:
     views: false
   build:
     - create-sqlite-db
-    - migrate-fresh
+    - migrate-fresh:
+        --seed: true
+        --seeder: Workbench\Database\Seeders\DatabaseSeeder

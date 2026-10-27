@@ -145,6 +145,11 @@ it('renders the root view with the color-scheme script first in head and the acc
         ->and($html)->toContain('data-page=');
 });
 
+it('paints the body with the canvas token so a dark reload never flashes white before React mounts', function () {
+    expect($this->get('/admin/login')->getContent())
+        ->toMatch('/<body style="background-color: var\(--br-surface-canvas\)">/');
+});
+
 it('escapes the accent in the root view', function () {
     config(['brume.layout.accent' => '#0e7490"><script>x</script>']);
 

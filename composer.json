@@ -24,7 +24,8 @@
     "autoload-dev": {
         "psr-4": {
             "Brume\\Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/"
+            "Workbench\\App\\": "workbench/app/",
+            "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
         }
     },
     "extra": {
@@ -45,6 +46,15 @@
             "Composer\\Config::disableProcessTimeout",
             "@build",
             "@php vendor/bin/testbench serve --port=8100 --ansi"
+        ],
+        "e2e": [
+            "Composer\\Config::disableProcessTimeout",
+            "pnpm --dir e2e install --frozen-lockfile",
+            "pnpm --dir e2e exec playwright test"
+        ],
+        "smoke": [
+            "Composer\\Config::disableProcessTimeout",
+            "bin/smoke-install.sh"
         ],
         "post-autoload-dump": [
             "@clear",
