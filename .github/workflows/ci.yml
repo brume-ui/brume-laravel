@@ -54,12 +54,6 @@ jobs:
     name: frontend dist
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: read
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
 
@@ -70,8 +64,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          registry-url: https://npm.pkg.github.com
-          scope: '@herb09638'
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -128,17 +120,11 @@ jobs:
     name: install smoke (laravel ${{ matrix.laravel }} / ${{ matrix.mode }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: read
     strategy:
       fail-fast: false
       matrix:
         laravel: ['12', '13']
         mode: [precompiled, vite]
-    env:
-      # vite mode installs @herb09638/brume-* from GitHub Packages into the scratch app.
-      GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
 

@@ -3,7 +3,7 @@
 use Brume\Console\Support\PackageJsonMerger;
 
 $ours = [
-    'dependencies' => ['react' => '19.3.1', '@herb09638/brume-react' => '0.1.0-alpha.0'],
+    'dependencies' => ['react' => '19.3.1', '@brume-ui/brume-react' => '0.1.0-alpha.0'],
     'devDependencies' => ['vite' => '8.3.5'],
 ];
 
@@ -18,38 +18,38 @@ it('decides per package', function (array $host, bool $upgrade, array $expected)
     ])->toBe([...['added' => [], 'raised' => [], 'conflicts' => [], 'unverified' => []], ...$expected]);
 })->with([
     'empty project gets everything' => [[], false, [
-        'added' => ['react' => '19.3.1', '@herb09638/brume-react' => '0.1.0-alpha.0', 'vite' => '8.3.5'],
+        'added' => ['react' => '19.3.1', '@brume-ui/brume-react' => '0.1.0-alpha.0', 'vite' => '8.3.5'],
     ]],
     'same major caret, tilde, exact and >= are compatible' => [[
-        'dependencies' => ['react' => '^19.0.0', '@herb09638/brume-react' => '0.1.0-alpha.0'],
+        'dependencies' => ['react' => '^19.0.0', '@brume-ui/brume-react' => '0.1.0-alpha.0'],
         'devDependencies' => ['vite' => '>=7.0.0'],
     ], false, []],
     'tilde and exact on the same major count as compatible' => [[
-        'dependencies' => ['react' => '~19.1.0', '@herb09638/brume-react' => '~0.1.2'],
+        'dependencies' => ['react' => '~19.1.0', '@brume-ui/brume-react' => '~0.1.2'],
         'devDependencies' => ['vite' => '8.0.1'],
     ], false, []],
     'older major is a conflict without upgrade' => [[
-        'dependencies' => ['react' => '^18.3.1', '@herb09638/brume-react' => '0.1.0-alpha.0'],
+        'dependencies' => ['react' => '^18.3.1', '@brume-ui/brume-react' => '0.1.0-alpha.0'],
         'devDependencies' => ['vite' => '^7.0.4'],
     ], false, ['conflicts' => ['react' => false, 'vite' => false]]],
     'older 0.x minor is a conflict' => [[
-        'dependencies' => ['react' => '19.3.1', '@herb09638/brume-react' => '^0.0.9'],
+        'dependencies' => ['react' => '19.3.1', '@brume-ui/brume-react' => '^0.0.9'],
         'devDependencies' => ['vite' => '8.3.5'],
-    ], false, ['conflicts' => ['@herb09638/brume-react' => false]]],
+    ], false, ['conflicts' => ['@brume-ui/brume-react' => false]]],
     'upgrade raises older specs and keeps the operator' => [[
-        'dependencies' => ['react' => '~18.3.1', '@herb09638/brume-react' => '0.0.9'],
+        'dependencies' => ['react' => '~18.3.1', '@brume-ui/brume-react' => '0.0.9'],
         'devDependencies' => ['vite' => '^7.0.4'],
-    ], true, ['raised' => ['react' => '~19.3.1', '@herb09638/brume-react' => '0.1.0-alpha.0', 'vite' => '^8.3.5']]],
+    ], true, ['raised' => ['react' => '~19.3.1', '@brume-ui/brume-react' => '0.1.0-alpha.0', 'vite' => '^8.3.5']]],
     'newer major is a conflict, even with upgrade' => [[
-        'dependencies' => ['react' => '^20.0.0', '@herb09638/brume-react' => '0.1.0-alpha.0'],
+        'dependencies' => ['react' => '^20.0.0', '@brume-ui/brume-react' => '0.1.0-alpha.0'],
         'devDependencies' => ['vite' => '>=9.0.0'],
     ], true, ['conflicts' => ['react' => true, 'vite' => true]]],
     'unparseable specs are left alone' => [[
-        'dependencies' => ['react' => 'latest', '@herb09638/brume-react' => 'workspace:*'],
+        'dependencies' => ['react' => 'latest', '@brume-ui/brume-react' => 'workspace:*'],
         'devDependencies' => ['vite' => '^7 || ^8'],
-    ], false, ['unverified' => ['react' => 'latest', '@herb09638/brume-react' => 'workspace:*', 'vite' => '^7 || ^8']]],
+    ], false, ['unverified' => ['react' => 'latest', '@brume-ui/brume-react' => 'workspace:*', 'vite' => '^7 || ^8']]],
     'a package in the other section is found, not added twice' => [[
-        'devDependencies' => ['react' => '^19.2.0', '@herb09638/brume-react' => '0.1.0-alpha.0'],
+        'devDependencies' => ['react' => '^19.2.0', '@brume-ui/brume-react' => '0.1.0-alpha.0'],
         'dependencies' => ['vite' => '^8.0.0'],
     ], false, []],
 ]);
@@ -59,7 +59,7 @@ it('adds missing packages to the section Brume uses', function () use ($ours) {
 
     expect(array_column($result->added, 'section', 'name'))->toBe([
         'react' => 'dependencies',
-        '@herb09638/brume-react' => 'dependencies',
+        '@brume-ui/brume-react' => 'dependencies',
         'vite' => 'devDependencies',
     ])->and($result->changesPackageJson())->toBeTrue();
 });

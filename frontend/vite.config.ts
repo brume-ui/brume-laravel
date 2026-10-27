@@ -52,7 +52,7 @@ function resolveStubImportsFromFrontend(): Plugin {
  * the woff2 files but not the license texts next to them, so emit those into dist/ as well.
  */
 function fontLicenses(): Plugin {
-  const brumeReact = realpathSync(resolve(frontend, 'node_modules/@herb09638/brume-react'));
+  const brumeReact = realpathSync(resolve(frontend, 'node_modules/@brume-ui/brume-react'));
   const nunito = dirname(
     createRequire(resolve(brumeReact, 'package.json')).resolve('@fontsource-variable/nunito/package.json'),
   );

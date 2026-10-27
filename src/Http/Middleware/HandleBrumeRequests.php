@@ -49,7 +49,7 @@ class HandleBrumeRequests extends Middleware
     }
 
     /**
-     * The SharedProps shape of @herb09638/brume-schema.
+     * The SharedProps shape of @brume-ui/brume-schema.
      *
      * @return array<string, mixed>
      */

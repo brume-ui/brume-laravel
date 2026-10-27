@@ -34,11 +34,6 @@ class InstallCommand extends Command
     /** Brume's own frontend manifest: the single source of the versions --frontend adds. */
     public static string $frontendPackagePath = __DIR__.'/../../frontend/package.json';
 
-    public const NPMRC_LINES = [
-        '@herb09638:registry=https://npm.pkg.github.com',
-        '//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}',
-    ];
-
     public const GITIGNORE_LINES = [
         '/public/build-brume',
         '/public/brume.hot',
@@ -227,13 +222,10 @@ class InstallCommand extends Command
         }
 
         $merge = $this->updatePackageJson($files);
-        $this->components->task('在 package.json 加入 @herb09638/brume-* 依賴與 brume:dev、brume:build');
-
-        $this->appendMissingLines($files, base_path('.npmrc'), self::NPMRC_LINES, create: true);
-        $this->components->task('在 .npmrc 設定 GitHub Packages 的 registry');
+        $this->components->task('在 package.json 加入 @brume-ui/brume-* 依賴與 brume:dev、brume:build');
 
         if ($files->exists(base_path('.gitignore'))) {
-            $this->appendMissingLines($files, base_path('.gitignore'), self::GITIGNORE_LINES, create: false);
+            $this->appendMissingLines($files, base_path('.gitignore'), self::GITIGNORE_LINES);
             $this->components->task('在 .gitignore 忽略 public/build-brume 與 public/brume.hot');
         }
 
@@ -353,9 +345,9 @@ class InstallCommand extends Command
     }
 
     /** @param  list<string>  $lines */
-    private function appendMissingLines(Filesystem $files, string $path, array $lines, bool $create): void
+    private function appendMissingLines(Filesystem $files, string $path, array $lines): void
     {
-        if (! $create && ! $files->exists($path)) {
+        if (! $files->exists($path)) {
             return;
         }
 
@@ -369,7 +361,7 @@ class InstallCommand extends Command
             }
         }
 
-        if ($contents !== $original || ! $files->exists($path)) {
+        if ($contents !== $original) {
             $files->put($path, $contents);
         }
     }
@@ -457,10 +449,8 @@ class InstallCommand extends Command
     private function printFrontendNextSteps(): void
     {
         $this->line('  下一步：');
-        $this->line('  1. 設定環境變數 GITHUB_PACKAGES_TOKEN：一個有 read:packages 權限的 GitHub token。');
-        $this->line('     本機與 CI 都要設定，.npmrc 用它從 GitHub Packages 下載 @herb09638 套件。');
-        $this->line('  2. pnpm install（或 npm install）');
-        $this->line('  3. pnpm brume:dev 啟動開發伺服器；部署前執行 pnpm brume:build');
+        $this->line('  1. pnpm install（或 npm install）');
+        $this->line('  2. pnpm brume:dev 啟動開發伺服器；部署前執行 pnpm brume:build');
         $this->newLine();
     }
 }

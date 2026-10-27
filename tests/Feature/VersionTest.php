@@ -10,8 +10,8 @@ it('pins every brume-ui package in frontend/package.json to Version::UI', functi
     $dependencies = [...$package['dependencies'] ?? [], ...$package['devDependencies'] ?? []];
 
     foreach (['tokens', 'schema', 'react', 'renderer', 'inertia'] as $name) {
-        expect($dependencies)->toHaveKey("@herb09638/brume-{$name}")
-            ->and($dependencies["@herb09638/brume-{$name}"])->toBe(Version::UI);
+        expect($dependencies)->toHaveKey("@brume-ui/brume-{$name}")
+            ->and($dependencies["@brume-ui/brume-{$name}"])->toBe(Version::UI);
     }
 });
 

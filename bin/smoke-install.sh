@@ -7,8 +7,7 @@
 # By default, if brume:install stops on package.json conflicts it is re-run with --upgrade-deps
 # (and a WARN is printed). --no-upgrade fails instead: the plain documented quick start.
 #
-# vite mode installs @herb09638/brume-* from GitHub Packages, so GITHUB_PACKAGES_TOKEN must be set
-# (locally: export GITHUB_PACKAGES_TOKEN=$(gh auth token)). Set KEEP=1 to keep the scratch app.
+# vite mode installs @brume-ui/brume-* from npmjs.com. Set KEEP=1 to keep the scratch app.
 set -euo pipefail
 
 usage() {
@@ -26,12 +25,6 @@ if [[ $# -eq 3 ]]; then
 fi
 [[ "$LARAVEL" == 12 || "$LARAVEL" == 13 ]] || usage
 [[ "$MODE" == precompiled || "$MODE" == vite ]] || usage
-
-if [[ "$MODE" == vite && -z "${GITHUB_PACKAGES_TOKEN:-}" ]]; then
-  echo "FAIL: vite mode needs GITHUB_PACKAGES_TOKEN (a token with read:packages)." >&2
-  echo "      Locally: export GITHUB_PACKAGES_TOKEN=\$(gh auth token)" >&2
-  exit 1
-fi
 
 for tool in composer php curl; do
   command -v "$tool" >/dev/null || { echo "FAIL: $tool is not installed." >&2; exit 1; }
@@ -116,7 +109,7 @@ grep -q "^BRUME_FRONTEND=${MODE}$" .env || fail ".env does not contain BRUME_FRO
 
 if [[ "$MODE" == vite ]]; then
   step "pnpm install && pnpm brume:build"
-  pnpm install --silent
+  pnpm install
   pnpm list vite laravel-vite-plugin @vitejs/plugin-react --depth 0 | grep -E "^(vite|laravel-vite-plugin|@vitejs)" || true
   pnpm brume:build
 fi

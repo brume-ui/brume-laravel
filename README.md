@@ -24,7 +24,6 @@ and dashboard live in `workbench/` and are only active on the dev server, not un
 `display_errors=1` so PHP warnings printed into a response fail the suite). Stop `composer serve`
 first; the suite never reuses a running server.
 
-    export GITHUB_PACKAGES_TOKEN=$(gh auth token)   # vite mode only
     composer smoke -- 12 precompiled                # or: 12 vite, 13 precompiled, 13 vite
 
 `bin/smoke-install.sh` creates a new Laravel app in `$TMPDIR`, installs this checkout through a
@@ -39,9 +38,8 @@ a WARN; add `--no-upgrade` as a third argument to fail instead.
 `dist/` holds the precompiled frontend and is committed, because Composer installs this package
 from git. It is built from `stubs/frontend/app.tsx` (the same file `brume:install --frontend`
 copies into projects) with an empty component registry, against the exact
-`@herb09638/brume-*` version in `Brume\Version::UI`.
+`@brume-ui/brume-*` version in `Brume\Version::UI`.
 
-    export GITHUB_PACKAGES_TOKEN=$(gh auth token)   # needs read:packages
     pnpm --dir frontend install --frozen-lockfile
     pnpm --dir frontend build        # rebuild dist/
     pnpm --dir frontend check-dist   # fails if dist/ differs from a fresh build

@@ -2,7 +2,8 @@
     "name": "brume/laravel",
     "description": "Brume admin panel for Laravel (Inertia + React).",
     "type": "library",
-    "license": "proprietary",
+    "homepage": "https://github.com/brume-ui/brume-laravel",
+    "license": "MIT",
     "require": {
         "php": "^8.3",
         "illuminate/support": "^12.0|^13.0",
@@ -41,7 +42,7 @@
     "scripts": {
         "test": "pest",
         "lint": "pint --test",
-        "sync-schema": "@php -r \"copy('frontend/node_modules/@herb09638/brume-schema/schema/v0.json', 'resources/schema/v0.json') || exit(1);\"",
+        "sync-schema": "@php -r \"copy('frontend/node_modules/@brume-ui/brume-schema/schema/v0.json', 'resources/schema/v0.json') || exit(1);\"",
         "serve": [
             "Composer\\Config::disableProcessTimeout",
             "@build",

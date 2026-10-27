@@ -6,7 +6,7 @@ use Opis\JsonSchema\Errors\ErrorFormatter;
 use Opis\JsonSchema\Validator;
 
 /**
- * Validates PHP output against resources/schema/v0.json (copied from @herb09638/brume-schema).
+ * Validates PHP output against resources/schema/v0.json (copied from @brume-ui/brume-schema).
  * The document has no $id, so it is registered under a fixed URI and definitions are
  * addressed by JSON pointer, e.g. JsonSchema::errors($props, 'SharedProps').
  */

@@ -52,8 +52,7 @@ it('installs in precompiled mode by default', function () use ($packageRoot) {
         ->and($this->project->read('public/vendor/brume/.vite/manifest.json'))
         ->toBe(file_get_contents($packageRoot.'/dist/.vite/manifest.json'))
         ->and(envLines($this->project, 'BRUME_FRONTEND'))->toBe(['BRUME_FRONTEND=precompiled'])
-        ->and($this->project->file('resources/js/brume/app.tsx'))->not->toBeFile()
-        ->and($this->project->file('.npmrc'))->not->toBeFile();
+        ->and($this->project->file('resources/js/brume/app.tsx'))->not->toBeFile();
 
     $user = User::query()->sole();
 
@@ -103,10 +102,12 @@ it('skips creating an admin when one already exists', function () {
 
 it('scaffolds the project frontend with --frontend', function () use ($packageRoot) {
     $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
-        ->expectsOutputToContain('GITHUB_PACKAGES_TOKEN：一個有 read:packages 權限的 GitHub token')
         ->expectsOutputToContain('pnpm install')
         ->expectsOutputToContain('pnpm brume:dev')
+        ->doesntExpectOutputToContain('GITHUB_PACKAGES_TOKEN')
         ->assertSuccessful();
+
+    expect($this->project->file('.npmrc'))->not->toBeFile();
 
     foreach (['app.tsx', 'components.ts', 'brume.css'] as $file) {
         expect($this->project->read("resources/js/brume/{$file}"))
@@ -121,7 +122,7 @@ it('scaffolds the project frontend with --frontend', function () use ($packageRo
     $package = $this->project->json('package.json');
 
     foreach (['tokens', 'schema', 'react', 'renderer', 'inertia'] as $name) {
-        expect($package['dependencies']["@herb09638/brume-{$name}"])->toBe(Version::UI);
+        expect($package['dependencies']["@brume-ui/brume-{$name}"])->toBe(Version::UI);
     }
 
     expect($package['scripts'])->toMatchArray([
@@ -176,7 +177,7 @@ it('reports incompatible dependencies, changes none of them and fails after sett
 
     expect($host['devDependencies']['vite'])->toBe('^7.0.4')
         ->and($host['devDependencies']['tailwindcss'])->toBe('^3.4.17')
-        ->and($host['dependencies']['@herb09638/brume-react'])->toBe(Version::UI)
+        ->and($host['dependencies']['@brume-ui/brume-react'])->toBe(Version::UI)
         ->and($this->project->file('resources/js/brume/app.tsx'))->toBeFile()
         ->and(envLines($this->project, 'BRUME_FRONTEND'))->toBe(['BRUME_FRONTEND=vite'])
         ->and(User::query()->count())->toBe(1);
@@ -233,24 +234,18 @@ it('does not raise dependencies with --force alone, and --upgrade-deps keeps pro
         ->and($this->project->read('resources/js/brume/components.ts'))->toBe('// my components');
 });
 
-it('is idempotent for .npmrc, .env, .gitignore and package.json', function () {
-    $this->project->put('.npmrc', "engine-strict=true\n");
+it('is idempotent for .env, .gitignore and package.json', function () {
     $this->project->put('.env', "APP_NAME=Scratch\nBRUME_FRONTEND=precompiled\nAPP_DEBUG=true\n");
     $this->project->put('.gitignore', "/node_modules\n/public/build");
 
     $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
         ->assertSuccessful();
 
-    $first = array_map(fn (string $file) => $this->project->read($file), ['package.json', '.npmrc', '.env', '.gitignore']);
+    $first = array_map(fn (string $file) => $this->project->read($file), ['package.json', '.env', '.gitignore']);
 
     $this->artisan('brume:install', ['--frontend' => true])->assertSuccessful();
 
-    expect(array_map(fn (string $file) => $this->project->read($file), ['package.json', '.npmrc', '.env', '.gitignore']))->toBe($first)
-        ->and($this->project->read('.npmrc'))->toBe(implode("\n", [
-            'engine-strict=true',
-            '@herb09638:registry=https://npm.pkg.github.com',
-            '//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}',
-        ])."\n")
+    expect(array_map(fn (string $file) => $this->project->read($file), ['package.json', '.env', '.gitignore']))->toBe($first)
         ->and($this->project->read('.env'))->toBe("APP_NAME=Scratch\nBRUME_FRONTEND=vite\nAPP_DEBUG=true\n")
         ->and($this->project->read('.gitignore'))->toBe("/node_modules\n/public/build\n/public/build-brume\n/public/brume.hot\n")
         ->and(array_keys($this->project->json('package.json')['scripts']))->toBe(['build', 'dev', 'brume:dev', 'brume:build']);
@@ -463,7 +458,7 @@ it('ships a brume.css stub with Tailwind theme and utilities but no preflight', 
 
     expect($css)->toContain('@import "tailwindcss/theme.css" layer(theme);')
         ->toContain('@import "tailwindcss/utilities.css" layer(utilities)')
-        ->toContain('@import "@herb09638/brume-tokens/theme.css";')
+        ->toContain('@import "@brume-ui/brume-tokens/theme.css";')
         ->toContain('@source "./";')
         ->not->toContain('tailwindcss/preflight.css')
         ->not->toContain('@import "tailwindcss";')

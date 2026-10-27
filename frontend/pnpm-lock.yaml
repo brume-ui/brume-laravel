@@ -8,21 +8,21 @@ importers:
 
   .:
     dependencies:
-      '@herb09638/brume-inertia':
-        specifier: 0.1.0-alpha.1
-        version: 0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@herb09638/brume-react':
-        specifier: 0.1.0-alpha.1
-        version: 0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@herb09638/brume-renderer':
-        specifier: 0.1.0-alpha.1
-        version: 0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@herb09638/brume-schema':
-        specifier: 0.1.0-alpha.1
-        version: 0.1.0-alpha.1
-      '@herb09638/brume-tokens':
-        specifier: 0.1.0-alpha.1
-        version: 0.1.0-alpha.1
+      '@brume-ui/brume-inertia':
+        specifier: 0.1.0-alpha.5
+        version: 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-react':
+        specifier: 0.1.0-alpha.5
+        version: 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-renderer':
+        specifier: 0.1.0-alpha.5
+        version: 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-schema':
+        specifier: 0.1.0-alpha.5
+        version: 0.1.0-alpha.5
+      '@brume-ui/brume-tokens':
+        specifier: 0.1.0-alpha.5
+        version: 0.1.0-alpha.5
       '@inertiajs/react':
         specifier: 2.3.29
         version: 2.3.29(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -51,6 +51,30 @@ importers:
 
 packages:
 
+  '@brume-ui/brume-inertia@0.1.0-alpha.5':
+    resolution: {integrity: sha512-PideHTr91K5EmCmyvDSofP8wx+LwoeJWKHEuxAhN05j5P5O9XmCXaIfD4cVwTBLimDwWRDgLn0QaDnWvuxBanQ==}
+    peerDependencies:
+      react: ^19.0.0
+      react-dom: ^19.0.0
+
+  '@brume-ui/brume-react@0.1.0-alpha.5':
+    resolution: {integrity: sha512-ypB9FMo9w4tTMSSFBTmrMbM3Ve6VyeRfrqrzEIq+C7AZ1/3gFYF9VAQYJAtWc+vIaKx9HTh10e/c86y6DYO9dw==}
+    peerDependencies:
+      react: ^19.0.0
+      react-dom: ^19.0.0
+
+  '@brume-ui/brume-renderer@0.1.0-alpha.5':
+    resolution: {integrity: sha512-uiIlef0HhZfPAy5ATxSMmmhyQOzwVjMw2TwD8TCqJymKGJHwWroEz4WcY3Xx+kTC/zIPFA0fjeP6F8Z7u4TL1Q==}
+    peerDependencies:
+      react: ^19.0.0
+      react-dom: ^19.0.0
+
+  '@brume-ui/brume-schema@0.1.0-alpha.5':
+    resolution: {integrity: sha512-UeGyQlX7uQ7vRDg7N8waGemg/ty9ZDbpjV1zUGK1RhzWlrdpu/pFk+E94pKp3KbsYP7XKaJf6Db45JYu2gWA7A==}
+
+  '@brume-ui/brume-tokens@0.1.0-alpha.5':
+    resolution: {integrity: sha512-nKupXLo8XManCjrLVYbEnxNwh4liaLeCtd+rNWQ+4pscm2i287E7/g1cmI4VHlQuQ1schXaYvmrSRoXQZeIanA==}
+
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
 
@@ -68,30 +92,6 @@ packages:
 
   '@fontsource-variable/nunito@5.3.0':
     resolution: {integrity: sha512-tw0ch7evIDSwoeUy+0XzocYHfbRWLeCRPJy22KgbrLjDLAbNw/fErBiil10Ssrs3Sjr55zaZrr36a975j8cBkQ==}
-
-  '@herb09638/brume-inertia@0.1.0-alpha.1':
-    resolution: {integrity: sha512-hCd9p2B8SQtC8odIfU9t+PkTFSIR5x/SyDGUrd/5i71/cXM4sri9D2Wl3synNlhWINg50K6gRRdk5+h8Yajz2g==, tarball: https://npm.pkg.github.com/download/@herb09638/brume-inertia/0.1.0-alpha.1/6ee6d29171fd136901be8839221dce7a429ca8c5}
-    peerDependencies:
-      react: ^19.0.0
-      react-dom: ^19.0.0
-
-  '@herb09638/brume-react@0.1.0-alpha.1':
-    resolution: {integrity: sha512-I8aaml89h1OJ56fsCb0pjd2RKshwPtsazCHhq2oGx95/25r8A3O3uFQ+HR3Xe+ic16ZviSG6+qg6gYoI48neXg==, tarball: https://npm.pkg.github.com/download/@herb09638/brume-react/0.1.0-alpha.1/2f2eb244c503716930a9043d69a2963510e4231c}
-    peerDependencies:
-      react: ^19.0.0
-      react-dom: ^19.0.0
-
-  '@herb09638/brume-renderer@0.1.0-alpha.1':
-    resolution: {integrity: sha512-eP9rfoFDyVr6vpZUQkoK+UZDcnL6XDB7zEt3BLJCHegrZ2wc6tBOn+Yy6FgjnayYrcfKJ1vgTm7oltd4BQ9bzg==, tarball: https://npm.pkg.github.com/download/@herb09638/brume-renderer/0.1.0-alpha.1/fdc3bf5071fd3551c0a1d398bfb2b5adb0749f1d}
-    peerDependencies:
-      react: ^19.0.0
-      react-dom: ^19.0.0
-
-  '@herb09638/brume-schema@0.1.0-alpha.1':
-    resolution: {integrity: sha512-MeY5w8+JDPkLWpCCe1uQg+zAN6aB3QG8GiwekJcMRWjYD5SXxvfcm750WPLLUt5kFKhdqhNvNg/gW2XTGubHuw==, tarball: https://npm.pkg.github.com/download/@herb09638/brume-schema/0.1.0-alpha.1/bf625f67573dd58e4d1ffc9bd8a6caed52d6ef6d}
-
-  '@herb09638/brume-tokens@0.1.0-alpha.1':
-    resolution: {integrity: sha512-1WLyBtFt5Lq6yMrAVYdB6MgT8Apcr1oH72/DgYHSGCpFWXrBuATL7S0BEpxa0Mg++aTT4AcMRMT5pJxDKoxxuA==, tarball: https://npm.pkg.github.com/download/@herb09638/brume-tokens/0.1.0-alpha.1/fdf50b549d6e644b9908aaec699927634fa881e8}
 
   '@inertiajs/core@2.3.29':
     resolution: {integrity: sha512-Cx3zibnKdsmEnXpsWhwmE9i4k5NFtK+4gtceL3Kb6RwYC1J0wi5y/EesNMkpdJLsAT2h4ugUvu9Ed9T1EUl0/A==}
@@ -1198,6 +1198,57 @@ packages:
 
 snapshots:
 
+  '@brume-ui/brume-inertia@0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      '@brume-ui/brume-react': 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-renderer': 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-schema': 0.1.0-alpha.5
+      '@inertiajs/react': 2.3.29(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    transitivePeerDependencies:
+      - '@types/react'
+      - '@types/react-dom'
+      - debug
+      - supports-color
+
+  '@brume-ui/brume-react@0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      '@brume-ui/brume-schema': 0.1.0-alpha.5
+      '@brume-ui/brume-tokens': 0.1.0-alpha.5
+      '@fontsource-variable/nunito': 5.3.0
+      '@radix-ui/react-alert-dialog': 1.2.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-checkbox': 1.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-dialog': 1.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-dropdown-menu': 2.2.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-select': 2.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-tooltip': 1.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@tanstack/react-table': 8.21.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      clsx: 2.1.1
+      lucide-react: 1.62.0(react@19.3.1)
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+      tailwind-merge: 3.7.0
+    transitivePeerDependencies:
+      - '@types/react'
+      - '@types/react-dom'
+
+  '@brume-ui/brume-renderer@0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      '@brume-ui/brume-react': 0.1.0-alpha.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@brume-ui/brume-schema': 0.1.0-alpha.5
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    transitivePeerDependencies:
+      - '@types/react'
+      - '@types/react-dom'
+
+  '@brume-ui/brume-schema@0.1.0-alpha.5':
+    dependencies:
+      '@sinclair/typebox': 0.34.52
+
+  '@brume-ui/brume-tokens@0.1.0-alpha.5': {}
+
   '@floating-ui/core@1.8.0':
     dependencies:
       '@floating-ui/utils': 0.2.12
@@ -1216,57 +1267,6 @@ snapshots:
   '@floating-ui/utils@0.2.12': {}
 
   '@fontsource-variable/nunito@5.3.0': {}
-
-  '@herb09638/brume-inertia@0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
-    dependencies:
-      '@herb09638/brume-react': 0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@herb09638/brume-renderer': 0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@herb09638/brume-schema': 0.1.0-alpha.1
-      '@inertiajs/react': 2.3.29(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-    transitivePeerDependencies:
-      - '@types/react'
-      - '@types/react-dom'
-      - debug
-      - supports-color
-
-  '@herb09638/brume-react@0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
-    dependencies:
-      '@fontsource-variable/nunito': 5.3.0
-      '@herb09638/brume-schema': 0.1.0-alpha.1
-      '@herb09638/brume-tokens': 0.1.0-alpha.1
-      '@radix-ui/react-alert-dialog': 1.2.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@radix-ui/react-checkbox': 1.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@radix-ui/react-dialog': 1.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@radix-ui/react-dropdown-menu': 2.2.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@radix-ui/react-select': 2.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@radix-ui/react-tooltip': 1.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@tanstack/react-table': 8.21.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      clsx: 2.1.1
-      lucide-react: 1.62.0(react@19.3.1)
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-      tailwind-merge: 3.7.0
-    transitivePeerDependencies:
-      - '@types/react'
-      - '@types/react-dom'
-
-  '@herb09638/brume-renderer@0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
-    dependencies:
-      '@herb09638/brume-react': 0.1.0-alpha.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@herb09638/brume-schema': 0.1.0-alpha.1
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-    transitivePeerDependencies:
-      - '@types/react'
-      - '@types/react-dom'
-
-  '@herb09638/brume-schema@0.1.0-alpha.1':
-    dependencies:
-      '@sinclair/typebox': 0.34.52
-
-  '@herb09638/brume-tokens@0.1.0-alpha.1': {}
 
   '@inertiajs/core@2.3.29':
     dependencies:
