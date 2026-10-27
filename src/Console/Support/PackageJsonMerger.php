@@ -5,11 +5,11 @@ namespace Brume\Console\Support;
 /**
  * Decides how Brume's frontend dependencies fit into a project's package.json.
  *
- * Existing specs are never changed unless they cannot work with Brume and $force is set:
+ * Existing specs are never changed unless they cannot work with Brume and $upgrade is set:
  * - missing package            → added at Brume's exact version, in Brume's section
  * - spec admits Brume's version → left alone (same major, or 0.minor for 0.x; >= at or below)
- * - spec is older              → conflict; with $force raised to Brume's version, keeping ^ / ~
- * - spec is newer              → conflict; never downgraded, even with $force
+ * - spec is older              → conflict; with $upgrade raised to Brume's version, keeping ^ / ~
+ * - spec is newer              → conflict; never downgraded, even with $upgrade
  * - spec cannot be parsed      → left alone and reported as unverified
  */
 final class PackageJsonMerger
@@ -20,7 +20,7 @@ final class PackageJsonMerger
      * @param  array<string, mixed>  $host  the project's decoded package.json
      * @param  array<string, mixed>  $ours  Brume's frontend/package.json
      */
-    public function merge(array $host, array $ours, bool $force = false): MergeResult
+    public function merge(array $host, array $ours, bool $upgrade = false): MergeResult
     {
         $added = $raised = $conflicts = $unverified = [];
 
@@ -41,7 +41,7 @@ final class PackageJsonMerger
                 } elseif (! self::admits($spec, $needs)) {
                     $newer = version_compare($spec['version'], $needs, '>');
 
-                    if ($force && ! $newer) {
+                    if ($upgrade && ! $newer) {
                         $raised[] = ['section' => $existingSection, 'name' => $name, 'from' => $existing, 'to' => $spec['operator'].$needs];
                     } else {
                         $conflicts[] = ['name' => $name, 'host' => $existing, 'needs' => $needs, 'newer' => $newer];

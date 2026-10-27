@@ -10,7 +10,7 @@ final class MergeResult
 {
     /**
      * @param  list<array{section: string, name: string, version: string}>  $added  missing packages to add
-     * @param  list<array{section: string, name: string, from: string, to: string}>  $raised  older specs raised with --force
+     * @param  list<array{section: string, name: string, from: string, to: string}>  $raised  older specs raised with --upgrade-deps
      * @param  list<array{name: string, host: string, needs: string, newer: bool}>  $conflicts  specs that do not admit Brume's version
      * @param  list<array{name: string, host: string, needs: string}>  $unverified  specs that cannot be compared (tags, workspace:, ranges with ||)
      */

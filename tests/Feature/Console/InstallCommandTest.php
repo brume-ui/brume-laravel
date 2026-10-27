@@ -162,9 +162,9 @@ it('reports incompatible dependencies, changes none of them and fails after sett
     $this->artisan('brume:install', ['--frontend' => true, '--username' => 'root', '--password' => 'secret-password'])
         ->expectsOutputToContain('package.json 裡有 3 個套件的版本和 Brume 不相容')
         ->expectsTable(['套件', '專案目前', 'Brume 需要', '怎麼處理'], [
-            ['react', '^18.3.1', '19.3.1', '把版本改成 ^19.3.1'],
-            ['tailwindcss', '^3.4.17', '4.3.3', '把版本改成 ^4.3.3'],
-            ['vite', '^7.0.4', '8.3.5', '把版本改成 ^8.3.5'],
+            ['react', '^18.3.1', '19.3.1', '把版本改成 ^19.3.1，或加 --upgrade-deps 重跑'],
+            ['tailwindcss', '^3.4.17', '4.3.3', '把版本改成 ^4.3.3，或加 --upgrade-deps 重跑'],
+            ['vite', '^7.0.4', '8.3.5', '把版本改成 ^8.3.5，或加 --upgrade-deps 重跑'],
         ])
         ->assertFailed();
 
@@ -182,13 +182,13 @@ it('reports incompatible dependencies, changes none of them and fails after sett
         ->and(User::query()->count())->toBe(1);
 });
 
-it('raises older dependencies keeping their operator with --force but never downgrades', function () {
+it('raises older dependencies keeping their operator with --upgrade-deps but never downgrades', function () {
     $package = $this->project->json('package.json');
     $package['dependencies'] = ['react' => '~18.3.1', 'react-dom' => '^20.0.0'];
     $package['devDependencies']['vite'] = '^7.0.4';
     $this->project->put('package.json', json_encode($package, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
 
-    $this->artisan('brume:install', ['--frontend' => true, '--force' => true, '--username' => 'root', '--password' => 'secret-password'])
+    $this->artisan('brume:install', ['--frontend' => true, '--upgrade-deps' => true, '--username' => 'root', '--password' => 'secret-password'])
         ->expectsOutputToContain('package.json 裡有 1 個套件的版本和 Brume 不相容')
         ->assertSuccessful();
 
@@ -197,6 +197,28 @@ it('raises older dependencies keeping their operator with --force but never down
     expect($host['dependencies']['react'])->toBe('~19.3.1')
         ->and($host['devDependencies']['vite'])->toBe('^8.3.5')
         ->and($host['dependencies']['react-dom'])->toBe('^20.0.0');
+});
+
+it('does not raise dependencies with --force alone, and --upgrade-deps keeps project files', function () {
+    $package = $this->project->json('package.json');
+    $package['devDependencies']['vite'] = '^7.0.4';
+    $this->project->put('package.json', json_encode($package, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+    $this->project->put('resources/js/brume/components.ts', '// my components');
+
+    $this->artisan('brume:install', ['--frontend' => true, '--force' => true, '--username' => 'root', '--password' => 'secret-password'])
+        ->expectsOutputToContain('也可以加 --upgrade-deps 重跑')
+        ->assertFailed();
+
+    expect($this->project->json('package.json')['devDependencies']['vite'])->toBe('^7.0.4');
+
+    $this->project->put('resources/js/brume/components.ts', '// my components');
+
+    $this->artisan('brume:install', ['--frontend' => true, '--upgrade-deps' => true])
+        ->doesntExpectOutputToContain('不相容')
+        ->assertSuccessful();
+
+    expect($this->project->json('package.json')['devDependencies']['vite'])->toBe('^8.3.5')
+        ->and($this->project->read('resources/js/brume/components.ts'))->toBe('// my components');
 });
 
 it('is idempotent for .npmrc, .env, .gitignore and package.json', function () {

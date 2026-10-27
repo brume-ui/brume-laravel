@@ -23,7 +23,8 @@ class InstallCommand extends Command
         {--precompiled : 使用 Brume 內附的預編譯前端（預設），可從 --frontend 切回來}
         {--username= : 第一個管理員的帳號}
         {--password= : 第一個管理員的密碼（至少 8 碼）}
-        {--force : 覆蓋已存在的前端檔案、切回預編譯時不再詢問、把太舊的依賴升到 Brume 需要的版本}';
+        {--force : 覆蓋已存在的前端檔案，切回預編譯時不再詢問}
+        {--upgrade-deps : 把 package.json 裡太舊的依賴升到 Brume 需要的版本（保留 ^ 或 ~，不會降版）}';
 
     protected $description = '安裝 Brume：發布設定與路由、建立資料表和第一個管理員，並設定前端編譯方式';
 
@@ -241,7 +242,7 @@ class InstallCommand extends Command
 
     /**
      * Adds missing packages (frontend/package.json is the single source of truth) and scripts.
-     * Existing specs are only changed with --force; see PackageJsonMerger.
+     * Existing specs are only changed with --upgrade-deps; see PackageJsonMerger.
      */
     private function updatePackageJson(Filesystem $files): MergeResult
     {
@@ -251,7 +252,7 @@ class InstallCommand extends Command
         $ours = json_decode($files->get(self::$frontendPackagePath), true, 512, JSON_THROW_ON_ERROR);
         $host = json_decode(json_encode($package, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
 
-        $merge = (new PackageJsonMerger)->merge($host, $ours, (bool) $this->option('force'));
+        $merge = (new PackageJsonMerger)->merge($host, $ours, (bool) $this->option('upgrade-deps'));
 
         foreach ($merge->added as $add) {
             $package->{$add['section']} ??= new stdClass;
@@ -260,7 +261,7 @@ class InstallCommand extends Command
 
         foreach ($merge->raised as $raise) {
             $package->{$raise['section']}->{$raise['name']} = $raise['to'];
-            $this->components->twoColumnDetail($raise['name'], "{$raise['from']} → {$raise['to']}（--force）");
+            $this->components->twoColumnDetail($raise['name'], "{$raise['from']} → {$raise['to']}（--upgrade-deps）");
         }
 
         foreach ($merge->unverified as $item) {
@@ -283,7 +284,7 @@ class InstallCommand extends Command
     }
 
     /**
-     * Prints conflicts as a table. Without --force they fail the install (after everything else
+     * Prints conflicts as a table. Without --upgrade-deps they fail the install (after everything else
      * was set up), so the developer fixes package.json before running pnpm install.
      */
     private function reportDependencyConflicts(MergeResult $merge): bool
@@ -292,9 +293,9 @@ class InstallCommand extends Command
             return true;
         }
 
-        $force = (bool) $this->option('force');
+        $upgrade = (bool) $this->option('upgrade-deps');
 
-        $this->message($force ? 'warn' : 'error', 'package.json 裡有 '.count($merge->conflicts).' 個套件的版本和 Brume 不相容，沒有自動修改：');
+        $this->message($upgrade ? 'warn' : 'error', 'package.json 裡有 '.count($merge->conflicts).' 個套件的版本和 Brume 不相容，沒有自動修改：');
         $this->table(
             ['套件', '專案目前', 'Brume 需要', '怎麼處理'],
             array_map(fn (array $conflict) => [
@@ -303,16 +304,16 @@ class InstallCommand extends Command
                 $conflict['needs'],
                 $conflict['newer']
                     ? 'Brume 還沒支援這個版本：改用相容的版本，或等 Brume 更新'
-                    : '把版本改成 '.$this->suggestedSpec($conflict['host'], $conflict['needs']),
+                    : '把版本改成 '.$this->suggestedSpec($conflict['host'], $conflict['needs']).'，或加 --upgrade-deps 重跑',
             ], $merge->conflicts),
         );
 
-        if ($force) {
+        if ($upgrade) {
             return true;
         }
 
         $this->line('  其他檔案都已設定好；修正 package.json 後再執行 pnpm install。');
-        $this->line('  也可以加 --force 重跑，讓 brume:install 改寫太舊的版本；注意 --force 也會覆蓋 resources/js/brume/ 與 vite.brume.config.ts。');
+        $this->line('  也可以加 --upgrade-deps 重跑，讓 brume:install 把太舊的版本升上來。');
         $this->newLine();
 
         return false;
