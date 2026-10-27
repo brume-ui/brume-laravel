@@ -1,14 +1,22 @@
 <?php
 
 use Brume\Dashboard\Dashboard;
+use Brume\Facades\Brume;
 use Brume\Grid\Grid;
 use Brume\Models\User;
 use Brume\Tests\Support\JsonSchema;
 use Illuminate\Http\Request;
 
+/**
+ * The real payload: what Brume::render() hands to Inertia, read from an Inertia (X-Inertia) response.
+ */
 function envelope(Grid|Dashboard $page, array $query = []): array
 {
-    return ['schemaVersion' => '0.1.0', 'page' => $page->toSchema(Request::create('/', 'GET', $query))];
+    $request = Request::create('/', 'GET', $query);
+    $request->headers->set('X-Inertia', 'true');
+    app()->instance('request', $request);
+
+    return Brume::render($page)->toResponse($request)->getData(true)['props']['envelope'];
 }
 
 it('validates dashboards against the v0 schema', function () {

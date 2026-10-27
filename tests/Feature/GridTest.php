@@ -147,3 +147,24 @@ it('can be returned straight from a controller', function () {
         ->where('envelope.page.type', 'list')
         ->where('envelope.page.title', 'Users'));
 });
+
+it('rejects a display closure that returns a non-scalar', function (mixed $returned) {
+    seedUsers(1);
+    $grid = Grid::make(User::query());
+    $grid->column('name')->display(fn () => $returned);
+
+    schemaFor($grid);
+})->with([
+    'array' => [[1, 2]],
+    'object' => [new stdClass],
+])->throws(InvalidArgumentException::class, 'name');
+
+it('accepts null, bool, int, float and string from a display closure', function () {
+    seedUsers(1);
+    $grid = Grid::make(User::query());
+    foreach ([null, true, 3, 1.5, 'x'] as $i => $value) {
+        $grid->column("c{$i}")->display(fn () => $value);
+    }
+
+    expect(array_values(array_slice(schemaFor($grid)['rows'][0], 1)))->toBe([null, true, 3, 1.5, 'x']);
+});

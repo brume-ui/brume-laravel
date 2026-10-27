@@ -7,6 +7,7 @@ use Brume\Support\ComponentRef;
 use Closure;
 use DateTimeInterface;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Stringable;
 
 class Column
@@ -83,7 +84,13 @@ class Column
         $value = data_get($row, $this->key);
 
         if ($this->display !== null) {
-            $value = ($this->display)($value, $row);
+            $value = static::normalize(($this->display)($value, $row));
+
+            if ($value !== null && ! is_scalar($value)) {
+                throw new InvalidArgumentException("欄位「{$this->key}」的 display() 必須回傳純量或 null，目前回傳 ".get_debug_type($value).'。請在 closure 內轉成字串或數字。');
+            }
+
+            return $value;
         }
 
         return static::normalize($value);
