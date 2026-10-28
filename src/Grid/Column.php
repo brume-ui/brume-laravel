@@ -6,6 +6,7 @@ use BackedEnum;
 use Brume\Support\ComponentRef;
 use Closure;
 use DateTimeInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Stringable;
@@ -18,6 +19,19 @@ class Column
 
     /** @var array<string, mixed>|null */
     protected ?array $component = null;
+
+    protected bool $sortable = false;
+
+    /** fn (Builder $query, string $direction): void; null sorts by the column key. */
+    protected ?Closure $sorter = null;
+
+    protected ?string $width = null;
+
+    protected bool $hideable = true;
+
+    protected bool $hiddenByDefault = false;
+
+    protected bool $primary = false;
 
     public function __construct(
         protected string $key,
@@ -64,6 +78,87 @@ class Column
     }
 
     /**
+     * Let the header sort the list by this column: ?sort=key ascending, ?sort=-key descending.
+     * A dotted key (a relation) needs the closure: fn (Builder $query, string $direction).
+     */
+    public function sortable(?Closure $apply = null): static
+    {
+        if ($apply === null && str_contains($this->key, '.')) {
+            throw new InvalidArgumentException("欄位「{$this->key}」是關聯欄位，sortable() 需要傳入排序的 closure，例如 fn (\$query, string \$direction) => \$query->orderBy(...)。");
+        }
+
+        $this->sortable = true;
+        $this->sorter = $apply;
+
+        return $this;
+    }
+
+    /**
+     * A CSS width for the column, e.g. '12rem' or '20%'.
+     */
+    public function width(string $css): static
+    {
+        $this->width = $css;
+
+        return $this;
+    }
+
+    /**
+     * Whether people can hide the column from the 顯示欄位 menu (they can by default).
+     */
+    public function hideable(bool $on = true): static
+    {
+        $this->hideable = $on;
+
+        return $this;
+    }
+
+    /**
+     * Start hidden; people can show it from the 顯示欄位 menu.
+     */
+    public function hidden(): static
+    {
+        $this->hiddenByDefault = true;
+
+        return $this;
+    }
+
+    /**
+     * The column that opens the row (its edit entry).
+     */
+    public function primary(): static
+    {
+        $this->primary = true;
+
+        return $this;
+    }
+
+    /**
+     * @internal
+     */
+    public function isSortable(): bool
+    {
+        return $this->sortable;
+    }
+
+    /**
+     * @internal
+     *
+     * @param  'asc'|'desc'  $direction
+     */
+    public function applySort(Builder $query, string $direction): void
+    {
+        if ($this->sorter !== null) {
+            ($this->sorter)($query, $direction);
+
+            return;
+        }
+
+        // Unqualified on purpose: the key may be a select alias such as a withCount() column.
+        $query->orderBy($this->key, $direction);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toSchema(): array
@@ -73,7 +168,13 @@ class Column
             'label' => $this->label,
         ]
             + ($this->numeric ? ['numeric' => true] : [])
-            + ($this->component !== null ? ['display' => $this->component] : []);
+            + ($this->width !== null ? ['width' => $this->width] : [])
+            + ($this->component !== null ? ['display' => $this->component] : [])
+            + ($this->sortable ? ['sortable' => true] : [])
+            // The schema's default is true, so only the exception is written out.
+            + ($this->hideable ? [] : ['hideable' => false])
+            + ($this->hiddenByDefault ? ['hiddenByDefault' => true] : [])
+            + ($this->primary ? ['primary' => true] : []);
     }
 
     /**

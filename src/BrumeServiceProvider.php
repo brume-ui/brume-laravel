@@ -5,12 +5,15 @@ namespace Brume;
 use Brume\Console\InstallCommand;
 use Brume\Console\PasswordCommand;
 use Brume\Console\UserCommand;
+use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\Middleware\Authenticate;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Http\Middleware\RedirectIfAuthenticated;
 use Brume\Support\Assets;
 use Brume\Support\Color;
+use Closure;
 use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -33,6 +36,8 @@ class BrumeServiceProvider extends ServiceProvider
         $this->app->register(InertiaServiceProvider::class);
 
         $this->registerGuard();
+
+        $this->registerGridRoutes();
     }
 
     public function boot(): void
@@ -88,6 +93,17 @@ class BrumeServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../dist' => public_path(Assets::PUBLISH_DIR),
         ], 'brume-assets');
+    }
+
+    /**
+     * Route::brumeGrid('orders', OrderController::class): the list page and its `_brume` endpoints.
+     */
+    protected function registerGridRoutes(): void
+    {
+        Router::macro('brumeGrid', function (string $uri, string|array|Closure $action): RoutingRoute {
+            /** @var Router $this */
+            return (new GridRouteRegistrar($this))->register($uri, $action);
+        });
     }
 
     /**
