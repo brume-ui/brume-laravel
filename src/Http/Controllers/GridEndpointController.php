@@ -2,6 +2,7 @@
 
 namespace Brume\Http\Controllers;
 
+use Brume\Grid\Actions\ActionRunner;
 use Brume\Grid\Grid;
 use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\Middleware\HandleGridEndpoint;
@@ -27,9 +28,12 @@ class GridEndpointController
         };
     }
 
+    /**
+     * The ActionResponse of the row, batch or tool action keyed $action.
+     */
     public function action(Grid $grid, Request $request, string $action): JsonResponse
     {
-        return $this->unavailable();
+        return app(ActionRunner::class)->run($grid, $request, $action);
     }
 
     public function cell(Grid $grid, Request $request, string $id): JsonResponse

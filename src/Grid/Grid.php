@@ -4,6 +4,8 @@ namespace Brume\Grid;
 
 use Brume\Contracts\Renderable;
 use Brume\Facades\Brume;
+use Brume\Grid\Actions\Action;
+use Brume\Grid\Actions\DeleteAction;
 use Brume\Grid\Filters\Filters;
 use Brume\Grid\Query\Like;
 use Brume\Http\Controllers\GridEndpointController;
@@ -49,6 +51,13 @@ class Grid implements Renderable, Responsable
     protected ?array $empty = null;
 
     protected ?Filters $filters = null;
+
+    /** @var array{row: list<Action>, batch: list<Action>, tool: list<Action>} */
+    protected array $actions = ['row' => [], 'batch' => [], 'tool' => []];
+
+    protected bool $deletable = false;
+
+    protected ?Closure $editUrl = null;
 
     final public function __construct(protected Builder $query) {}
 
@@ -178,10 +187,109 @@ class Grid implements Renderable, Responsable
         return $this->filters ??= new Filters;
     }
 
+    /**
+     * Actions in each row's ⋯ menu (and its right-click menu); exposed() ones also show as buttons.
+     */
+    public function rowActions(Action ...$actions): static
+    {
+        $this->addActions('row', $actions);
+
+        $exposed = array_filter($this->actions['row'], fn (Action $action) => $action->isExposed());
+
+        if (count($exposed) > 2 && app()->environment('local')) {
+            throw new LogicException(sprintf(
+                '列表「%s」有 %d 個 exposed() 的列操作（%s），最多 2 個，其他的請放在「⋯」選單裡。',
+                $this->title, count($exposed), implode('、', array_map(fn (Action $action) => $action->key(), $exposed)),
+            ));
+        }
+
+        return $this;
+    }
+
+    /**
+     * Actions on the selected rows, in the bar shown while rows are selected.
+     */
+    public function batchActions(Action ...$actions): static
+    {
+        $this->addActions('batch', $actions);
+
+        return $this;
+    }
+
+    /**
+     * Actions in the toolbar, run on no particular row.
+     */
+    public function tools(Action ...$actions): static
+    {
+        $this->addActions('tool', $actions);
+
+        return $this;
+    }
+
+    /**
+     * A 刪除 row and batch action (key 'delete'), listed after the declared ones. Each row is
+     * deleted with $model->delete(), so model events fire and soft deletes are kept.
+     */
+    public function deletable(bool $on = true): static
+    {
+        if ($on) {
+            foreach (['row', 'batch'] as $target) {
+                $this->assertNewKey($target, DeleteAction::KEY);
+            }
+        }
+
+        $this->deletable = $on;
+
+        return $this;
+    }
+
+    /**
+     * The row's edit page, fn (Model $row): ?string, sent in _meta.editUrl: the primary column
+     * links to it and the row offers 編輯.
+     */
+    public function editUrl(Closure $fn): static
+    {
+        $this->editUrl = $fn;
+
+        return $this;
+    }
+
+    /**
+     * The action keyed $key among those of $target, deletable()'s included.
+     *
+     * @internal
+     *
+     * @param  'row'|'batch'|'tool'  $target
+     */
+    public function findAction(string $target, string $key): ?Action
+    {
+        foreach ($this->actionsOf($target) as $action) {
+            if ($action->key() === $key) {
+                return $action;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The rows actions may run on: the grid's query (its conditions and global scopes) without
+     * the list's search, filters, sort or paging.
+     *
+     * @internal
+     */
+    public function actionQuery(): Builder
+    {
+        return clone $this->query;
+    }
+
     public function toSchema(Request $request): array
     {
         $state = GridQuery::fromRequest($request, $this);
         $endpoints = $this->endpoints($request);
+        // Without the endpoint nothing could run them, so the actions are left out.
+        $actions = $endpoints !== null ? ['row' => $this->actionsOf('row'), 'batch' => $this->actionsOf('batch'), 'tool' => $this->actionsOf('tool')]
+            : ['row' => [], 'batch' => [], 'tool' => []];
 
         $paginator = $this->paginate($state, $state->page);
 
@@ -198,7 +306,7 @@ class Grid implements Renderable, Responsable
             + [
                 'gridId' => $this->id ?? $request->route()?->getName() ?? $request->path(),
                 'columns' => array_map(fn (Column $column) => $column->toSchema(), $this->columns),
-                'rows' => $paginator->getCollection()->map(fn (Model $row) => $this->row($row))->all(),
+                'rows' => $paginator->getCollection()->map(fn (Model $row) => $this->row($row, $actions['row']))->all(),
                 'pagination' => [
                     'page' => $paginator->currentPage(),
                     'perPage' => $paginator->perPage(),
@@ -212,7 +320,11 @@ class Grid implements Renderable, Responsable
             + $this->filters()->toSchema()
             + [
                 'appliedFilters' => $this->appliedFilters($state),
-                'actions' => ['row' => [], 'batch' => [], 'tools' => []],
+                'actions' => [
+                    'row' => array_map(fn (Action $action) => $action->toSchema(), $actions['row']),
+                    'batch' => array_map(fn (Action $action) => $action->toSchema(), $actions['batch']),
+                    'tools' => array_map(fn (Action $action) => $action->toSchema(), $actions['tool']),
+                ],
             ]
             + ($endpoints !== null ? ['endpoints' => $endpoints] : [])
             + ($this->empty !== null ? ['empty' => $this->empty] : []);
@@ -302,7 +414,7 @@ class Grid implements Renderable, Responsable
      */
     protected function needsEndpoints(): bool
     {
-        if ($this->filters()->hasRemote()) {
+        if ($this->filters()->hasRemote() || $this->deletable || array_merge(...array_values($this->actions)) !== []) {
             return true;
         }
 
@@ -437,12 +549,55 @@ class Grid implements Renderable, Responsable
     }
 
     /**
-     * The row's id, column values and, when a column adds any, its _meta (href, content, raw keyed
-     * by column).
+     * @param  'row'|'batch'|'tool'  $target
+     * @param  list<Action>  $actions
+     */
+    protected function addActions(string $target, array $actions): void
+    {
+        foreach ($actions as $action) {
+            $this->assertNewKey($target, $action->key());
+            $this->actions[$target][] = $action;
+        }
+    }
+
+    /**
+     * Action keys name the action on the endpoint, so they are unique per target.
+     */
+    protected function assertNewKey(string $target, string $key): void
+    {
+        $taken = array_map(fn (Action $action) => $action->key(), $this->actionsOf($target));
+
+        if (in_array($key, $taken, true)) {
+            throw new InvalidArgumentException($key === DeleteAction::KEY && $this->deletable
+                ? '列表已經用 deletable() 加上 key 為 delete 的刪除操作，請換一個 key。'
+                : "列表的 {$target} 操作已經有 key 為「{$key}」的 Action，同一類操作的 key 不能重複。");
+        }
+    }
+
+    /**
+     * @param  'row'|'batch'|'tool'  $target
+     * @return list<Action>
+     */
+    protected function actionsOf(string $target): array
+    {
+        $delete = match (true) {
+            ! $this->deletable => [],
+            $target === 'row' => [DeleteAction::forRow()],
+            $target === 'batch' => [DeleteAction::forBatch()],
+            default => [],
+        };
+
+        return [...$this->actions[$target], ...$delete];
+    }
+
+    /**
+     * The row's id, column values and, when there is any, its _meta: editUrl, the row actions it
+     * allows (only when one declares visible()), and href, content and raw keyed by column.
      *
+     * @param  list<Action>  $rowActions
      * @return array<string, mixed>
      */
-    protected function row(Model $model): array
+    protected function row(Model $model, array $rowActions = []): array
     {
         $row = ['id' => $model->getKey()];
         $meta = ['href' => [], 'content' => [], 'raw' => []];
@@ -456,6 +611,18 @@ class Grid implements Renderable, Responsable
         }
 
         $meta = array_filter($meta);
+
+        if ($this->editUrl !== null && ($editUrl = ($this->editUrl)($model)) !== null) {
+            $meta['editUrl'] = $editUrl;
+        }
+
+        // Left out means every row action; an empty list (none allowed) is still sent.
+        if (array_filter($rowActions, fn (Action $action) => $action->hasVisibility()) !== []) {
+            $meta['actions'] = array_values(array_map(
+                fn (Action $action) => $action->key(),
+                array_filter($rowActions, fn (Action $action) => $action->isVisibleFor($model)),
+            ));
+        }
 
         return $row + ($meta !== [] ? ['_meta' => $meta] : []);
     }
