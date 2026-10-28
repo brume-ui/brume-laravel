@@ -1,5 +1,6 @@
 <?php
 
+use Brume\Grid\Filters\FilterInput;
 use Brume\Grid\Filters\Filters;
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
@@ -302,13 +303,55 @@ it('labels a remote filter with one query for all its values', function () {
         ->and($userQueries)->toHaveCount(1);
 });
 
-it('applies a default until the URL sets the filter', function () {
-    $grid = filterGrid(fn (Filters $f) => $f->equal('status', '狀態')->select(FILTER_STATUSES)->default('shipped'));
+it('applies defaults only while the URL has no filter parameter', function (array $query, array $ids, array $echoed) {
+    $grid = filterGrid(function (Filters $f) {
+        $f->equal('status', '狀態')->select(FILTER_STATUSES)->default('shipped');
+        $f->between('amount', '金額')->number()->default(['start' => '400']);
+        $f->like('customer', '客戶');
+    });
 
-    expect(filterIds(filterPage($grid)))->toBe([3])
-        ->and(filterPage($grid)['query']['filters'])->toEqual((object) ['status' => 'shipped'])
-        ->and(filterIds(filterPage($grid, ['filter' => ['status' => 'paid']])))->toBe([1]);
+    $page = filterPage($grid, $query);
+
+    expect(filterIds($page))->toBe($ids)
+        ->and($page['query']['filters'])->toEqual((object) $echoed)
+        ->and(array_column($page['appliedFilters'], 'key'))->toBe(array_keys($echoed));
+})->with([
+    'no filter parameter' => [[], [3], ['status' => 'shipped', 'amount' => ['start' => '400']]],
+    'another filter' => [['filter' => ['customer' => 'a']], [1, 2, 3], ['customer' => 'a']],
+    'the filter itself, empty' => [['filter' => ['status' => '']], [1, 2, 3, 4], []],
+    'the filter itself, set' => [['filter' => ['status' => 'paid']], [1], ['status' => 'paid']],
+    'a filter the grid does not have' => [['filter' => ['nope' => 'x']], [1, 2, 3, 4], []],
+]);
+
+it('reads ?filter[status]= from the URL as defaults off', function () {
+    $grid = filterGrid(fn (Filters $f) => $f->equal('status', '狀態')->default('shipped'));
+    app()->setLocale('zh_TW');
+
+    $page = $grid->toSchema(Request::create('/admin/orders?filter[status]='));
+
+    expect(filterIds($page))->toBe([1, 2, 3, 4])
+        ->and($page['appliedFilters'])->toBe([]);
 });
+
+it('ignores a list filter with more than 100 values', function () {
+    $grid = filterGrid(fn (Filters $f) => $f->in('status', '狀態')->multipleSelect(FILTER_STATUSES));
+    $many = array_merge(['paid'], array_fill(0, FilterInput::MAX_LIST, 'shipped'));
+
+    expect(filterIds(filterPage($grid, ['filter' => ['status' => $many]])))->toBe([1, 2, 3, 4])
+        ->and(filterIds(filterPage($grid, ['filter' => ['status' => array_slice($many, 0, FilterInput::MAX_LIST)]])))->toBe([1, 3]);
+});
+
+it('takes only a four-digit year', function (string $year, array $ids) {
+    $grid = filterGrid(fn (Filters $f) => $f->year('year', '年', 'created_at'));
+
+    expect(filterIds(filterPage($grid, ['filter' => ['year' => $year]])))->toBe($ids);
+})->with([
+    'a year' => ['2025', [4]],
+    'exponent' => ['2e3', [1, 2, 3, 4]],
+    'negative' => ['-2025', [1, 2, 3, 4]],
+    'decimal' => ['2025.0', [1, 2, 3, 4]],
+    'five digits' => ['20250', [1, 2, 3, 4]],
+]);
 
 it('ignores filter values of the wrong shape and answers 200', function (array $query) {
     $this->actingAs(brumeUser(), 'brume');
@@ -367,6 +410,8 @@ it('rejects invalid declarations', function (Closure $declare, string $message) 
     'an unknown group operator' => [fn (Filters $f) => $f->group('a', 'A', ['gt', 'between']), 'between'],
     'an unknown column filter' => [fn (Filters $f, Grid $g) => $g->column('a')->filter('regex'), 'regex'],
     'a key with brackets' => [fn (Filters $f) => $f->equal('a[b]', 'A'), 'a[b]'],
+    'a date group' => [fn (Filters $f) => $f->group('a', 'A')->date(), 'group 篩選只支援 text 或 number；日期請用 between()->date()'],
+    'a relation search column' => [fn (Filters $f) => $f->equal('a', 'A')->remoteSelect(User::class, 'name', searchColumns: ['name', 'roles.name']), 'roles.name'],
 ]);
 
 it('outputs column.filter for a header filter', function () {

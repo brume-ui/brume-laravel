@@ -88,6 +88,10 @@ class Filter
      */
     public function date(bool $withTime = false): static
     {
+        if ($this->condition->type() === 'group') {
+            throw new InvalidArgumentException("篩選「{$this->label}」：group 篩選只支援 text 或 number；日期請用 between()->date()。");
+        }
+
         if ($this->isRange()) {
             $this->input = FilterInput::range($withTime ? 'datetime' : 'date');
 
@@ -135,8 +139,12 @@ class Filter
     }
 
     /**
-     * The value used while the URL has none for this filter, in the URL's shape: a string, a list,
-     * ['start' => ..., 'end' => ...] or ['op' => ..., 'value' => ...].
+     * The value used while the URL has no filter[...] parameter at all, in the URL's shape: a
+     * string, a list, ['start' => ..., 'end' => ...] or ['op' => ..., 'value' => ...].
+     *
+     * Any filter in the URL (even another one, or filter[key]= left empty) turns every default
+     * off, so the chips show exactly what applies. Clearing the last chip leaves no filter
+     * parameter, so the defaults come back: 清除所有篩選 = 回到預設.
      */
     public function default(mixed $value): static
     {
@@ -199,16 +207,21 @@ class Filter
     }
 
     /**
-     * The value in filter[key], else the default; null when neither is usable.
+     * The value in filter[key], else the default when $useDefault; null when neither is usable.
      *
      * @internal
      */
-    public function parse(mixed $raw): mixed
+    public function parse(mixed $raw, bool $useDefault = false): mixed
     {
-        $value = $this->input->parse($raw ?? $this->default);
+        $value = $this->input->parse($raw ?? ($useDefault ? $this->default : null));
 
         // A set item never holds the separator.
         if ($this->condition->type() === 'findInSet' && is_string($value) && str_contains($value, ',')) {
+            return null;
+        }
+
+        // A whole year, not 1e3, -5 or 2026.5.
+        if ($this->condition->type() === 'year' && is_string($value) && ! (strlen($value) === 4 && ctype_digit($value))) {
             return null;
         }
 

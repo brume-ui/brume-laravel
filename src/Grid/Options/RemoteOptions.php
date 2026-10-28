@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 /**
  * Options a remote select loads page by page from a model: GET endpoints.options/{source}
@@ -18,6 +19,9 @@ final class RemoteOptions
     public const DEFAULT_PER_PAGE = 20;
 
     public const MAX_PER_PAGE = 50;
+
+    /** value[] resolves at most this many values; the rest are left out. */
+    public const MAX_VALUES = 100;
 
     /**
      * @param  list<string>  $searchColumns
@@ -36,6 +40,12 @@ final class RemoteOptions
     public static function make(string|Builder $model, string $labelColumn, ?string $valueColumn = null, array $searchColumns = []): self
     {
         $query = is_string($model) ? $model::query() : $model;
+
+        foreach ($searchColumns === [] ? [$labelColumn] : $searchColumns as $column) {
+            if (str_contains($column, '.')) {
+                throw new InvalidArgumentException("遠端選項的搜尋欄位「{$column}」是關聯欄位，目前還不支援，請改用模型本身的欄位。");
+            }
+        }
 
         return new self(
             $query,
@@ -133,7 +143,7 @@ final class RemoteOptions
     }
 
     /**
-     * value[]=a&value[]=b, or a single value=a.
+     * value[]=a&value[]=b, or a single value=a; at most MAX_VALUES of them.
      *
      * @return list<string>
      */
@@ -141,6 +151,8 @@ final class RemoteOptions
     {
         $values = is_array($value) ? $value : [$value];
 
-        return array_values(array_unique(array_filter($values, fn ($v) => is_string($v) && $v !== '')));
+        $values = array_values(array_unique(array_filter($values, fn ($v) => is_string($v) && $v !== '')));
+
+        return array_slice($values, 0, self::MAX_VALUES);
     }
 }

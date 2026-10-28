@@ -10,9 +10,6 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class Selector
 {
-    /** @var list<array{value: string, label: string}> */
-    protected array $options;
-
     protected FilterInput $input;
 
     /**
@@ -25,7 +22,6 @@ final class Selector
         protected bool $multiple,
         protected FilterCondition $condition,
     ) {
-        $this->options = FilterInput::options($options);
         $this->input = FilterInput::choice($multiple ? 'checkbox' : 'radio', $options);
     }
 
@@ -40,9 +36,11 @@ final class Selector
     }
 
     /**
+     * Selectors have no default, so $useDefault changes nothing.
+     *
      * @internal
      */
-    public function parse(mixed $raw): mixed
+    public function parse(mixed $raw, bool $useDefault = false): mixed
     {
         return $this->input->parse($raw);
     }
@@ -74,6 +72,6 @@ final class Selector
     {
         $this->input->validate($this->label);
 
-        return ['key' => $this->key, 'label' => $this->label, 'multiple' => $this->multiple, 'options' => $this->options];
+        return ['key' => $this->key, 'label' => $this->label, 'multiple' => $this->multiple, 'options' => $this->input->choices()];
     }
 }

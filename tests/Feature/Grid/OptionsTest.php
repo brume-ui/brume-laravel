@@ -86,6 +86,17 @@ it('turns value[] back into labels', function () {
         ->toBe([['value' => optionsId(4), 'label' => 'Ada 04'], ['value' => optionsId(2), 'label' => 'Ada 02']]);
 });
 
+it('resolves at most 100 values', function () {
+    optionsUsers(3);
+    optionsRoutes();
+    $values = [...array_map(fn (int $i) => "missing-{$i}", range(1, RemoteOptions::MAX_VALUES)), optionsId(2)];
+
+    $response = $this->getJson('/admin/orders/_brume/options/customer?'.http_build_query(['value' => $values]))->assertOk();
+
+    expect($response->json('data'))->toBe([])
+        ->and($response->json('pagination.perPage'))->toBe(RemoteOptions::MAX_VALUES);
+});
+
 it('answers an unknown or non-remote source with a 404 ErrorResponse', function (string $source) {
     optionsRoutes();
 

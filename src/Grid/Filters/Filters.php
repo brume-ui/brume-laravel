@@ -303,19 +303,20 @@ class Filters
     }
 
     /**
-     * The usable values of the request's `filter` parameter (defaults included), keyed by filter.
+     * The usable values of the request's `filter` parameter, keyed by filter. Defaults apply only
+     * when $useDefaults, i.e. the request has no `filter` parameter at all (Filter::default()).
      *
      * @internal
      *
      * @return array<string, mixed>
      */
-    public function values(mixed $filter): array
+    public function values(mixed $filter, bool $useDefaults = false): array
     {
         $filter = is_array($filter) ? $filter : [];
         $values = [];
 
         foreach ($this->filters as $key => $definition) {
-            $value = $definition->parse($filter[$key] ?? null);
+            $value = $definition->parse($filter[$key] ?? null, $useDefaults);
 
             if ($value !== null) {
                 $values[$key] = $value;

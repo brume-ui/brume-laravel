@@ -13,6 +13,9 @@ use InvalidArgumentException;
  */
 final class FilterInput
 {
+    /** A list value with more items than this is malformed (it would bind that many parameters). */
+    public const MAX_LIST = 100;
+
     /**
      * @param  array<string, mixed>  $props
      */
@@ -73,6 +76,16 @@ final class FilterInput
     public function isList(): bool
     {
         return in_array($this->type, ['multipleSelect', 'checkbox'], true);
+    }
+
+    /**
+     * The fixed options of a choice input.
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    public function choices(): array
+    {
+        return $this->props['options'] ?? [];
     }
 
     public function remoteOptions(): ?RemoteOptions
@@ -152,7 +165,7 @@ final class FilterInput
         if ($this->isList()) {
             $values = is_string($raw) ? [$raw] : $raw;
 
-            if (! is_array($values) || ! array_is_list($values)) {
+            if (! is_array($values) || ! array_is_list($values) || count($values) > self::MAX_LIST) {
                 return null;
             }
 

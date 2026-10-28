@@ -32,7 +32,7 @@ final class GridQuery
             perPage: self::perPage($request->query('per_page'), $grid),
             sort: self::sort($request->query('sort'), $grid),
             q: $grid->searchable() ? self::search($request->query('q')) : null,
-            filters: $grid->filters()->values($request->query('filter')),
+            filters: $grid->filters()->values($request->query('filter'), useDefaults: ! $request->query->has('filter')),
             scope: $grid->filters()->scopeKey($request->query('scope')),
         );
     }
