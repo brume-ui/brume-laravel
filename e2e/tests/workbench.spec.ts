@@ -8,11 +8,37 @@ test.beforeEach(async ({ page }) => {
   await login(page);
 });
 
-test('the dashboard renders the registered demo-chart, not a missing-component alert', async ({ page }) => {
-  const chart = page.locator('[data-demo-chart]');
-  await expect(chart.getByRole('heading', { name: '近 6 個月營收' })).toBeVisible();
-  await expect(chart.getByRole('img', { name: /^近 6 個月營收：5 月 NT\$ / })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '訂單總數' })).toBeVisible();
+test('the dashboard renders the stat cards and charts from the seeded orders, no missing-component alert', async ({
+  page,
+}) => {
+  const stats = page.locator('[data-kpi-row] [data-stat-card]');
+  await expect(stats).toHaveCount(4);
+  for (const [label, hint] of [
+    ['營收', '10 月，統計至 10/27'],
+    ['訂單數', '10 月，含已取消 2 筆'],
+    ['平均客單價', '10 月，不含已取消的訂單'],
+    ['新客戶', '10 月第一次下單的客戶'],
+  ]) {
+    const card = page.getByRole('group', { name: label, exact: true });
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(hint);
+    await expect(card).toContainText('上月');
+  }
+  // October: 9 orders, 2 cancelled; the other 7 total NT$39,620.
+  await expect(page.getByRole('group', { name: '訂單數', exact: true })).toContainText('9');
+  await expect(page.getByRole('group', { name: '營收', exact: true })).toContainText('39,620');
+
+  for (const [chart, title] of [
+    ['line', '每週營收'],
+    ['donut', '訂單狀態'],
+    ['bar', '分類營收'],
+  ]) {
+    await expect(page.locator(`[data-chart-card="${chart}"]`).getByRole('figure', { name: title })).toBeVisible();
+  }
+  // The donut's data table lists every status with its count over the 60 seeded orders.
+  const donut = page.getByRole('figure', { name: '訂單狀態' });
+  await expect(donut.getByRole('table')).toContainText('已取消');
+  await expect(page.getByRole('heading', { name: '待處理訂單' })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -41,7 +67,7 @@ test('元件展示 shows the kit and its interactions work', async ({ page }) =>
   await page.getByRole('link', { name: '元件展示' }).click();
   await expect(page).toHaveURL(/\/admin\/components$/);
   const showcase = page.locator('[data-component-showcase]');
-  for (const section of ['按鈕', '表單欄位', '通知', '彈窗與確認', '資料表與分頁', '卡片、空狀態與骨架', '頁首與麵包屑']) {
+  for (const section of ['按鈕', '表單欄位', '通知', '彈窗與確認', '資料表與分頁', '卡片、空狀態與骨架', '頁首與麵包屑', '圖表']) {
     await expect(showcase.getByRole('heading', { name: section, exact: true })).toBeVisible();
   }
   await expect(page.getByRole('navigation', { name: '麵包屑' })).toContainText('元件展示');
@@ -84,4 +110,13 @@ test('元件展示 shows the kit and its interactions work', async ({ page }) =>
   await expect(showcase.getByRole('cell', { name: '亞麻餐墊 09' })).toBeVisible();
   await expect(showcase.getByRole('cell', { name: '霧面馬克杯 01' })).toHaveCount(0);
   await expect(page).toHaveURL(/\/admin\/components$/);
+
+  // The 圖表 section shows each chart and links to the dashboard.
+  for (const title of ['本週每日營收', '各通路訂單數', '付款方式']) {
+    await expect(showcase.getByRole('figure', { name: title })).toBeVisible();
+  }
+  await expect(showcase.getByRole('group', { name: '本週營收' })).toBeVisible();
+  await showcase.getByRole('link', { name: '儀表板' }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.locator('[data-kpi-row]')).toBeVisible();
 });

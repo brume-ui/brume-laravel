@@ -146,14 +146,16 @@ serves it. After editing the workbench's `.tsx` files, run `composer build-front
 
 What's in it:
 
-- **儀表板**: text cards with order figures and `demo-chart`, a registered component
-  (`components/DemoChart.tsx`) drawing monthly revenue from PHP-supplied props.
+- **儀表板**: brume-react's chart components (`StatCard`, `LineChart`, `DonutChart`,
+  `BarChart`) fed from the seeded orders: `DashboardController` computes the figures and passes
+  them as props to the registered `KpiRow` and `ChartCard` components (`components/`).
 - **訂單**: a Grid over 60 seeded orders (`workbench/database`): numeric amount, a status
   column rendered by the registered `OrderStatus` cell component, `created_at` formatted with
   `display()`, 15 per page.
 - **元件展示**: every public brume-react component (buttons, inputs, Field, Card, EmptyState,
-  Skeleton, DataTable + Pagination, Dialog, confirm, toasts, PageHeader; breadcrumbs come from
-  the shell) in the real shell, as one registered component (`components/ComponentShowcase.tsx`).
+  Skeleton, DataTable + Pagination, Dialog, confirm, toasts, PageHeader, the charts; breadcrumbs
+  come from the shell) in the real shell, as one registered component
+  (`components/ComponentShowcase.tsx`). Its 圖表 section links to the dashboard.
 - **系統 → 管理員**: the admins list with 36 seeded admins.
 - Not in the menu, used by the e2e suite: `/admin/_demo/toast` (flashes the same toast every
   time) and `/admin/_demo/missing-component` (the guidance shown for an unregistered component).

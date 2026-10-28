@@ -16,6 +16,7 @@ return new class extends Migration
             // Whole New Taiwan dollars.
             $table->unsignedInteger('amount');
             $table->string('status', 16)->index();
+            $table->string('category', 16);
             $table->timestamps();
         });
     }

@@ -13,7 +13,8 @@ Route::get('users', AdminUserController::class)->name('brume.users.index');
 Route::get('orders', OrderController::class)->name('brume.orders.index');
 
 // 元件展示: one registered component (ComponentShowcase.tsx) that renders the whole brume-react kit.
-Route::get('components', fn () => Dashboard::make('元件展示')->component('ComponentShowcase'))
+Route::get('components', fn () => Dashboard::make('元件展示')
+    ->component('ComponentShowcase', ['dashboardUrl' => route('brume.home')]))
     ->name('brume.components');
 
 // Workbench only: flashes the same toast every time, for the "identical flash twice" check.

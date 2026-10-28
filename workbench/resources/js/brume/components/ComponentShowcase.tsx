@@ -1,31 +1,37 @@
 import {
+  BarChart,
   Button,
   Card,
   Checkbox,
   type DataColumn,
   DataTable,
   Dialog,
+  DonutChart,
   EmptyState,
   Field,
   IconButton,
+  LineChart,
   PageHeader,
   Pagination,
   PasswordInput,
   Select,
   Skeleton,
+  Sparkline,
+  StatCard,
   TextInput,
   toast,
   useConfirm,
 } from '@brume-ui/brume-react';
+import { Link } from '@inertiajs/react';
 import { Download, Inbox, Pencil, Plus, Trash2 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 /**
  * 元件展示 (workbench menu): every public brume-react component inside the real shell, so the
  * kit can be judged as a whole. Registered in ../components.ts and placed on a Dashboard page
- * by workbench/routes/brume.php. Spans the full dashboard grid.
+ * by workbench/routes/brume.php, which passes the dashboard's URL. Spans the full dashboard grid.
  */
-export function ComponentShowcase() {
+export function ComponentShowcase({ dashboardUrl }: { dashboardUrl: string }) {
   return (
     <div className="flex flex-col gap-4 md:col-span-2 xl:col-span-3" data-component-showcase>
       <p className="text-sm text-text-muted">
@@ -41,6 +47,9 @@ export function ComponentShowcase() {
         </div>
         <CardsSection />
         <PageSection />
+        <div className="xl:col-span-2">
+          <ChartsSection dashboardUrl={dashboardUrl} />
+        </div>
       </div>
     </div>
   );
@@ -392,6 +401,81 @@ function PageSection() {
               </Button>
             }
           />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+const TWD = { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 } as const;
+
+const VISITS = [3120, 2980, 3410, 3650, 3290, 4020, 4380];
+
+const WEEK = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25'].map(
+  (date, i) => ({ date, online: [41200, 38900, 44100, 46800, 43500, 58200, 61900][i], store: [28400, 26100, 27900, 29300, 31800, 39600, 42100][i] }),
+);
+
+const CHANNELS = [
+  { channel: '官網', orders: 486 },
+  { channel: 'App', orders: 352 },
+  { channel: '門市', orders: 298 },
+  { channel: '電話', orders: 64 },
+];
+
+const PAYMENTS = [
+  { label: '信用卡', value: 612 },
+  { label: '行動支付', value: 388 },
+  { label: '貨到付款', value: 141 },
+  { label: '轉帳', value: 59 },
+];
+
+function ChartsSection({ dashboardUrl }: { dashboardUrl: string }) {
+  return (
+    <Card title="圖表">
+      <div className="flex flex-col gap-5">
+        <p className="text-sm text-text-muted">
+          數字卡、迷你趨勢、折線、長條和甜甜圈。滑過圖表或用 Tab 移到圖上再按方向鍵看數值，點圖例可以隱藏數列。
+          <Link href={dashboardUrl} className="font-semibold text-accent-tint-text underline underline-offset-2">
+            儀表板
+          </Link>
+          用同一組元件畫 PHP 算出的訂單資料。
+        </p>
+        <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+          <StatCard
+            className="border border-border"
+            label="本週營收"
+            value={503800}
+            format={TWD}
+            delta={{ value: 0.084, period: '上週' }}
+            trend={[412000, 438000, 465000, 503800]}
+            hint="統計至週日 24:00"
+          />
+          <div className="flex flex-col gap-2 rounded-card border border-border p-4">
+            <h3 className="text-sm font-semibold text-text-muted">Sparkline（近 7 天造訪）</h3>
+            <Sparkline data={VISITS} label="近 7 天造訪" />
+          </div>
+        </div>
+        <LineChart
+          title="本週每日營收"
+          data={WEEK}
+          xKey="date"
+          xType="time"
+          series={[
+            { key: 'online', label: '線上' },
+            { key: 'store', label: '門市' },
+          ]}
+          valueFormat={TWD}
+          height={220}
+        />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <BarChart
+            title="各通路訂單數"
+            data={CHANNELS}
+            categoryKey="channel"
+            series={[{ key: 'orders', label: '訂單數' }]}
+            orientation="horizontal"
+          />
+          <DonutChart title="付款方式" data={PAYMENTS} centerLabel="筆訂單" size={160} />
         </div>
       </div>
     </Card>

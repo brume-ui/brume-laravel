@@ -25,6 +25,8 @@ class OrderFactory extends Factory
                 'pending', 'paid', 'paid', 'shipped', 'shipped',
                 'completed', 'completed', 'completed', 'completed', 'cancelled',
             ]),
+            // Lazy, so a state that sets the category (the seeder) draws nothing here.
+            'category' => fn () => $this->faker->randomElement(Order::CATEGORIES),
         ];
     }
 

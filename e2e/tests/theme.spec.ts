@@ -77,6 +77,9 @@ for (const scheme of ['light', 'dark'] as const) {
     await useScheme(page, scheme);
     await login(page);
     await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+    // The dashboard: stat cards and the three charts.
+    await expect(page.locator('[data-stat-card]')).toHaveCount(4);
+    await expect(page.locator('[data-chart-card] figure')).toHaveCount(3);
     const violations = await axeViolations(page);
 
     await page.goto('/admin/users');
@@ -89,6 +92,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
     await page.goto('/admin/components');
     await expect(page.locator('[data-component-showcase]')).toBeVisible();
+    await expect(page.locator('[data-component-showcase] figure')).toHaveCount(3);
     violations.push(...(await axeViolations(page)));
 
     expect(violations).toEqual([]);

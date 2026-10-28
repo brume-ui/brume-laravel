@@ -9,6 +9,8 @@ use Faker\Generator;
 use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Random\Engine\Mt19937;
+use Random\Randomizer;
 use Workbench\App\Models\Order;
 
 /**
@@ -67,15 +69,20 @@ class DatabaseSeeder extends Seeder
 
         $last = CarbonImmutable::parse(self::LAST_ORDER_AT);
 
+        // Categories come from their own engine, not Faker: seeding a Faker reseeds PHP's global
+        // mt_rand, which would change every other order field (customers, amounts, statuses).
+        $categories = new Randomizer(new Mt19937(20261029));
+
         Order::factory()
             ->count(self::ORDERS)
-            ->state(new Sequence(function (Sequence $sequence) use ($last) {
+            ->state(new Sequence(function (Sequence $sequence) use ($last, $categories) {
                 $createdAt = $last
                     ->subDays((self::ORDERS - 1 - $sequence->index) * 3)
                     ->subMinutes(($sequence->index * 97) % 480);
 
                 return [
                     'number' => sprintf('BR-%s-%03d', $createdAt->format('Ymd'), $sequence->index + 1),
+                    'category' => Order::CATEGORIES[$categories->getInt(0, count(Order::CATEGORIES) - 1)],
                     'created_at' => $createdAt,
                     'updated_at' => $createdAt,
                 ];
