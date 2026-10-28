@@ -11,16 +11,23 @@ use Illuminate\Support\Facades\Route;
 use Workbench\App\Models\Order;
 
 /**
- * Users named by $names (username "u{n}", in order, so ids follow the list).
+ * Users named by $names (username "u{n}", in order), and their ids in the same order. The ids
+ * are read back rather than assumed to start at 1: MySQL does not reset AUTO_INCREMENT when
+ * RefreshDatabase rolls a test back.
  *
  * @param  list<string>  $names
+ * @return list<int>
  */
-function queryUsers(array $names): void
+function queryUsers(array $names): array
 {
     // A bulk insert skips the hashed password cast, which is slow for many rows.
     User::query()->insert(array_map(fn (int $i, string $name) => [
         'username' => 'u'.($i + 1), 'password' => 'x', 'name' => $name, 'created_at' => now(), 'updated_at' => now(),
     ], array_keys($names), array_values($names)));
+
+    $ids = User::query()->whereIn('username', array_map(fn (int $i) => 'u'.($i + 1), array_keys($names)))->pluck('id', 'username');
+
+    return array_map(fn (int $i) => $ids['u'.($i + 1)], array_keys($names));
 }
 
 function queryGrid(): Grid
@@ -51,7 +58,24 @@ function portableSql(string $sql): string
  */
 function pageSelect(): string
 {
-    return portableSql(collect(DB::getQueryLog())->pluck('query')->last(fn ($sql) => str_contains($sql, 'limit')));
+    return collect(DB::getQueryLog())->pluck('query')->last(fn ($sql) => str_contains($sql, 'limit'));
+}
+
+/**
+ * The SELECT a page of 10 users ordered by $orders ([column, direction] pairs) runs, written by
+ * the connection's own grammar so the comparison holds on any driver.
+ *
+ * @param  list<array{0: string, 1: string}>  $orders
+ */
+function usersPageSql(array $orders): string
+{
+    $query = User::query();
+
+    foreach ($orders as [$column, $direction]) {
+        $query->orderBy($column, $direction);
+    }
+
+    return $query->limit(10)->offset(0)->toSql();
 }
 
 it('sorts by a sortable column, descending with a leading minus', function () {
@@ -65,14 +89,14 @@ it('sorts by a sortable column, descending with a leading minus', function () {
 });
 
 it('ignores a sort on an undeclared, unknown or non-sortable key', function (mixed $sort) {
-    $this->actingAs(brumeUser(), 'brume');
+    $this->actingAs($user = brumeUser(), 'brume');
     Route::middleware([...config('brume.route.middleware'), HandleBrumeRequests::class])->get('/grid-sort', fn () => queryGrid());
 
     $page = $this->get('/grid-sort?'.http_build_query(['sort' => $sort]))->assertOk()
         ->viewData('page')['props']['envelope']['page'];
 
     expect($page['query'])->not->toHaveKey('sort')
-        ->and(array_column($page['rows'], 'id'))->toBe([1]);
+        ->and(array_column($page['rows'], 'id'))->toBe([$user->id]);
 })->with([
     'password' => ['password'],
     'unknown' => ['unknown'],
@@ -83,25 +107,25 @@ it('ignores a sort on an undeclared, unknown or non-sortable key', function (mix
 ]);
 
 it('sort by a non-unique column adds a primary key tiebreaker', function () {
-    queryUsers(['Same', 'Same', 'Same']);
+    $ids = queryUsers(['Same', 'Same', 'Same']);
     DB::enableQueryLog();
 
     $page = queryPage(queryGrid(), ['sort' => '-name']);
 
-    expect(pageSelect())->toContain('order by "name" desc, "brume_users"."id" asc limit')
-        ->and(array_column($page['rows'], 'id'))->toBe([1, 2, 3]);
+    expect(pageSelect())->toBe(usersPageSql([['name', 'desc'], ['brume_users.id', 'asc']]))
+        ->and(array_column($page['rows'], 'id'))->toBe($ids);
 });
 
 it('does not repeat the primary key when sorting by it', function () {
-    queryUsers(['A', 'B']);
+    [$a, $b] = queryUsers(['A', 'B']);
     $grid = queryGrid();
     $grid->column('id')->sortable();
     DB::enableQueryLog();
 
     $page = queryPage($grid, ['sort' => '-id']);
 
-    expect(pageSelect())->toContain('order by "id" desc limit')
-        ->and(array_column($page['rows'], 'id'))->toBe([2, 1]);
+    expect(pageSelect())->toBe(usersPageSql([['id', 'desc']]))
+        ->and(array_column($page['rows'], 'id'))->toBe([$b, $a]);
 });
 
 it('replaces the query\'s own order when a sort applies', function () {
@@ -111,18 +135,18 @@ it('replaces the query\'s own order when a sort applies', function () {
     DB::enableQueryLog();
 
     expect(array_column(queryPage($grid, ['sort' => 'name'])['rows'], 'name'))->toBe(['A', 'B', 'C'])
-        ->and(pageSelect())->not->toContain('"username" desc')
+        ->and(portableSql(pageSelect()))->not->toContain('"username" desc')
         ->and(array_column(queryPage($grid)['rows'], 'name'))->toBe(['C', 'A', 'B']);
 });
 
 it('sorts with a closure, which also serves dotted keys', function () {
-    queryUsers(['B', 'A']);
+    [$b, $a] = queryUsers(['B', 'A']);
     $grid = Grid::make(User::class);
     $grid->column('profile.name')->sortable(fn ($query, string $direction) => $query->orderBy('name', $direction));
 
     $page = queryPage($grid, ['sort' => 'profile.name']);
 
-    expect(array_column($page['rows'], 'id'))->toBe([2, 1])
+    expect(array_column($page['rows'], 'id'))->toBe([$a, $b])
         ->and($page['query']['sort'])->toBe(['key' => 'profile.name', 'direction' => 'asc']);
 });
 
@@ -138,7 +162,7 @@ it('applies defaultSort on the server without echoing it in query.sort', functio
     $page = queryPage($grid);
 
     expect(array_column($page['rows'], 'name'))->toBe(['C', 'B', 'A'])
-        ->and(pageSelect())->toContain('order by "name" desc, "brume_users"."id" asc')
+        ->and(pageSelect())->toBe(usersPageSql([['name', 'desc'], ['brume_users.id', 'asc']]))
         // R11: only a sort from the URL is echoed, so the header's sort cycle can reach "unsorted".
         ->and($page['query'])->not->toHaveKey('sort')
         ->and($page['columns'][1])->toMatchArray(['key' => 'name', 'sortable' => true]);
@@ -184,29 +208,29 @@ it('rejects per-page options that are not positive integers', function (array $o
 ])->throws(InvalidArgumentException::class);
 
 it('quick-searches the declared columns with OR', function () {
-    queryUsers(['Ada Lovelace', 'Grace Hopper', 'Alan Turing']);
-    User::query()->whereKey(3)->update(['username' => 'ada_fan']);
+    [$ada, , $alan] = queryUsers(['Ada Lovelace', 'Grace Hopper', 'Alan Turing']);
+    User::query()->whereKey($alan)->update(['username' => 'ada_fan']);
     $grid = queryGrid()->quickSearch('username', 'name');
     // HandleBrumeRequests sets the locale per request; this calls toSchema() directly.
     app()->setLocale('zh_TW');
 
     $page = queryPage($grid, ['q' => 'ada']);
 
-    expect(array_column($page['rows'], 'id'))->toBe([1, 3])
+    expect(array_column($page['rows'], 'id'))->toBe([$ada, $alan])
         ->and($page['query']['q'])->toBe('ada')
         ->and($page['appliedFilters'])->toBe([['key' => 'q', 'label' => '搜尋', 'display' => 'ada']]);
 });
 
-it('quick search treats LIKE wildcards literally', function (string $q, array $ids) {
+it('quick search treats LIKE wildcards literally', function (string $q, array $names) {
     queryUsers(['50%off', '500ff', 'a_b', 'axb', 'x!y']);
     $grid = queryGrid()->quickSearch('name');
 
-    expect(array_column(queryPage($grid, ['q' => $q])['rows'], 'id'))->toBe($ids);
+    expect(array_column(queryPage($grid, ['q' => $q])['rows'], 'name'))->toBe($names);
 })->with([
-    'percent' => ['50%', [1]],
-    'underscore' => ['a_b', [3]],
-    'escape character' => ['x!y', [5]],
-    'plain' => ['50', [1, 2]],
+    'percent' => ['50%', ['50%off']],
+    'underscore' => ['a_b', ['a_b']],
+    'escape character' => ['x!y', ['x!y']],
+    'plain' => ['50', ['50%off', '500ff']],
 ]);
 
 it('quick search ignores case', function () {
@@ -218,14 +242,14 @@ it('quick search ignores case', function () {
 });
 
 it('quick-searches a relation column and a closure', function () {
-    queryUsers(['Ada', 'Bob', 'Cy']);
+    [, $bob, $cy] = queryUsers(['Ada', 'Bob', 'Cy']);
     User::resolveRelationUsing('orders', fn (User $user) => $user->hasMany(Order::class, 'customer', 'username'));
     Order::factory()->create(['number' => 'BR-777', 'customer' => 'u2']);
 
     $grid = queryGrid()->quickSearch('orders.number', fn ($query, string $term) => $query->where('name', $term));
 
-    expect(array_column(queryPage($grid, ['q' => 'br-77'])['rows'], 'id'))->toBe([2])
-        ->and(array_column(queryPage($grid, ['q' => 'Cy'])['rows'], 'id'))->toBe([3]);
+    expect(array_column(queryPage($grid, ['q' => 'br-77'])['rows'], 'id'))->toBe([$bob])
+        ->and(array_column(queryPage($grid, ['q' => 'Cy'])['rows'], 'id'))->toBe([$cy]);
 });
 
 it('requires at least one quick search column', function () {

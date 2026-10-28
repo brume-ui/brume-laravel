@@ -177,8 +177,8 @@ it('orders by the qualified primary key when the query has no order', function (
     $schema = Grid::make(User::class)->toSchema(Request::create('/'));
 
     $select = collect(DB::getQueryLog())->pluck('query')->first(fn ($sql) => str_contains($sql, 'limit'));
-    expect($select)->toContain('order by "brume_users"."id" asc')
-        ->and(array_column($schema['rows'], 'id'))->toBe([1, 2, 3]);
+    expect($select)->toBe(User::query()->orderBy('brume_users.id')->limit(20)->offset(0)->toSql())
+        ->and(array_column($schema['rows'], 'id'))->toBe(User::query()->orderBy('id')->pluck('id')->all());
 });
 
 it('keeps an order the query already has', function () {
@@ -188,7 +188,7 @@ it('keeps an order the query already has', function () {
     $schema = Grid::make(User::query()->orderByDesc('username'))->toSchema(Request::create('/'));
 
     $select = collect(DB::getQueryLog())->pluck('query')->first(fn ($sql) => str_contains($sql, 'limit'));
-    expect($select)->toContain('order by "username" desc')
-        ->not->toContain('"brume_users"."id"')
-        ->and(array_column($schema['rows'], 'id'))->toBe([3, 2, 1]);
+    // No primary-key tiebreaker is added after the query's own order.
+    expect($select)->toBe(User::query()->orderByDesc('username')->limit(20)->offset(0)->toSql())
+        ->and(array_column($schema['rows'], 'id'))->toBe(User::query()->orderByDesc('username')->pluck('id')->all());
 });

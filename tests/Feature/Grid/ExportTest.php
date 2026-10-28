@@ -4,6 +4,7 @@ use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Models\User;
 use Brume\Tests\Support\JsonSchema;
+use Brume\Tests\Support\Models\CodeItem;
 use Brume\Tests\Support\Models\FilterItem;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Http\Request;
@@ -447,6 +448,30 @@ it('writes numbers cast as decimals or declared numeric() as numbers, other digi
         // decimal:2 gives the string "1250.00".
         ->and($row[2])->toEqual(1250)->not->toBeString()
         ->and($row[3])->toEqual(42)->not->toBeString();
+});
+
+it('writes a decimal column cast to decimal, or declared numeric(), as a number on every driver', function () {
+    // MySQL gives the decimal column as the string "1250.50" (SQLite as a float).
+    CodeItem::query()->create(['code' => 'a', 'name' => 'A', 'price' => '1250.50']);
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('prices', function () {
+            $grid = Grid::make(CodeItem::query()->withCasts(['price' => 'decimal:2']))->title('價格')->exportable();
+            $grid->column('price', '價格');
+
+            return $grid;
+        })->name('prices'));
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('numeric-prices', function () {
+            $grid = Grid::make(CodeItem::class)->title('價格')->exportable();
+            $grid->column('price', '價格')->numeric();
+
+            return $grid;
+        })->name('numeric-prices'));
+
+    expect(exportSheet($this->get('/admin/prices/_brume/export'))[1][0])->toEqual(1250.5)->not->toBeString()
+        ->and(exportSheet($this->get('/admin/numeric-prices/_brume/export'))[1][0])->toEqual(1250.5)->not->toBeString();
 });
 
 it('writes exportUsing dates as Y-m-d H:i:s, lists joined and a switchGroup as the labels that are on', function () {

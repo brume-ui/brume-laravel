@@ -52,6 +52,10 @@ final class RowLookup
      * The rows with these normalized, distinct ids, each once (a join that repeats a row does not
      * count twice), or null when any of them is not in the grid's query.
      *
+     * A string key must match exactly. A case-insensitive collation (MySQL's default) may return
+     * the row 'abc' for the id 'ABC'; the keys returned are compared with the ids as exact
+     * strings, so that id is not found, the same answer SQLite and PostgreSQL give.
+     *
      * @param  list<int|string>  $ids
      */
     public function find(array $ids): ?EloquentCollection
