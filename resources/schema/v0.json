@@ -19,9 +19,14 @@
               "required": [
                 "type",
                 "title",
+                "gridId",
                 "columns",
                 "rows",
-                "pagination"
+                "pagination",
+                "query",
+                "perPageOptions",
+                "appliedFilters",
+                "actions"
               ],
               "properties": {
                 "type": {
@@ -32,6 +37,9 @@
                   "type": "string"
                 },
                 "description": {
+                  "type": "string"
+                },
+                "gridId": {
                   "type": "string"
                 },
                 "columns": {
@@ -51,6 +59,9 @@
                       },
                       "numeric": {
                         "type": "boolean"
+                      },
+                      "width": {
+                        "type": "string"
                       },
                       "display": {
                         "anyOf": [
@@ -87,8 +98,475 @@
                                 }
                               }
                             }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "label",
+                                "type": "string"
+                              },
+                              "options": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {
+                                    "type": "object",
+                                    "required": [
+                                      "label",
+                                      "tone"
+                                    ],
+                                    "properties": {
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "tone": {
+                                        "anyOf": [
+                                          {
+                                            "const": "neutral",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "accent",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "success",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "warning",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "danger",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "info",
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "tone": {
+                                "anyOf": [
+                                  {
+                                    "const": "neutral",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "accent",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "success",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "warning",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "danger",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "info",
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "badge",
+                                "type": "string"
+                              },
+                              "tone": {
+                                "anyOf": [
+                                  {
+                                    "const": "neutral",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "accent",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "success",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "warning",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "danger",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "info",
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "link",
+                                "type": "string"
+                              },
+                              "external": {
+                                "type": "boolean"
+                              },
+                              "style": {
+                                "anyOf": [
+                                  {
+                                    "const": "text",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "button",
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "image",
+                                "type": "string"
+                              },
+                              "width": {
+                                "type": "number"
+                              },
+                              "height": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "length"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "limit",
+                                "type": "string"
+                              },
+                              "length": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "max"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "progress",
+                                "type": "string"
+                              },
+                              "max": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "qrcode",
+                                "type": "string"
+                              },
+                              "size": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "copyable",
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "downloadable",
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "expand",
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "modal",
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "columns"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "table",
+                                "type": "string"
+                              },
+                              "columns": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "required": [
+                                    "key",
+                                    "label"
+                                  ],
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              }
+                            }
                           }
                         ]
+                      },
+                      "editor": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "text",
+                                "type": "string"
+                              },
+                              "maxLength": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "textarea",
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "number",
+                                "type": "string"
+                              },
+                              "min": {
+                                "type": "number"
+                              },
+                              "max": {
+                                "type": "number"
+                              },
+                              "step": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "options"
+                            ],
+                            "properties": {
+                              "type": {
+                                "anyOf": [
+                                  {
+                                    "const": "select",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "radio",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "checkbox",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "options": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "required": [
+                                    "value",
+                                    "label"
+                                  ],
+                                  "properties": {
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "disabled": {
+                                      "type": "boolean"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "switch",
+                                "type": "string"
+                              },
+                              "onLabel": {
+                                "type": "string"
+                              },
+                              "offLabel": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "keys"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "switchGroup",
+                                "type": "string"
+                              },
+                              "keys": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "required": [
+                                    "key",
+                                    "label"
+                                  ],
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      "sortable": {
+                        "type": "boolean"
+                      },
+                      "filter": {
+                        "type": "string"
+                      },
+                      "hideable": {
+                        "type": "boolean"
+                      },
+                      "hiddenByDefault": {
+                        "type": "boolean"
+                      },
+                      "primary": {
+                        "type": "boolean"
                       }
                     }
                   }
@@ -112,6 +590,122 @@
                                 "type": "number"
                               }
                             ]
+                          },
+                          "_meta": {
+                            "type": "object",
+                            "properties": {
+                              "editUrl": {
+                                "type": "string"
+                              },
+                              "actions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "href": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "content": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "type",
+                                          "text"
+                                        ],
+                                        "properties": {
+                                          "type": {
+                                            "const": "text",
+                                            "type": "string"
+                                          },
+                                          "text": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "type",
+                                          "columns",
+                                          "rows"
+                                        ],
+                                        "properties": {
+                                          "type": {
+                                            "const": "table",
+                                            "type": "string"
+                                          },
+                                          "columns": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "required": [
+                                                "key",
+                                                "label"
+                                              ],
+                                              "properties": {
+                                                "key": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            }
+                                          },
+                                          "rows": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "patternProperties": {
+                                                "^(.*)$": {}
+                                              }
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "type",
+                                          "name"
+                                        ],
+                                        "properties": {
+                                          "type": {
+                                            "const": "component",
+                                            "type": "string"
+                                          },
+                                          "name": {
+                                            "type": "string"
+                                          },
+                                          "props": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                              "^(.*)$": {}
+                                            }
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                              "raw": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {}
+                                }
+                              }
+                            }
                           }
                         }
                       },
@@ -148,6 +742,995 @@
                     "lastPage": {
                       "minimum": 1,
                       "type": "integer"
+                    }
+                  }
+                },
+                "query": {
+                  "type": "object",
+                  "required": [
+                    "perPage",
+                    "filters"
+                  ],
+                  "properties": {
+                    "sort": {
+                      "type": "object",
+                      "required": [
+                        "key",
+                        "direction"
+                      ],
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "direction": {
+                          "anyOf": [
+                            {
+                              "const": "asc",
+                              "type": "string"
+                            },
+                            {
+                              "const": "desc",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "q": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string"
+                    },
+                    "perPage": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "filters": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "start": {
+                                  "type": "string"
+                                },
+                                "end": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "required": [
+                                "op",
+                                "value"
+                              ],
+                              "properties": {
+                                "op": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "perPageOptions": {
+                  "type": "array",
+                  "items": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "quickSearch": {
+                  "type": "object",
+                  "properties": {
+                    "placeholder": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "filters": {
+                  "type": "object",
+                  "required": [
+                    "columns",
+                    "items"
+                  ],
+                  "properties": {
+                    "columns": {
+                      "anyOf": [
+                        {
+                          "const": 1,
+                          "type": "number"
+                        },
+                        {
+                          "const": 2,
+                          "type": "number"
+                        },
+                        {
+                          "const": 3,
+                          "type": "number"
+                        },
+                        {
+                          "const": 4,
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "required": [
+                              "key",
+                              "label",
+                              "input",
+                              "placement"
+                            ],
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "input": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "type"
+                                    ],
+                                    "properties": {
+                                      "type": {
+                                        "const": "text",
+                                        "type": "string"
+                                      },
+                                      "inputMode": {
+                                        "anyOf": [
+                                          {
+                                            "const": "text",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "numeric",
+                                            "type": "string"
+                                          }
+                                        ]
+                                      },
+                                      "placeholder": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "type"
+                                    ],
+                                    "properties": {
+                                      "type": {
+                                        "anyOf": [
+                                          {
+                                            "const": "select",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "multipleSelect",
+                                            "type": "string"
+                                          }
+                                        ]
+                                      },
+                                      "options": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "required": [
+                                            "value",
+                                            "label"
+                                          ],
+                                          "properties": {
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "label": {
+                                              "type": "string"
+                                            },
+                                            "disabled": {
+                                              "type": "boolean"
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "remote": {
+                                        "type": "boolean"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "type",
+                                      "options"
+                                    ],
+                                    "properties": {
+                                      "type": {
+                                        "anyOf": [
+                                          {
+                                            "const": "radio",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "checkbox",
+                                            "type": "string"
+                                          }
+                                        ]
+                                      },
+                                      "options": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "required": [
+                                            "value",
+                                            "label"
+                                          ],
+                                          "properties": {
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "label": {
+                                              "type": "string"
+                                            },
+                                            "disabled": {
+                                              "type": "boolean"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "type",
+                                      "withTime"
+                                    ],
+                                    "properties": {
+                                      "type": {
+                                        "const": "date",
+                                        "type": "string"
+                                      },
+                                      "withTime": {
+                                        "type": "boolean"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "type",
+                                      "of"
+                                    ],
+                                    "properties": {
+                                      "type": {
+                                        "const": "range",
+                                        "type": "string"
+                                      },
+                                      "of": {
+                                        "anyOf": [
+                                          {
+                                            "const": "text",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "number",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "date",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "datetime",
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "type",
+                                      "of",
+                                      "operators"
+                                    ],
+                                    "properties": {
+                                      "type": {
+                                        "const": "group",
+                                        "type": "string"
+                                      },
+                                      "of": {
+                                        "anyOf": [
+                                          {
+                                            "const": "text",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "const": "number",
+                                            "type": "string"
+                                          }
+                                        ]
+                                      },
+                                      "operators": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "required": [
+                                            "value",
+                                            "label"
+                                          ],
+                                          "properties": {
+                                            "value": {
+                                              "type": "string"
+                                            },
+                                            "label": {
+                                              "type": "string"
+                                            },
+                                            "disabled": {
+                                              "type": "boolean"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "placement": {
+                                "anyOf": [
+                                  {
+                                    "const": "panel",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "column",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "hidden",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "span": {
+                                "anyOf": [
+                                  {
+                                    "const": 1,
+                                    "type": "number"
+                                  },
+                                  {
+                                    "const": 2,
+                                    "type": "number"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "newline",
+                                "type": "string"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "columnFilters": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label",
+                      "input",
+                      "placement"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "input": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "text",
+                                "type": "string"
+                              },
+                              "inputMode": {
+                                "anyOf": [
+                                  {
+                                    "const": "text",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "numeric",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "placeholder": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type"
+                            ],
+                            "properties": {
+                              "type": {
+                                "anyOf": [
+                                  {
+                                    "const": "select",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "multipleSelect",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "options": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "required": [
+                                    "value",
+                                    "label"
+                                  ],
+                                  "properties": {
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "disabled": {
+                                      "type": "boolean"
+                                    }
+                                  }
+                                }
+                              },
+                              "remote": {
+                                "type": "boolean"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "options"
+                            ],
+                            "properties": {
+                              "type": {
+                                "anyOf": [
+                                  {
+                                    "const": "radio",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "checkbox",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "options": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "required": [
+                                    "value",
+                                    "label"
+                                  ],
+                                  "properties": {
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "disabled": {
+                                      "type": "boolean"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "withTime"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "date",
+                                "type": "string"
+                              },
+                              "withTime": {
+                                "type": "boolean"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "of"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "range",
+                                "type": "string"
+                              },
+                              "of": {
+                                "anyOf": [
+                                  {
+                                    "const": "text",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "number",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "date",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "datetime",
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "of",
+                              "operators"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "group",
+                                "type": "string"
+                              },
+                              "of": {
+                                "anyOf": [
+                                  {
+                                    "const": "text",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "number",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "operators": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "required": [
+                                    "value",
+                                    "label"
+                                  ],
+                                  "properties": {
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "disabled": {
+                                      "type": "boolean"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      "placement": {
+                        "anyOf": [
+                          {
+                            "const": "panel",
+                            "type": "string"
+                          },
+                          {
+                            "const": "column",
+                            "type": "string"
+                          },
+                          {
+                            "const": "hidden",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "span": {
+                        "anyOf": [
+                          {
+                            "const": 1,
+                            "type": "number"
+                          },
+                          {
+                            "const": 2,
+                            "type": "number"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "selectors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label",
+                      "multiple",
+                      "options"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "multiple": {
+                        "type": "boolean"
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "value",
+                            "label"
+                          ],
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "disabled": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "appliedFilters": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label",
+                      "display"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "display": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "actions": {
+                  "type": "object",
+                  "required": [
+                    "row",
+                    "batch",
+                    "tools"
+                  ],
+                  "properties": {
+                    "row": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "icon": {
+                            "type": "string"
+                          },
+                          "tone": {
+                            "anyOf": [
+                              {
+                                "const": "default",
+                                "type": "string"
+                              },
+                              {
+                                "const": "danger",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "confirm": {
+                            "type": "object",
+                            "required": [
+                              "title",
+                              "confirmLabel"
+                            ],
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "confirmLabel": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "shortcut": {
+                            "type": "string"
+                          },
+                          "exposed": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "batch": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "icon": {
+                            "type": "string"
+                          },
+                          "tone": {
+                            "anyOf": [
+                              {
+                                "const": "default",
+                                "type": "string"
+                              },
+                              {
+                                "const": "danger",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "confirm": {
+                            "type": "object",
+                            "required": [
+                              "title",
+                              "confirmLabel"
+                            ],
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "confirmLabel": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "shortcut": {
+                            "type": "string"
+                          },
+                          "exposed": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "icon": {
+                            "type": "string"
+                          },
+                          "tone": {
+                            "anyOf": [
+                              {
+                                "const": "default",
+                                "type": "string"
+                              },
+                              {
+                                "const": "danger",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "confirm": {
+                            "type": "object",
+                            "required": [
+                              "title",
+                              "confirmLabel"
+                            ],
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "confirmLabel": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "shortcut": {
+                            "type": "string"
+                          },
+                          "exposed": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "export": {
+                  "type": "object",
+                  "required": [
+                    "url"
+                  ],
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "endpoints": {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string"
+                    },
+                    "cell": {
+                      "type": "string"
+                    },
+                    "options": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "empty": {
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "description"
+                  ],
+                  "properties": {
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "object",
+                      "required": [
+                        "label",
+                        "url"
+                      ],
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        }
+                      }
                     }
                   }
                 }
@@ -215,6 +1798,45 @@
                         }
                       }
                     ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "status",
+                "title",
+                "message"
+              ],
+              "properties": {
+                "type": {
+                  "const": "error",
+                  "type": "string"
+                },
+                "status": {
+                  "type": "integer"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "object",
+                  "required": [
+                    "label",
+                    "url"
+                  ],
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -476,6 +2098,618 @@
           }
         }
       }
+    },
+    "ActionRequest": {
+      "type": "object",
+      "required": [
+        "target",
+        "ids"
+      ],
+      "properties": {
+        "target": {
+          "anyOf": [
+            {
+              "const": "row",
+              "type": "string"
+            },
+            {
+              "const": "batch",
+              "type": "string"
+            },
+            {
+              "const": "tool",
+              "type": "string"
+            }
+          ]
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "ActionResponse": {
+      "type": "object",
+      "required": [
+        "feedback"
+      ],
+      "properties": {
+        "feedback": {
+          "type": "object",
+          "properties": {
+            "toast": {
+              "type": "object",
+              "required": [
+                "type",
+                "message"
+              ],
+              "properties": {
+                "type": {
+                  "anyOf": [
+                    {
+                      "const": "success",
+                      "type": "string"
+                    },
+                    {
+                      "const": "error",
+                      "type": "string"
+                    },
+                    {
+                      "const": "info",
+                      "type": "string"
+                    },
+                    {
+                      "const": "warning",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            },
+            "refresh": {
+              "type": "boolean"
+            },
+            "redirect": {
+              "type": "string"
+            },
+            "download": {
+              "type": "object",
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "filename": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "CellUpdateRequest": {
+      "type": "object",
+      "required": [
+        "column",
+        "value"
+      ],
+      "properties": {
+        "column": {
+          "type": "string"
+        },
+        "value": {}
+      }
+    },
+    "CellUpdateResponse": {
+      "type": "object",
+      "required": [
+        "row"
+      ],
+      "properties": {
+        "row": {
+          "allOf": [
+            {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "_meta": {
+                  "type": "object",
+                  "properties": {
+                    "editUrl": {
+                      "type": "string"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "href": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "content": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "type",
+                                "text"
+                              ],
+                              "properties": {
+                                "type": {
+                                  "const": "text",
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "required": [
+                                "type",
+                                "columns",
+                                "rows"
+                              ],
+                              "properties": {
+                                "type": {
+                                  "const": "table",
+                                  "type": "string"
+                                },
+                                "columns": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "key",
+                                      "label"
+                                    ],
+                                    "properties": {
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                },
+                                "rows": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                      "^(.*)$": {}
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "required": [
+                                "type",
+                                "name"
+                              ],
+                              "properties": {
+                                "type": {
+                                  "const": "component",
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "props": {
+                                  "type": "object",
+                                  "patternProperties": {
+                                    "^(.*)$": {}
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "raw": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {}
+              }
+            }
+          ]
+        },
+        "feedback": {
+          "type": "object",
+          "properties": {
+            "toast": {
+              "type": "object",
+              "required": [
+                "type",
+                "message"
+              ],
+              "properties": {
+                "type": {
+                  "anyOf": [
+                    {
+                      "const": "success",
+                      "type": "string"
+                    },
+                    {
+                      "const": "error",
+                      "type": "string"
+                    },
+                    {
+                      "const": "info",
+                      "type": "string"
+                    },
+                    {
+                      "const": "warning",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            },
+            "refresh": {
+              "type": "boolean"
+            },
+            "redirect": {
+              "type": "string"
+            },
+            "download": {
+              "type": "object",
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "filename": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "required": [
+        "message"
+      ],
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "errors": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "OptionsResponse": {
+      "type": "object",
+      "required": [
+        "data",
+        "pagination"
+      ],
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "allOf": [
+              {
+                "type": "object",
+                "required": [
+                  "value",
+                  "label"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "group": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "required": [
+            "page",
+            "perPage",
+            "hasMore"
+          ],
+          "properties": {
+            "page": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "perPage": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "hasMore": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "PickerSearchResponse": {
+      "type": "object",
+      "required": [
+        "data",
+        "pagination"
+      ],
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "type": "object",
+                "allOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "label"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "disabled": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "group": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "columns": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "required": [
+            "page",
+            "perPage",
+            "hasMore"
+          ],
+          "properties": {
+            "page": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "perPage": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "hasMore": {
+              "type": "boolean"
+            }
+          }
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "label"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "label"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "UploadTempResponse": {
+      "type": "object",
+      "required": [
+        "token",
+        "name",
+        "size",
+        "mime",
+        "expiresAt"
+      ],
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mime": {
+          "type": "string"
+        },
+        "previewUrl": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      }
+    },
+    "UploadValue": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "token"
+          ],
+          "properties": {
+            "token": {
+              "type": "string"
+            },
+            "extra": {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "path",
+            "url"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "size": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "extra": {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {}
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }
