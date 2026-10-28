@@ -8,11 +8,11 @@
     "check-dist": "node scripts/check-dist.mjs"
   },
   "dependencies": {
-    "@brume-ui/brume-inertia": "0.1.0-alpha.8",
-    "@brume-ui/brume-react": "0.1.0-alpha.8",
-    "@brume-ui/brume-renderer": "0.1.0-alpha.8",
-    "@brume-ui/brume-schema": "0.1.0-alpha.8",
-    "@brume-ui/brume-tokens": "0.1.0-alpha.8",
+    "@brume-ui/brume-inertia": "0.1.0-alpha.9",
+    "@brume-ui/brume-react": "0.1.0-alpha.9",
+    "@brume-ui/brume-renderer": "0.1.0-alpha.9",
+    "@brume-ui/brume-schema": "0.1.0-alpha.9",
+    "@brume-ui/brume-tokens": "0.1.0-alpha.9",
     "@inertiajs/react": "2.3.29",
     "react": "19.3.1",
     "react-dom": "19.3.1"
