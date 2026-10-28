@@ -30,6 +30,10 @@ return [
         'forbidden' => '这条数据不能执行这项操作。',
         'too_many' => '一次最多只能操作 :max 条。',
     ],
+    // The export endpoint (Grid::exportable()).
+    'export' => [
+        'too_many' => '一次最多只能导出 :max 条。',
+    ],
     // The inline-edit (cell) endpoint.
     'cell' => [
         'not_editable' => '这个字段不能直接编辑。',

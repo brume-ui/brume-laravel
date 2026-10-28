@@ -59,6 +59,10 @@ class Grid implements Renderable, Responsable
 
     protected ?Closure $editUrl = null;
 
+    protected bool $exportable = false;
+
+    protected ?string $exportFilename = null;
+
     final public function __construct(protected Builder $query) {}
 
     /**
@@ -255,6 +259,64 @@ class Grid implements Renderable, Responsable
     }
 
     /**
+     * Offer 匯出 Excel: all matching rows, the current page or the selected rows, as an .xlsx of
+     * the exportable() columns. $filename defaults to "{title}-{Y-m-d-His}.xlsx".
+     */
+    public function exportable(?string $filename = null): static
+    {
+        $this->exportable = true;
+        $this->exportFilename = $filename;
+
+        return $this;
+    }
+
+    /**
+     * @internal
+     */
+    public function isExportable(): bool
+    {
+        return $this->exportable;
+    }
+
+    /**
+     * The download's file name, ending in .xlsx; slashes, backslashes and control characters
+     * become "_".
+     *
+     * @internal
+     */
+    public function exportFilename(): string
+    {
+        $name = $this->exportFilename ?? (($this->title !== '' ? $this->title : 'export').'-'.now()->format('Y-m-d-His'));
+        $name = (string) preg_replace('/[\x00-\x1F\x7F\/\\\\]/', '_', $name);
+
+        return str_ends_with(strtolower($name), '.xlsx') ? $name : $name.'.xlsx';
+    }
+
+    /**
+     * The columns that go into the export, in declaration order.
+     *
+     * @internal
+     *
+     * @return list<Column>
+     */
+    public function exportColumns(): array
+    {
+        return array_values(array_filter($this->columns, fn (Column $column) => $column->isExportable()));
+    }
+
+    /**
+     * The page of $state the list shows; past the end, the last page.
+     *
+     * @internal
+     */
+    public function currentPage(GridQuery $state): LengthAwarePaginator
+    {
+        $paginator = $this->paginate($state, $state->page);
+
+        return $paginator->currentPage() > $paginator->lastPage() ? $this->paginate($state, max(1, $paginator->lastPage())) : $paginator;
+    }
+
+    /**
      * The action keyed $key among those of $target, deletable()'s included.
      *
      * @internal
@@ -329,12 +391,8 @@ class Grid implements Renderable, Responsable
         $actions = $endpoints !== null ? ['row' => $this->actionsOf('row'), 'batch' => $this->actionsOf('batch'), 'tool' => $this->actionsOf('tool')]
             : ['row' => [], 'batch' => [], 'tool' => []];
 
-        $paginator = $this->paginate($state, $state->page);
-
         // Past the end: answer with the last page and report it as the current one.
-        if ($paginator->currentPage() > $paginator->lastPage()) {
-            $paginator = $this->paginate($state, max(1, $paginator->lastPage()));
-        }
+        $paginator = $this->currentPage($state);
 
         return [
             'type' => 'list',
@@ -365,6 +423,7 @@ class Grid implements Renderable, Responsable
                 ],
             ]
             + ($endpoints !== null ? ['endpoints' => $endpoints] : [])
+            + ($endpoints !== null && $this->exportable ? ['export' => ['url' => $this->endpointBase($request).'/export']] : [])
             + ($this->empty !== null ? ['empty' => $this->empty] : []);
     }
 
@@ -453,7 +512,7 @@ class Grid implements Renderable, Responsable
     protected function needsEndpoints(): bool
     {
         return $this->filters()->hasRemote() || $this->deletable || array_merge(...array_values($this->actions)) !== []
-            || $this->editsInline();
+            || $this->editsInline() || $this->exportable;
     }
 
     /**
@@ -481,8 +540,7 @@ class Grid implements Renderable, Responsable
     protected function endpoints(Request $request): ?array
     {
         if ($this->routeRole($request) === 'page') {
-            // getBaseUrl() keeps an app served from a subdirectory (/sub/admin/orders) working.
-            $base = rtrim($request->getBaseUrl().'/'.trim($request->path(), '/'), '/').'/_brume';
+            $base = $this->endpointBase($request);
 
             return [
                 'action' => $base.'/actions/{action}',
@@ -505,6 +563,15 @@ class Grid implements Renderable, Responsable
         }
 
         return null;
+    }
+
+    /**
+     * The `_brume` prefix under the list page's URL. getBaseUrl() keeps an app served from a
+     * subdirectory (/sub/admin/orders) working.
+     */
+    protected function endpointBase(Request $request): string
+    {
+        return rtrim($request->getBaseUrl().'/'.trim($request->path(), '/'), '/').'/_brume';
     }
 
     /**

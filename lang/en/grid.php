@@ -30,6 +30,10 @@ return [
         'forbidden' => 'This action is not available for that row.',
         'too_many' => 'You can act on at most :max rows at once.',
     ],
+    // The export endpoint (Grid::exportable()).
+    'export' => [
+        'too_many' => 'You can export at most :max selected rows at once.',
+    ],
     // The inline-edit (cell) endpoint.
     'cell' => [
         'not_editable' => 'This column cannot be edited here.',

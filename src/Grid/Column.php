@@ -216,6 +216,63 @@ class Column
     }
 
     /**
+     * The Excel cell value for a row: exportUsing()'s result when there is one; otherwise the
+     * row's value (the display closure applied, a component's raw value), with label() options
+     * turned into their labels, a switchGroup as the labels that are on, and a list joined
+     * with 、. Scalars stay as they are.
+     *
+     * @internal
+     */
+    public function exportValue(mixed $row): string|int|float|bool|null
+    {
+        if ($this->exportUsing !== null) {
+            return $this->exportScalar(($this->exportUsing)(data_get($row, $this->key), $row));
+        }
+
+        $value = $this->value($row);
+
+        if ($this->editor?->type() === 'switchGroup' && $this->display === null && is_array($value)) {
+            $value = array_values(array_map(fn (string|int $key) => $this->switchKeys[$key], array_keys(array_filter($value))));
+        }
+
+        $labels = ($this->displaySchema['type'] ?? null) === 'label' ? (array) ($this->displaySchema['options'] ?? []) : [];
+
+        return $this->exportScalar($value, fn (mixed $item) => is_scalar($item) && isset($labels[(string) $item]) ? $labels[(string) $item]['label'] : $item);
+    }
+
+    /**
+     * $value as one cell: a list joined with 、 (a downloadable item as its URL), a date as
+     * Y-m-d H:i:s. Another object (a model, ...) is refused: exportUsing() says what to write.
+     */
+    protected function exportScalar(mixed $value, ?Closure $item = null): string|int|float|bool|null
+    {
+        $item ??= fn (mixed $value) => $value;
+        $value = $value instanceof DateTimeInterface ? $value->format('Y-m-d H:i:s') : static::normalize($value);
+
+        if (is_iterable($value)) {
+            $value = is_array($value) && isset($value['url']) && is_string($value['url']) ? $value['url'] : $value;
+        }
+
+        if (is_iterable($value)) {
+            $parts = [];
+
+            foreach ($value as $part) {
+                $parts[] = (string) $this->exportScalar($part, $item);
+            }
+
+            return implode(__('brume::grid.separator'), $parts);
+        }
+
+        $value = $item($value);
+
+        if ($value !== null && ! is_scalar($value)) {
+            throw new InvalidArgumentException("欄位「{$this->key}」匯出的值是 ".get_debug_type($value).'，Excel 的儲存格只能放純量。請用 exportUsing() 轉成字串或數字。');
+        }
+
+        return $value;
+    }
+
+    /**
      * @internal
      */
     public function withFilters(Filters $filters): static

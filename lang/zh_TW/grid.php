@@ -30,6 +30,10 @@ return [
         'forbidden' => '這筆資料不能執行這項操作。',
         'too_many' => '一次最多只能操作 :max 筆。',
     ],
+    // The export endpoint (Grid::exportable()).
+    'export' => [
+        'too_many' => '一次最多只能匯出 :max 筆。',
+    ],
     // The inline-edit (cell) endpoint.
     'cell' => [
         'not_editable' => '這個欄位不能直接編輯。',

@@ -7,7 +7,8 @@
     "require": {
         "php": "^8.3",
         "illuminate/support": "^12.0|^13.0",
-        "inertiajs/inertia-laravel": "^2.0.28"
+        "inertiajs/inertia-laravel": "^2.0.28",
+        "openspout/openspout": "^4"
     },
     "require-dev": {
         "laravel/framework": "^12.0|^13.0",

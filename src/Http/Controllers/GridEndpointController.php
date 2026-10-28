@@ -4,6 +4,7 @@ namespace Brume\Http\Controllers;
 
 use Brume\Grid\Actions\ActionRunner;
 use Brume\Grid\Editing\CellUpdater;
+use Brume\Grid\Export\XlsxExporter;
 use Brume\Grid\Grid;
 use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\ErrorResponse;
@@ -11,6 +12,7 @@ use Brume\Http\Middleware\HandleGridEndpoint;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -19,7 +21,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class GridEndpointController
 {
-    public function handle(Grid $grid, Request $request): JsonResponse
+    public function handle(Grid $grid, Request $request): Response
     {
         $request->attributes->set(HandleGridEndpoint::HANDLED, true);
         $argument = $request->attributes->get(HandleGridEndpoint::ARGUMENT);
@@ -58,9 +60,20 @@ class GridEndpointController
         }
     }
 
-    public function export(Grid $grid, Request $request): JsonResponse
+    /**
+     * The .xlsx download of all, the current page's or the selected rows (XlsxExporter).
+     */
+    public function export(Grid $grid, Request $request): Response
     {
-        return $this->unavailable();
+        if (! $grid->isExportable()) {
+            return $this->unavailable();
+        }
+
+        try {
+            return app(XlsxExporter::class)->stream($grid, $request);
+        } catch (ValidationException $e) {
+            return ErrorResponse::make($e->getMessage(), $e->status, $e->errors());
+        }
     }
 
     /**
