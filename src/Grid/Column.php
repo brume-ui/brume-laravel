@@ -3,9 +3,10 @@
 namespace Brume\Grid;
 
 use BackedEnum;
+use Brume\Grid\Concerns\HasDisplays;
+use Brume\Grid\Concerns\HasEditing;
 use Brume\Grid\Filters\Filter;
 use Brume\Grid\Filters\Filters;
-use Brume\Support\ComponentRef;
 use Closure;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,12 +17,12 @@ use Stringable;
 
 class Column
 {
+    use HasDisplays;
+    use HasEditing;
+
     protected bool $numeric = false;
 
     protected ?Closure $display = null;
-
-    /** @var array<string, mixed>|null */
-    protected ?array $component = null;
 
     protected bool $sortable = false;
 
@@ -39,6 +40,11 @@ class Column
     protected ?Filters $filters = null;
 
     protected ?Filter $filter = null;
+
+    protected bool $exportable = true;
+
+    /** fn ($value, Model $row): mixed, the Excel cell value. */
+    protected ?Closure $exportUsing = null;
 
     public function __construct(
         protected string $key,
@@ -68,23 +74,12 @@ class Column
     }
 
     /**
-     * Transform the value on the server: fn ($value, $row) => scalar|null.
+     * Transform the value on the server: fn ($value, $row) => scalar|null, or a list for the
+     * label(), image(), downloadable() and table() displays.
      */
     public function display(Closure $fn): static
     {
         $this->display = $fn;
-
-        return $this;
-    }
-
-    /**
-     * Render the cell with a frontend component; the raw value stays in the row.
-     *
-     * @param  array<string, mixed>  $props
-     */
-    public function component(string $name, array $props = []): static
-    {
-        $this->component = ComponentRef::make($name, $props);
 
         return $this;
     }
@@ -136,7 +131,9 @@ class Column
     }
 
     /**
-     * The column that opens the row (its edit entry).
+     * The column that opens the row (its edit entry). Only a plain-text column becomes the edit
+     * link: with another display (label(), link(), a component, ...) the cell keeps that display
+     * and is not wrapped as the edit link.
      */
     public function primary(): static
     {
@@ -162,6 +159,42 @@ class Column
         $this->filter = $this->filters->forColumn($this->key, $this->label, $type, $options, $this->numeric);
 
         return $this;
+    }
+
+    /**
+     * The Excel cell value: fn ($value, Model $row) => mixed.
+     */
+    public function exportUsing(Closure $fn): static
+    {
+        $this->exportUsing = $fn;
+
+        return $this;
+    }
+
+    /**
+     * Whether the column goes into the Excel export (it does by default).
+     */
+    public function exportable(bool $on = true): static
+    {
+        $this->exportable = $on;
+
+        return $this;
+    }
+
+    /**
+     * @internal
+     */
+    public function isExportable(): bool
+    {
+        return $this->exportable;
+    }
+
+    /**
+     * @internal
+     */
+    public function exportCallback(): ?Closure
+    {
+        return $this->exportUsing;
     }
 
     /**
@@ -210,7 +243,8 @@ class Column
         ]
             + ($this->numeric ? ['numeric' => true] : [])
             + ($this->width !== null ? ['width' => $this->width] : [])
-            + ($this->component !== null ? ['display' => $this->component] : [])
+            + ($this->displaySchema !== null ? ['display' => $this->displaySchema] : [])
+            + ($this->editor !== null ? ['editor' => $this->editor->toSchema()] : [])
             + ($this->sortable ? ['sortable' => true] : [])
             + ($this->filter !== null ? ['filter' => $this->filter->key()] : [])
             // The schema's default is true, so only the exception is written out.
@@ -220,26 +254,59 @@ class Column
     }
 
     /**
-     * The cell value for a model: data_get by the (dotted) key, then the display closure, then made JSON-safe.
+     * The cell value for a model: data_get by the (dotted) key (a switch as a boolean, a
+     * switchGroup as { attribute: bool }), then the display closure, made JSON-safe.
      */
     public function value(mixed $row): mixed
     {
-        $value = data_get($row, $this->key);
+        $value = $this->rawValue($row);
 
-        if ($this->display !== null) {
-            $value = static::normalize(($this->display)($value, $row));
-
-            if ($value !== null && ! is_scalar($value)) {
-                throw new InvalidArgumentException("欄位「{$this->key}」的 display() 必須回傳純量或 null，目前回傳 ".get_debug_type($value).'。請在 closure 內轉成字串或數字。');
-            }
-
-            return $value;
+        if ($this->display === null) {
+            return $this->shapeDisplayed($value);
         }
 
-        return static::normalize($value);
+        $value = ($this->display)($value, $row);
+
+        if ($this->displaysList() && is_iterable($value)) {
+            return $this->tableColumns !== []
+                ? $this->shapeDisplayed($value)
+                : array_map(static::normalize(...), array_values(collect($value)->all()));
+        }
+
+        $value = static::normalize($value);
+
+        if ($value !== null && ! is_scalar($value)) {
+            throw new InvalidArgumentException("欄位「{$this->key}」的 display() 必須回傳純量或 null（label、image、downloadable、table 顯示器可以回傳陣列），目前回傳 ".get_debug_type($value).'。請在 closure 內轉成字串或數字。');
+        }
+
+        return $value;
     }
 
-    protected static function normalize(mixed $value): mixed
+    /**
+     * This column's row._meta entries: href (link, button), content (expand, modal) and, for an
+     * edited column with a display closure, raw (the value the editor starts from).
+     *
+     * @internal
+     *
+     * @return array{href?: string, content?: array<string, mixed>, raw?: mixed}
+     */
+    public function rowMeta(mixed $row): array
+    {
+        $meta = $this->displayMeta($row);
+
+        if ($this->editor !== null && $this->display !== null) {
+            $meta['raw'] = $this->rawValue($row);
+        }
+
+        return $meta;
+    }
+
+    /**
+     * Made JSON-safe: dates as ISO 8601, enums as their value, Stringables as strings.
+     *
+     * @internal
+     */
+    public static function normalize(mixed $value): mixed
     {
         return match (true) {
             $value instanceof DateTimeInterface => $value->format(DateTimeInterface::ATOM),
@@ -247,5 +314,10 @@ class Column
             $value instanceof Stringable => (string) $value,
             default => $value,
         };
+    }
+
+    protected function rawValue(mixed $row): mixed
+    {
+        return $this->editedValue($row, static::normalize(data_get($row, $this->key)));
     }
 }

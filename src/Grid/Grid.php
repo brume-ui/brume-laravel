@@ -302,7 +302,17 @@ class Grid implements Renderable, Responsable
      */
     protected function needsEndpoints(): bool
     {
-        return $this->filters()->hasRemote();
+        if ($this->filters()->hasRemote()) {
+            return true;
+        }
+
+        foreach ($this->columns as $column) {
+            if ($column->isEditable()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -427,17 +437,27 @@ class Grid implements Renderable, Responsable
     }
 
     /**
+     * The row's id, column values and, when a column adds any, its _meta (href, content, raw keyed
+     * by column).
+     *
      * @return array<string, mixed>
      */
     protected function row(Model $model): array
     {
         $row = ['id' => $model->getKey()];
+        $meta = ['href' => [], 'content' => [], 'raw' => []];
 
         foreach ($this->columns as $column) {
             $row[$column->key()] = $column->value($model);
+
+            foreach ($column->rowMeta($model) as $entry => $value) {
+                $meta[$entry][$column->key()] = $value;
+            }
         }
 
-        return $row;
+        $meta = array_filter($meta);
+
+        return $row + ($meta !== [] ? ['_meta' => $meta] : []);
     }
 
     protected function paginate(GridQuery $state, int $page): LengthAwarePaginator
