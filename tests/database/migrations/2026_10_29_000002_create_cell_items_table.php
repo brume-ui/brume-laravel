@@ -19,6 +19,7 @@ return new class extends Migration
             $table->boolean('is_active')->default(false);
             $table->boolean('is_featured')->default(false);
             $table->boolean('is_new')->default(false);
+            $table->string('note')->nullable();
             $table->string('password')->nullable();
         });
     }

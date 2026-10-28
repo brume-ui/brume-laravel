@@ -363,11 +363,12 @@ it('treats a blank value as null for every editor but text, even when the app ke
 it('saves a blank value as null when the column\'s rules say nullable', function () {
     ConvertEmptyStringsToNull::skipWhen(fn () => true);
     [$a] = cellItems();
-    cellRoutes(fn (Grid $grid) => $grid->column('password', '密碼')->editable(Editor::select(['x' => 'X']), 'nullable'));
+    $a->update(['note' => 'x']);
+    cellRoutes(fn (Grid $grid) => $grid->column('note', '備註')->editable(Editor::select(['x' => 'X']), 'nullable'));
 
-    patchCell($a->id, ['column' => 'password', 'value' => ''])->assertOk();
+    patchCell($a->id, ['column' => 'note', 'value' => ''])->assertOk();
 
-    expect(CellItem::query()->whereKey($a->id)->value('password'))->toBeNull();
+    expect(CellItem::query()->whereKey($a->id)->value('note'))->toBeNull();
 })->after(fn () => ConvertEmptyStringsToNull::flushState());
 
 it('matches an option strictly on its string form and saves the declared option', function (string $value, ?string $saved) {

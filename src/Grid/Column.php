@@ -344,10 +344,19 @@ class Column
 
     /**
      * The cell value for a model: data_get by the (dotted) key (a switch as a boolean, a
-     * switchGroup as { attribute: bool }), then the display closure, made JSON-safe.
+     * switchGroup as { attribute: bool }), then the display closure, made JSON-safe. Without a
+     * display closure, an attribute in the model's $hidden (through relations too) is refused,
+     * like the export and _meta.raw refuse it.
      */
     public function value(mixed $row): mixed
     {
+        if ($this->display === null && ($hidden = $this->hiddenReads($row)) !== null) {
+            throw new LogicException(sprintf(
+                '欄位「%s」讀取的 %s 在 %s 的 $hidden 裡，列表會把它送到頁面。請用 display() 指定要顯示的內容，或拿掉這個欄位。',
+                $this->key, implode('、', $hidden[0]), $hidden[1],
+            ));
+        }
+
         // The closure gets the attribute as the model has it (a Carbon date, an enum, ...).
         $value = $this->editedValue($row, data_get($row, $this->key));
 

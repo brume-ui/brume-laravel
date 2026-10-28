@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property bool $is_active
  * @property bool $is_featured
  * @property bool $is_new
+ * @property string|null $note
  * @property string|null $password
  */
 class CellItem extends Model

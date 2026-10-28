@@ -5,6 +5,7 @@ use Brume\Grid\Content;
 use Brume\Grid\Editor;
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
+use Brume\Models\User;
 use Brume\Tests\Support\JsonSchema;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
@@ -325,11 +326,45 @@ it('refuses to send a hidden attribute in _meta.raw', function (Column $column) 
     'switchGroup' => [fn () => displayColumn('flags')->switchGroup(['is_featured' => '精選', 'is_new' => '新品'])->display(fn () => '')],
 ]);
 
-it('sends a hidden attribute edited without a display closure as its value only', function () {
+it('adds no _meta.raw for a hidden attribute edited without a display closure', function () {
     $order = displayOrder()->setHidden(['customer']);
 
     expect(displayColumn('customer')->editable()->rowMeta($order))->toBe([]);
 });
+
+it('refuses a list cell reading a $hidden attribute, like the export and _meta.raw', function (Column $column, string $message) {
+    $order = displayOrder(['is_new' => true])->setHidden(['customer', 'is_new']);
+    $order->setRelation('parent', displayOrder()->setHidden(['customer']));
+
+    expect(fn () => $column->value($order))->toThrow(LogicException::class, $message);
+})->with([
+    'plain' => [fn () => displayColumn('customer'), '欄位「customer」讀取的 customer 在 '.Order::class.' 的 $hidden 裡，列表會把它送到頁面。請用 display()'],
+    'editable' => [fn () => displayColumn('customer')->editable(), '欄位「customer」讀取的 customer'],
+    'switchGroup' => [fn () => displayColumn('flags')->switchGroup(['is_featured' => '精選', 'is_new' => '新品']), '欄位「flags」讀取的 is_new'],
+    'dotted, on the related model' => [fn () => displayColumn('parent.customer'), '欄位「parent.customer」讀取的 customer'],
+]);
+
+it('sends a $hidden attribute through a display closure, which decides what is shown', function () {
+    $order = displayOrder()->setHidden(['customer']);
+
+    expect(displayColumn('customer')->display(fn ($v) => mb_substr($v, 0, 1).'＊')->value($order))->toBe('A＊');
+});
+
+it('refuses a list page with a column reading a $hidden attribute', function () {
+    $this->withoutExceptionHandling();
+    $this->actingAs(brumeUser(), 'brume');
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('users', function () {
+            $grid = Grid::make(User::class)->title('使用者');
+            $grid->column('username', '帳號');
+            $grid->column('password', '密碼');
+
+            return $grid;
+        }));
+
+    $this->get('/admin/users');
+})->throws(LogicException::class, '欄位「password」讀取的 password 在 '.User::class.' 的 $hidden 裡');
 
 it('drops hrefs with an unsafe scheme', function (?string $href, ?string $sent) {
     $meta = displayColumn('number')->link(fn () => $href)->rowMeta(displayOrder());
