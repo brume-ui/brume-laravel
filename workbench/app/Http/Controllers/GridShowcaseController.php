@@ -90,9 +90,10 @@ class GridShowcaseController
         $filters->findInSet('tags', '標籤')->select(ShowcaseItem::TAGS);
         $filters->in('channels', '通路')->json()->checkbox(ShowcaseItem::CHANNELS);
         $filters->equal('color', '顏色', 'meta->color')->select(array_map(fn (array $color) => $color[0], ShowcaseItem::COLORS));
-        $filters->group('stock_rule', '庫存條件', ['equal', 'gt', 'lt'], 'stock')->number();
 
+        // Three filters fill one and a half rows of two: newline() starts 庫存條件 on a row of its own.
         $filters->newline();
+        $filters->group('stock_rule', '庫存條件', ['equal', 'gt', 'lt'], 'stock')->number();
         $filters->equal('owner', '負責人', 'owner_id')->remoteSelect(User::class, 'name');
         $filters->whereBetween('released', '上市日', function (Builder $query, ?string $start, ?string $end) {
             $query->when($start, fn (Builder $q) => $q->whereDate('released_at', '>=', $start))

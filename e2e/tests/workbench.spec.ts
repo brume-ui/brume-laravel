@@ -123,3 +123,40 @@ test('元件展示 shows the kit and its interactions work', async ({ page }) =>
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.locator('[data-kpi-row]')).toBeVisible();
 });
+
+// The shell and the grid toolbar in the workbench's own merged stylesheet (react + renderer +
+// inertia styles.css bundled into one file): breakpoint utilities must still win at their width.
+test.describe('at 1440×900', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('the shell is in its desktop layout and 訂單 fits without scrolling sideways', async ({ page }) => {
+    await page.goto('/admin/orders');
+    await expect(page.locator('tbody tr')).toHaveCount(15);
+    await expect(page.getByRole('button', { name: '選單', exact: true })).toBeHidden();
+    const main = page.locator('#brume-main');
+    await expect(main).toHaveCSS('padding-left', '32px');
+    // The quick search box keeps its own width, so the filter button shares its line.
+    const search = await page.getByRole('searchbox', { name: '搜尋' }).boundingBox();
+    const filter = await page.getByRole('button', { name: '篩選', exact: true }).boundingBox();
+    expect(search?.width).toBeLessThan(400);
+    expect(Math.round(filter?.y ?? 0)).toBe(Math.round(search?.y ?? -1));
+    const overflow = await page
+      .getByRole('table')
+      .locator('xpath=..')
+      .evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBe(0);
+  });
+});
+
+test.describe('at 390×844', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the shell is in its phone layout', async ({ page }) => {
+    await page.goto('/admin/orders');
+    await expect(page.getByRole('button', { name: '選單', exact: true })).toBeVisible();
+    await expect(page.locator('#brume-main')).toHaveCSS('padding-left', '16px');
+    // The quick search takes the whole toolbar line.
+    const search = await page.getByRole('searchbox', { name: '搜尋' }).boundingBox();
+    expect(search?.width).toBeGreaterThan(300);
+  });
+});

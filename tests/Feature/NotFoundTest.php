@@ -104,6 +104,22 @@ it('registers no fallback without a route prefix, leaving unknown paths to Larav
     expect($response->getContent())->not->toContain('brume/page');
 });
 
+it('keeps the fallback without a prefix when Brume has a domain of its own', function () {
+    config(['brume.route.prefix' => '', 'brume.route.domain' => 'admin.example.test']);
+    app('router')->setRoutes(new RouteCollection);
+    (fn () => $this->registerRoutes())->call(app()->getProvider(BrumeServiceProvider::class));
+    app('router')->getRoutes()->refreshNameLookups();
+
+    $fallbacks = array_values(array_filter(app('router')->getRoutes()->getRoutes(), fn (RoutingRoute $route) => $route->isFallback));
+    expect($fallbacks)->toHaveCount(1)
+        ->and($fallbacks[0]->getDomain())->toBe('admin.example.test');
+
+    $this->actingAs(brumeUser(), 'brume');
+    $this->get('http://admin.example.test/nope')->assertNotFound()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('envelope.page.title', '找不到這個頁面'));
+    expect($this->get('http://www.example.test/nope')->assertNotFound()->getContent())->not->toContain('brume/page');
+});
+
 it('builds the not-found page with the home url under the configured prefix', function () {
     config(['brume.route.prefix' => 'backend']);
     // HandleBrumeRequests sets the locale per request; this builds the page directly.

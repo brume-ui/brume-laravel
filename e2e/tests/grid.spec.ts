@@ -43,8 +43,9 @@ test.describe('訂單', () => {
     await expect(header).toHaveAttribute('aria-sort', 'ascending');
     const shown = await amounts(page);
     expect(shown).toEqual([...shown].sort((a, b) => a - b));
-    // The seed's smallest amount comes first.
-    expect(shown[0]).toBe(Math.min(...shown));
+    // The smallest of all 60 seeded orders (DatabaseSeeder's fixed seed), not only of this page.
+    await expect(rows(page).first()).toContainText('BR-20260903-042');
+    expect(shown[0]).toBe(120);
     await expect(shell).toHaveAttribute('data-shell-mount', mountId as string);
   });
 
@@ -157,7 +158,7 @@ test.describe('訂單', () => {
     const number = (await row.locator('td a').first().textContent())?.trim() ?? '';
     await row.click({ button: 'right' });
     const menu = page.getByRole('menu');
-    await expect(menu.getByRole('menuitem', { name: /^複製訂單編號/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^顯示訂單編號/ })).toBeVisible();
     await menu.getByRole('menuitem', { name: /^刪除/ }).click();
 
     const confirm = page.getByRole('alertdialog', { name: '刪除這筆資料？' });
@@ -196,7 +197,7 @@ test.describe('Grid 示範', () => {
     const input = row.getByRole('textbox', { name: '標語' });
     await input.fill('');
     await input.press('Enter');
-    await expect(row.getByRole('alert')).toHaveText('請填寫 標語。');
+    await expect(row.getByRole('alert')).toHaveText('請填寫標語。');
   });
 
   for (const scheme of ['light', 'dark'] as const) {

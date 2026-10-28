@@ -190,9 +190,9 @@ class BrumeServiceProvider extends ServiceProvider
             // Last, after the project's routes: an unknown path under the prefix (GET) answers
             // the styled 404 page to a signed-in user; a guest is sent to the login page. Another
             // method on an unknown path answers 405, because this fallback route is GET only.
-            // Without a prefix the fallback would take over every unknown path of the app (and
-            // send guests to the admin login), so it is left to Laravel then.
-            if (trim((string) config('brume.route.prefix'), '/') !== '') {
+            // Without a prefix (and without a domain of its own) the fallback would take over every
+            // unknown path of the app and send guests to the admin login, so it is left to Laravel.
+            if (trim((string) config('brume.route.prefix'), '/') !== '' || filled(config('brume.route.domain'))) {
                 Route::fallback(NotFoundController::class)->middleware('brume.auth');
             }
         });

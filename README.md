@@ -200,8 +200,9 @@ to the login page; paths outside the prefix are left to Laravel.
   send it) gets `{ "message": "找不到這個頁面" }` with 404 instead of the page.
 - The not-found route is a GET fallback, so another method on an unknown path (`POST
   /admin/nope`) answers 405 Method Not Allowed.
-- With an empty `route.prefix` Brume registers no fallback: it would catch every unknown path of
-  the app and send guests to the admin login. Unknown paths then get Laravel's own 404.
+- With an empty `route.prefix` and no `route.domain`, Brume registers no fallback: it would catch
+  every unknown path of the app and send guests to the admin login. Unknown paths then get
+  Laravel's own 404. On an admin domain of its own (`route.domain`) the fallback stays.
 
 ## Not yet available
 
@@ -241,7 +242,7 @@ What's in it:
   over 60 seeded orders: newest first (`defaultSort`), quick search on number and customer,
   sortable 金額 and 建立時間, filters (狀態 select, 分類 multipleSelect, 金額 and 建立時間 ranges,
   a remote 客戶 select), the 本月 scope and a 狀態 selector, the status as a `label()` edited
-  inline with a select, 「標記出貨」 shown on paid rows, 「複製訂單編號」 and 刪除 in the ⋯ menu,
+  inline with a select, 「標記出貨」 shown on paid rows, 「顯示訂單編號」 and 刪除 in the ⋯ menu,
   batch 標記出貨 and 刪除, and the Excel export. The order number links to a `#edit-{id}` stub
   until the forms of sub-plan 2.
 - **Grid 示範** (`/admin/grid-showcase`, `GridShowcaseController`): 60 seeded `showcase_items`

@@ -2,6 +2,7 @@
 
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Tests\Support\JsonSchema;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Workbench\App\Http\Controllers\GridShowcaseController;
 use Workbench\App\Http\Controllers\OrderController;
@@ -65,12 +66,12 @@ it('ships paid orders and leaves the others', function () {
 });
 
 it('validates Grid 示範 against PageEnvelope, plain and with every filter applied', function (array $query) {
-    ShowcaseItem::factory()->count(25)->create(['owner_id' => brumeUser(['username' => 'owner'])->id]);
+    $owner = brumeUser(['username' => 'owner', 'name' => '林負責']);
+    ShowcaseItem::factory()->count(25)->create(['owner_id' => $owner->id]);
 
     $envelope = workbenchEnvelope('/admin/grid-showcase?'.http_build_query($query));
 
-    expect(JsonSchema::errors($envelope, 'PageEnvelope'))->toBe([])
-        ->and($envelope['page']['rows'][0]['owner.name'] ?? null)->toBeIn([null, '管理員']);
+    expect(JsonSchema::errors($envelope, 'PageEnvelope'))->toBe([]);
 })->with([
     'defaults' => [[]],
     'panel filters' => [['filter' => [
@@ -84,6 +85,22 @@ it('validates Grid 示範 against PageEnvelope, plain and with every filter appl
     ]]],
 ]);
 
+it('shows each Grid 示範 owner through the eager-loaded relation, one query for all rows', function () {
+    $owners = [brumeUser(['username' => 'a', 'name' => '王負責']), brumeUser(['username' => 'b', 'name' => '林負責'])];
+    foreach (range(0, 19) as $i) {
+        ShowcaseItem::factory()->create(['owner_id' => $owners[$i % 2]->id]);
+    }
+
+    DB::enableQueryLog();
+    $rows = workbenchEnvelope('/admin/grid-showcase')['page']['rows'];
+    $ownerQueries = array_filter(DB::getQueryLog(), fn (array $q) => str_contains($q['query'], 'brume_users') && str_contains($q['query'], ' in ('));
+
+    expect($rows)->toHaveCount(20)
+        ->and(array_count_values(array_column($rows, 'owner.name')))->toEqual(['王負責' => 10, '林負責' => 10])
+        // with('owner'): one whereIn for the page, not one query per row.
+        ->and($ownerQueries)->toHaveCount(1);
+});
+
 it('answers a broken Grid 示範 edit with a Chinese validation message', function () {
     // The dev server's WorkbenchServiceProvider adds this path; Pest keeps the package defaults.
     app('translation.loader')->addPath(workbench_path('lang'));
@@ -91,5 +108,5 @@ it('answers a broken Grid 示範 edit with a Chinese validation message', functi
 
     $this->patchJson("/admin/grid-showcase/_brume/cells/{$item->id}", ['column' => 'slogan', 'value' => ''])
         ->assertUnprocessable()
-        ->assertJsonPath('errors.slogan.0', '請填寫 標語。');
+        ->assertJsonPath('errors.slogan.0', '請填寫標語。');
 });

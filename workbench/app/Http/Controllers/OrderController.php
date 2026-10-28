@@ -50,12 +50,16 @@ class OrderController
         $grid->column('number', '訂單編號')->primary()->hideable(false);
         $grid->column('customer', '客戶');
         $grid->column('category', '分類');
+        // Narrow widths for the short columns keep the default columns within 1440px with the
+        // sidebar expanded (other columns get the fluid 10rem minimum).
         $grid->column('amount', '金額（NT$）')
+            ->width('8rem')
             ->numeric()
             ->sortable()
             ->display(fn (int $value) => number_format($value))
             ->exportUsing(fn (int $value) => $value);
         $grid->column('status', '狀態')
+            ->width('7rem')
             ->label($statuses)
             ->editable(Editor::select(Order::STATUS_LABELS));
         $grid->column('created_at', '建立時間')
@@ -74,8 +78,8 @@ class OrderController
                 ->exposed()
                 ->visible(fn (Order $order) => $order->status === 'paid')
                 ->handle(fn (Collection $orders) => $this->ship($orders)),
-            Action::make('copy_number', '複製訂單編號')
-                ->icon('copy')
+            Action::make('show_number', '顯示訂單編號')
+                ->icon('hash')
                 ->handle(fn (Collection $orders) => Feedback::toast('info', '訂單編號：'.$orders->first()->number)),
         );
         $grid->batchActions(
