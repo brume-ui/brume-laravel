@@ -1,13 +1,18 @@
 <?php
 
 use Brume\Grid\Grid;
-use Brume\Grid\GridResolver;
+use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\Controllers\GridEndpointController;
 use Brume\Http\Middleware\HandleBrumeRequests;
+use Brume\Http\Middleware\HandleGridEndpoint;
 use Brume\Models\User;
+use Brume\Tests\Support\Controllers\GuardedOrderGridController;
+use Brume\Tests\Support\Controllers\LegacyGuardedOrderGridController;
 use Brume\Tests\Support\Controllers\NotAGridController;
 use Brume\Tests\Support\Controllers\OrderGridController;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Workbench\App\Models\Order;
 
@@ -41,15 +46,24 @@ it('registers the page route and the four endpoints', function () {
 
     expect($registered)->toEqualCanonicalizing([
         'GET admin/orders',
-        'POST admin/orders/_brume/actions/{action}',
-        'PATCH admin/orders/_brume/cells/{id}',
+        'POST admin/orders/_brume/actions/{_brume_action}',
+        'PATCH admin/orders/_brume/cells/{_brume_id}',
         'GET admin/orders/_brume/export',
-        'GET admin/orders/_brume/options/{source}',
+        'GET admin/orders/_brume/options/{_brume_source}',
     ])
+        ->and($route)->toBeInstanceOf(GridRouteRegistrar::class)
         ->and($route->getName())->toBe('brume.orders.index')
         ->and(Route::getRoutes()->getByName('brume.orders.index')->uri())->toBe('admin/orders')
         ->and(route('brume.orders.index', absolute: false))->toBe('/admin/orders')
-        ->and($route->defaults['_brume_grid'])->toBeTrue();
+        ->and($route->page()->getAction('brume_grid'))->toBe('page')
+        // Markers live in the route action, not in defaults, which Laravel would pass to the controller.
+        ->and($route->page()->defaults)->toBe([]);
+
+    foreach ($route->endpoints() as $name => $endpoint) {
+        expect($endpoint->getAction('brume_grid'))->toBe($name)
+            ->and($endpoint->getActionName())->toBe(OrderGridController::class)
+            ->and(last($endpoint->middleware()))->toBe(HandleGridEndpoint::class);
+    }
 });
 
 it('outputs the endpoints on a brumeGrid page', function () {
@@ -104,8 +118,11 @@ it('fails loudly when the controller does not return a Grid', function () {
     $this->postJson('/admin/broken/_brume/actions/x', ['target' => 'row', 'ids' => [1]]);
 })->throws(LogicException::class, '必須回傳 Grid');
 
-it('names the action and the returned type when resolving fails', function () {
-    GridResolver::resolve(NotAGridController::class, Request::create('/'));
+it('names the action in the not-a-Grid error', function () {
+    $this->withoutExceptionHandling();
+    adminRoutes(fn () => Route::brumeGrid('broken', NotAGridController::class));
+
+    $this->getJson('/admin/broken/_brume/export');
 })->throws(LogicException::class, NotAGridController::class);
 
 it('passes the route parameters to the controller from the endpoints', function () {
@@ -145,11 +162,154 @@ it('binds route models for the controller behind the endpoints', function () {
         ->and($seen->is($owner))->toBeTrue();
 });
 
-it('routes the endpoints to GridEndpointController', function () {
-    adminRoutes(fn () => Route::brumeGrid('orders', OrderGridController::class));
+it('gives page parameters named id, action or source to the page action', function () {
+    $seen = [];
+    adminRoutes(function () use (&$seen) {
+        Route::brumeGrid('shops/{id}/orders/{source}/{action}', function (string $id, string $source, string $action) use (&$seen) {
+            $seen[] = [$id, $source, $action];
 
-    $action = Route::getRoutes()->match(Request::create('/admin/orders/_brume/actions/ship', 'POST'));
+            return Grid::make(Order::query());
+        });
+    });
 
-    expect($action->getActionName())->toBe(GridEndpointController::class.'@action')
-        ->and($action->defaults['_brume_grid_action'])->toBe(OrderGridController::class);
+    $this->get('/admin/shops/1/orders/web/list')->assertOk()->assertInertia(fn ($page) => $page
+        ->where('envelope.page.endpoints.cell', '/admin/shops/1/orders/web/list/_brume/cells/{id}'));
+    $this->postJson('/admin/shops/2/orders/web/list/_brume/actions/ship', ['target' => 'row', 'ids' => [1]])->assertNotFound();
+    $this->patchJson('/admin/shops/3/orders/web/list/_brume/cells/42', ['column' => 'customer', 'value' => 'x'])->assertNotFound();
+    $this->getJson('/admin/shops/4/orders/web/list/_brume/options/customer')->assertNotFound();
+
+    expect($seen)->toBe([['1', 'web', 'list'], ['2', 'web', 'list'], ['3', 'web', 'list'], ['4', 'web', 'list']]);
+});
+
+it('hands the endpoint its own parameter', function () {
+    adminRoutes(fn () => Route::brumeGrid('shops/{id}/orders', fn () => Grid::make(Order::query())));
+    app()->bind(GridEndpointController::class, fn () => new class extends GridEndpointController
+    {
+        public function cell(Grid $grid, Request $request, string $id): JsonResponse
+        {
+            app()->instance('test.seen', [$id, $request->route()->parameters()]);
+
+            return parent::cell($grid, $request, $id);
+        }
+    });
+
+    $this->patchJson('/admin/shops/3/orders/_brume/cells/42', ['column' => 'customer', 'value' => 'x'])->assertNotFound();
+
+    expect(app('test.seen'))->toBe(['42', ['id' => '3']]);
+});
+
+it('binds route models with a custom key for the endpoints', function () {
+    $owner = brumeUser(['username' => 'owner']);
+    $seen = null;
+    adminRoutes(function () use (&$seen) {
+        Route::brumeGrid('users/{user:username}/orders', function (User $user) use (&$seen) {
+            $seen = $user;
+
+            return Grid::make(Order::query());
+        });
+    });
+
+    $this->getJson('/admin/users/owner/orders/_brume/export')->assertNotFound();
+
+    expect($seen?->is($owner))->toBeTrue();
+});
+
+it('applies route modifiers chained on brumeGrid to every endpoint', function () {
+    $routes = null;
+    adminRoutes(function () use (&$routes) {
+        $routes = Route::brumeGrid('users/{user}/orders', fn (User $user) => Grid::make(Order::query()))
+            ->middleware('throttle:60,1')
+            ->scopeBindings()
+            ->withTrashed()
+            ->whereNumber('user')
+            ->name('brume.user-orders');
+    });
+
+    foreach ([$routes->page(), ...array_values($routes->endpoints())] as $route) {
+        expect($route->middleware())->toContain('throttle:60,1')
+            ->and($route->enforcesScopedBindings())->toBeTrue()
+            ->and($route->allowsTrashedBindings())->toBeTrue()
+            ->and($route->wheres)->toBe(['user' => '[0-9]+']);
+    }
+
+    foreach ($routes->endpoints() as $endpoint) {
+        expect(last($endpoint->middleware()))->toBe(HandleGridEndpoint::class);
+    }
+
+    expect($routes->page()->getName())->toBe('brume.user-orders')
+        ->and(collect($routes->endpoints())->map->getName()->filter()->all())->toBe([]);
+});
+
+it('runs route middleware chained on brumeGrid on every endpoint', function (bool $allowed) {
+    Gate::define('manage-orders', fn () => $allowed);
+    adminRoutes(fn () => Route::brumeGrid('orders', OrderGridController::class)->middleware('can:manage-orders'));
+
+    expectEndpointsGuarded($this, $allowed);
+})->with(['denied' => [false], 'allowed' => [true]]);
+
+it('runs the page controller\'s own middleware on every endpoint', function (string $controller, bool $allowed) {
+    Gate::define('manage-orders', fn () => $allowed);
+    adminRoutes(fn () => Route::brumeGrid('orders', $controller));
+
+    expectEndpointsGuarded($this, $allowed);
+})->with([
+    'HasMiddleware, denied' => [GuardedOrderGridController::class, false],
+    'HasMiddleware, allowed' => [GuardedOrderGridController::class, true],
+    '$this->middleware(), denied' => [LegacyGuardedOrderGridController::class, false],
+    '$this->middleware(), allowed' => [LegacyGuardedOrderGridController::class, true],
+]);
+
+/**
+ * The page and the four endpoints answer 403 when denied; allowed, the page renders and the
+ * endpoints reach their (still empty) handlers.
+ */
+function expectEndpointsGuarded($test, bool $allowed): void
+{
+    $test->get('/admin/orders')->assertStatus($allowed ? 200 : 403);
+
+    foreach ([
+        ['POST', '/admin/orders/_brume/actions/ship'],
+        ['PATCH', '/admin/orders/_brume/cells/1'],
+        ['GET', '/admin/orders/_brume/export'],
+        ['GET', '/admin/orders/_brume/options/customer'],
+    ] as [$method, $uri]) {
+        $test->json($method, $uri, ['target' => 'row', 'ids' => [1]])->assertStatus($allowed ? 404 : 403);
+    }
+}
+
+it('serves the endpoints of a closure action from cached routes', function () {
+    // On its own line: closure serialization reads the source and cannot tell two closures on one line apart.
+    $action = function (string $shop) {
+        return Grid::make(Order::query())->title("Shop {$shop}");
+    };
+    adminRoutes(fn () => Route::brumeGrid('shops/{shop}/orders', $action)->middleware('can:manage-orders'));
+    Gate::define('manage-orders', fn () => true);
+
+    // What `php artisan route:cache` writes and loads back.
+    $routes = Route::getRoutes();
+    foreach ($routes as $route) {
+        $route->prepareForSerialization();
+    }
+    Route::setCompiledRoutes(eval('return '.var_export($routes->compile(), true).';'));
+
+    $this->get('/admin/shops/5/orders')->assertOk()->assertInertia(fn ($page) => $page
+        ->where('envelope.page.title', 'Shop 5')
+        ->where('envelope.page.endpoints.action', '/admin/shops/5/orders/_brume/actions/{action}'));
+    $this->postJson('/admin/shops/5/orders/_brume/actions/ship', ['target' => 'row', 'ids' => [1]])->assertNotFound()->assertJsonStructure(['message']);
+
+    Gate::define('manage-orders', fn () => false);
+    $this->postJson('/admin/shops/5/orders/_brume/actions/ship', ['target' => 'row', 'ids' => [1]])->assertForbidden();
+});
+
+it('builds the endpoint URLs under the app\'s base path', function () {
+    $route = Route::brumeGrid('admin/orders', OrderGridController::class)->page();
+    $request = Request::create('http://localhost/sub/index.php/admin/orders', 'GET', [], [], [], [
+        'SCRIPT_FILENAME' => '/var/www/sub/index.php',
+        'SCRIPT_NAME' => '/sub/index.php',
+    ]);
+    $request->setRouteResolver(fn () => $route);
+
+    expect($request->getBaseUrl())->toBe('/sub/index.php')
+        ->and((new OrderGridController)()->toSchema($request)['endpoints']['action'])
+        ->toBe('/sub/index.php/admin/orders/_brume/actions/{action}');
 });

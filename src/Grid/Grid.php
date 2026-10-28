@@ -5,12 +5,14 @@ namespace Brume\Grid;
 use Brume\Contracts\Renderable;
 use Brume\Facades\Brume;
 use Brume\Grid\Query\Like;
+use Brume\Http\Controllers\GridEndpointController;
 use Closure;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -203,8 +205,16 @@ class Grid implements Renderable, Responsable
             + ($this->empty !== null ? ['empty' => $this->empty] : []);
     }
 
+    /**
+     * The list page, or, on a Route::brumeGrid `_brume` endpoint (which runs the page action too),
+     * that endpoint's answer.
+     */
     public function toResponse($request)
     {
+        if ($this->endpointRequest($request)) {
+            return app(GridEndpointController::class)->handle($this, $request);
+        }
+
         return Brume::render($this)->toResponse($request);
     }
 
@@ -288,8 +298,9 @@ class Grid implements Renderable, Responsable
      */
     protected function endpoints(Request $request): ?array
     {
-        if ($request->route()?->defaults['_brume_grid'] ?? false) {
-            $base = rtrim('/'.trim($request->path(), '/'), '/').'/_brume';
+        if ($this->routeRole($request) === 'page') {
+            // getBaseUrl() keeps an app served from a subdirectory (/sub/admin/orders) working.
+            $base = rtrim($request->getBaseUrl().'/'.trim($request->path(), '/'), '/').'/_brume';
 
             return [
                 'action' => $base.'/actions/{action}',
@@ -312,6 +323,21 @@ class Grid implements Renderable, Responsable
         }
 
         return null;
+    }
+
+    /**
+     * 'page' on a Route::brumeGrid list page, the endpoint name on its `_brume` routes, else null.
+     */
+    protected function routeRole(Request $request): ?string
+    {
+        $route = $request->route();
+
+        return $route instanceof Route ? $route->getAction(GridRouteRegistrar::ACTION_KEY) : null;
+    }
+
+    protected function endpointRequest(Request $request): bool
+    {
+        return ! in_array($this->routeRole($request), [null, 'page'], true);
     }
 
     /**

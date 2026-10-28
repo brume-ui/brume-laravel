@@ -13,7 +13,6 @@ use Brume\Support\Assets;
 use Brume\Support\Color;
 use Closure;
 use Illuminate\Cookie\Middleware\EncryptCookies;
-use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -100,7 +99,7 @@ class BrumeServiceProvider extends ServiceProvider
      */
     protected function registerGridRoutes(): void
     {
-        Router::macro('brumeGrid', function (string $uri, string|array|Closure $action): RoutingRoute {
+        Router::macro('brumeGrid', function (string $uri, string|array|Closure $action): GridRouteRegistrar {
             /** @var Router $this */
             return (new GridRouteRegistrar($this))->register($uri, $action);
         });

@@ -6,9 +6,12 @@ use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
- * Literal LIKE matching that reads the same on SQLite, MySQL and PostgreSQL: ANSI
- * `LIKE ? ESCAPE '!'`, with `LOWER()` on both sides when case does not matter. The term's
- * `!`, `%` and `_` are escaped, so "50%" finds "50%off" and never "500ff".
+ * Literal LIKE matching written in ANSI SQL, the same text on every driver: `LIKE ? ESCAPE '!'`,
+ * with `LOWER()` on both sides when case does not matter. The term's `!`, `%` and `_` are escaped,
+ * so "50%" finds "50%off" and never "500ff". Tested on SQLite and MySQL.
+ *
+ * Limits of the case-insensitive form: SQLite's LOWER() folds ASCII letters only (É and é still
+ * differ), and PostgreSQL's lower() accepts text only, so a numeric column fails there.
  */
 final class Like
 {
