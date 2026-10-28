@@ -4,6 +4,7 @@ namespace Brume\Grid;
 
 use Brume\Contracts\Renderable;
 use Brume\Facades\Brume;
+use Brume\Grid\Filters\Filters;
 use Brume\Grid\Query\Like;
 use Brume\Http\Controllers\GridEndpointController;
 use Closure;
@@ -46,6 +47,8 @@ class Grid implements Renderable, Responsable
 
     /** @var array<string, mixed>|null */
     protected ?array $empty = null;
+
+    protected ?Filters $filters = null;
 
     final public function __construct(protected Builder $query) {}
 
@@ -163,7 +166,16 @@ class Grid implements Renderable, Responsable
      */
     public function column(string $key, ?string $label = null): Column
     {
-        return $this->columns[] = new Column($key, $label ?? Column::defaultLabel($key));
+        return $this->columns[] = (new Column($key, $label ?? Column::defaultLabel($key)))->withFilters($this->filters());
+    }
+
+    /**
+     * The filter panel, hidden filters, selectors and scopes (column-header filters come from
+     * Column::filter()). Each filter reads filter[key] from the URL.
+     */
+    public function filters(): Filters
+    {
+        return $this->filters ??= new Filters;
     }
 
     public function toSchema(Request $request): array
@@ -197,6 +209,7 @@ class Grid implements Renderable, Responsable
                 'perPageOptions' => $this->perPageChoices(),
             ]
             + ($this->searchable() ? ['quickSearch' => $this->quickSearchSchema()] : [])
+            + $this->filters()->toSchema()
             + [
                 'appliedFilters' => $this->appliedFilters($state),
                 'actions' => ['row' => [], 'batch' => [], 'tools' => []],
@@ -230,6 +243,8 @@ class Grid implements Renderable, Responsable
         if ($state->q !== null) {
             $this->applyQuickSearch($query, $state->q);
         }
+
+        $this->filters()->apply($query, $state->filters, $state->scope);
 
         $this->applySort($query, $state->sort ?? $this->defaultSort);
 
@@ -287,7 +302,7 @@ class Grid implements Renderable, Responsable
      */
     protected function needsEndpoints(): bool
     {
-        return false;
+        return $this->filters()->hasRemote();
     }
 
     /**
@@ -354,9 +369,10 @@ class Grid implements Renderable, Responsable
      */
     protected function appliedFilters(GridQuery $state): array
     {
-        return $state->q !== null
-            ? [['key' => 'q', 'label' => __('brume::grid.search'), 'display' => $state->q]]
-            : [];
+        return [
+            ...($state->q !== null ? [['key' => 'q', 'label' => __('brume::grid.search'), 'display' => $state->q]] : []),
+            ...$this->filters()->applied($state->filters, $state->scope),
+        ];
     }
 
     protected function applyQuickSearch(Builder $query, string $term): void

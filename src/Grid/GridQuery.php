@@ -6,19 +6,23 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 /**
- * The list state a request asks for (page, per_page, sort, q), corrected to what the grid allows.
+ * The list state a request asks for (page, per_page, sort, q, scope, filter[*]), corrected to what
+ * the grid allows.
  * Invalid values never fail the request: they fall back to the defaults (packages/schema/docs/url-params.md).
  */
 final class GridQuery
 {
     /**
      * @param  array{key: string, direction: 'asc'|'desc'}|null  $sort  only a sort the URL asked for
+     * @param  array<string, mixed>  $filters  usable filter values (defaults included), by filter key
      */
     public function __construct(
         public readonly int $page,
         public readonly int $perPage,
         public readonly ?array $sort,
         public readonly ?string $q,
+        public readonly array $filters = [],
+        public readonly ?string $scope = null,
     ) {}
 
     public static function fromRequest(Request $request, Grid $grid): self
@@ -28,6 +32,8 @@ final class GridQuery
             perPage: self::perPage($request->query('per_page'), $grid),
             sort: self::sort($request->query('sort'), $grid),
             q: $grid->searchable() ? self::search($request->query('q')) : null,
+            filters: $grid->filters()->values($request->query('filter')),
+            scope: $grid->filters()->scopeKey($request->query('scope')),
         );
     }
 
@@ -40,10 +46,11 @@ final class GridQuery
     {
         return ($this->sort !== null ? ['sort' => $this->sort] : [])
             + ($this->q !== null ? ['q' => $this->q] : [])
+            + ($this->scope !== null ? ['scope' => $this->scope] : [])
             + [
                 'perPage' => $this->perPage,
-                // An object even when empty: a PHP [] would encode as a JSON list.
-                'filters' => (object) [],
+                // An object even when empty (or keyed '0'): a PHP array could encode as a JSON list.
+                'filters' => (object) $this->filters,
             ];
     }
 

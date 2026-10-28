@@ -3,12 +3,15 @@
 namespace Brume\Grid;
 
 use BackedEnum;
+use Brume\Grid\Filters\Filter;
+use Brume\Grid\Filters\Filters;
 use Brume\Support\ComponentRef;
 use Closure;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use LogicException;
 use Stringable;
 
 class Column
@@ -33,6 +36,10 @@ class Column
 
     protected bool $primary = false;
 
+    protected ?Filters $filters = null;
+
+    protected ?Filter $filter = null;
+
     public function __construct(
         protected string $key,
         protected string $label,
@@ -51,6 +58,11 @@ class Column
     public function numeric(): static
     {
         $this->numeric = true;
+
+        // A header filter declared before numeric() takes numbers too.
+        if ($this->filter?->filterInput()->asNumber() !== null) {
+            $this->filter->number();
+        }
 
         return $this;
     }
@@ -134,6 +146,35 @@ class Column
     }
 
     /**
+     * A filter in the column header, keyed by the column key (filter[key]). $type is one of
+     * between, checkbox, equal, gt, in, input (contains), like, lt, ngt, nlt, startWith;
+     * in and checkbox need $options (value => label), which turn equal into a select. On a
+     * numeric() column the input takes numbers.
+     *
+     * @param  array<int|string, string>  $options
+     */
+    public function filter(string $type, array $options = []): static
+    {
+        if ($this->filters === null) {
+            throw new LogicException("欄位「{$this->key}」不在 Grid 裡，filter() 要用在 \$grid->column() 回傳的欄位上。");
+        }
+
+        $this->filter = $this->filters->forColumn($this->key, $this->label, $type, $options, $this->numeric);
+
+        return $this;
+    }
+
+    /**
+     * @internal
+     */
+    public function withFilters(Filters $filters): static
+    {
+        $this->filters = $filters;
+
+        return $this;
+    }
+
+    /**
      * @internal
      */
     public function isSortable(): bool
@@ -171,6 +212,7 @@ class Column
             + ($this->width !== null ? ['width' => $this->width] : [])
             + ($this->component !== null ? ['display' => $this->component] : [])
             + ($this->sortable ? ['sortable' => true] : [])
+            + ($this->filter !== null ? ['filter' => $this->filter->key()] : [])
             // The schema's default is true, so only the exception is written out.
             + ($this->hideable ? [] : ['hideable' => false])
             + ($this->hiddenByDefault ? ['hiddenByDefault' => true] : [])

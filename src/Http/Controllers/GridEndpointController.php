@@ -42,9 +42,14 @@ class GridEndpointController
         return $this->unavailable();
     }
 
+    /**
+     * The OptionsResponse of the remote filter keyed $source.
+     */
     public function options(Grid $grid, Request $request, string $source): JsonResponse
     {
-        return $this->unavailable();
+        $options = $grid->filters()->remoteOptions($source);
+
+        return $options !== null ? new JsonResponse($options->respond($request)) : $this->unavailable();
     }
 
     /**

@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Route;
 use Workbench\App\Models\Order;
 
 /**
- * Orders on a Route::brumeGrid page with every Task 14 feature declared.
+ * Orders on a Route::brumeGrid page with every Task 14 and 15 feature declared (remote options
+ * aside, so the options endpoint still has nothing to serve).
  */
 function protocolGrid(): Grid
 {
@@ -25,8 +26,17 @@ function protocolGrid(): Grid
     $grid->column('customer')->hideable(false);
     $grid->column('amount')->numeric()->sortable();
     $grid->column('status')->component('OrderStatus');
-    $grid->column('category')->hidden();
+    $grid->column('category')->hidden()->filter('in', array_combine(Order::CATEGORIES, Order::CATEGORIES));
     $grid->column('created_at')->sortable();
+
+    $grid->filters()->columns(2);
+    $grid->filters()->in('status', '狀態')->multipleSelect(Order::STATUS_LABELS);
+    $grid->filters()->between('amount', '金額')->number();
+    $grid->filters()->newline();
+    $grid->filters()->group('amount_cond', '金額條件', column: 'amount')->number()->span(2);
+    $grid->filters()->hidden('customer');
+    $grid->filters()->selector('status_pick', '快速狀態', Order::STATUS_LABELS, column: 'status');
+    $grid->filters()->scope('big', '大單', fn ($query) => $query->where('amount', '>=', 5000));
 
     return $grid;
 }
@@ -56,6 +66,11 @@ it('validates a brumeGrid page against PageEnvelope', function (array $query) {
     'sorted, searched, paged' => [['sort' => '-amount', 'q' => 'BR', 'per_page' => '50', 'page' => '2']],
     'nothing found' => [['q' => 'no such order']],
     'invalid values' => [['sort' => 'password', 'per_page' => '7', 'page' => '-1', 'q' => ['x']]],
+    'filtered and scoped' => [['scope' => 'big', 'filter' => [
+        'status' => ['paid', 'shipped'], 'amount' => ['start' => '100'], 'amount_cond' => ['op' => 'gt', 'value' => '1'],
+        'customer' => 'x', 'status_pick' => 'paid', 'category' => ['服飾'],
+    ]]],
+    'invalid filters' => [['scope' => ['x'], 'filter' => ['status' => ['x' => ['y' => '1']], 'amount' => 'abc', 'amount_cond' => ['op' => 'x']]]],
 ]);
 
 it('validates the Inertia partial reload the grid navigates with', function () {
