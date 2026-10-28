@@ -6,6 +6,7 @@ use Brume\Console\InstallCommand;
 use Brume\Console\PasswordCommand;
 use Brume\Console\UserCommand;
 use Brume\Grid\GridRouteRegistrar;
+use Brume\Http\Controllers\NotFoundController;
 use Brume\Http\Middleware\Authenticate;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Http\Middleware\RedirectIfAuthenticated;
@@ -185,6 +186,10 @@ class BrumeServiceProvider extends ServiceProvider
             if (is_string($project = config('brume.routes.host')) && file_exists($project)) {
                 Route::middleware('brume.auth')->group($project);
             }
+
+            // Last, after the project's routes: an unknown path under the prefix (GET) answers
+            // the styled 404 page to a signed-in user; a guest is sent to the login page.
+            Route::fallback(NotFoundController::class)->middleware('brume.auth');
         });
     }
 }

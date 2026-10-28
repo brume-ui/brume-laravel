@@ -50,6 +50,50 @@ jobs:
 
       - run: composer test
 
+  mysql:
+    name: mysql 8.4 / php 8.5 / laravel 13.*
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: brume_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -psecret"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      # The same Pest suite as the php jobs, on MySQL (tests/TestCase.php reads these).
+      BRUME_TEST_DB: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: brume_test
+      DB_USERNAME: root
+      DB_PASSWORD: secret
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_mysql, pdo_sqlite, sqlite3, mbstring, intl
+          coverage: none
+          tools: composer:v2
+
+      - name: Pin laravel/framework 13.*
+        run: |
+          composer require --dev --no-update --no-interaction \
+            "laravel/framework:13.*" "orchestra/testbench:^11.0"
+          composer update --prefer-dist --with-all-dependencies --no-interaction --no-progress
+          composer show laravel/framework | grep -E '^versions'
+
+      - run: composer test
+
   frontend:
     name: frontend dist
     runs-on: ubuntu-24.04

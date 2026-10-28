@@ -126,10 +126,91 @@ Styling uses Brume's tokens as plain Tailwind utilities (`bg-surface`, `text-tex
 `text-danger`, ...). In precompiled mode an unknown component shows an error that tells you to
 switch to `--frontend`, instead of an empty slot.
 
+## Grid
+
+`Grid::make()` takes a model class or a query; the list, the `_brume` endpoints (actions, inline
+editing) and the Excel export all start from that query.
+
+- **Relation columns.** A dotted column such as `customer.name` reads the relation on every row.
+  Eager load it on the base query, or the list and the export run one query per row (N+1):
+
+  ```php
+  $grid = Grid::make(Order::query()->with('customer'));
+  $grid->column('customer.name', '客戶');
+  ```
+
+- **Hidden attributes.** A column that reads an attribute in the model's `$hidden` (directly or
+  through a relation) is refused in the list unless it has a `display()` closure, which decides
+  what is shown. The export refuses it unless the column has `exportUsing()` (or
+  `exportable(false)`), and inline editing refuses it behind a `display()` closure, because the
+  stored value would be sent as `_meta.raw`.
+- **Decimals.** MySQL returns a `decimal` column as a string. Cast it (`'decimal:2'`) or declare the
+  column `numeric()` so the export writes it as a number.
+- **String keys** are matched exactly. With MySQL's default case-insensitive collation the
+  database also returns the row `abc` for the id `ABC`; Brume answers 404 for it, as SQLite and
+  PostgreSQL do.
+
+### Actions
+
+An action runs inside a database transaction on the model's connection, and a thrown exception
+rolls it back. The rollback covers only database writes on that connection: mail, HTTP calls,
+files, queued jobs and writes on other connections have already happened. Run those after the
+commit with `DB::afterCommit()`, or make the job or listener `ShouldQueueAfterCommit` and the
+event `ShouldDispatchAfterCommit`.
+
+For a one-time action (refund, ship, issue an invoice), check the state again inside the action
+with a row lock, so two clicks or two admins cannot both run it. A `ValidationException` rolls the
+whole action back and shows its message:
+
+```php
+Action::make('refund', '退款')->handle(function (Collection $orders) {
+    $locked = Order::query()->whereKey($orders->modelKeys())->lockForUpdate()->get();
+
+    if ($locked->contains(fn (Order $order) => $order->status !== 'paid')) {
+        throw ValidationException::withMessages(['ids' => '有訂單已經退款，請重新整理後再試一次。']);
+    }
+
+    $locked->each->update(['status' => 'refunded']);
+});
+```
+
+### Filters that depend on the database
+
+Brume uses only Laravel's cross-database query builder, plus an ANSI `LIKE ? ESCAPE '!'` with
+`LOWER()` for case-insensitive matching. These conditions still behave differently between
+databases; `FilterCondition::driverNote()` returns the same notes.
+
+| Condition | SQLite | MySQL | PostgreSQL |
+| --- | --- | --- | --- |
+| `like`, `startWith`, `endWith` | case-insensitive for ASCII letters | follows the column collation (the default `_ci` ignores case) | case-sensitive |
+| `ilike` | `LOWER()` folds ASCII letters only (`É` and `é` differ) | `LOWER()` on both sides | `lower()` takes text columns only; a numeric column errors |
+| `findInSet` | portable `=` / `LIKE` on the comma-separated list | same (no `FIND_IN_SET()`) | same |
+| `in` / `notIn` with `->json()` | no `whereJsonContains`: falls back to `LIKE` on `"value"` in the JSON text, string items only, ASCII case ignored | `whereJsonContains` | `whereJsonContains` |
+| JSON path column (`meta->color`) | needs JSON1 (built in since 3.38) | 5.7 or later | `json` or `jsonb` column |
+
+`findInSet` uses no index, and its items must be stored without spaces around the commas.
+
+### Not-found page
+
+A signed-in visit to an unknown path under the Brume prefix (for example `/admin/nope`) answers
+404 with the error page inside the shell: 「找不到這個頁面」, with a 「回到首頁」 link. A guest is sent
+to the login page; paths outside the prefix are left to Laravel.
+
+## Not yet available
+
+These are planned for later sub-plans and phases:
+
+- **Quick create** from the list: needs the forms of sub-plan 2.
+- **Actions with input fields** (a refund reason, ...): sub-plan 2.
+- **The SelectTable / MultipleSelectTable picker dialog** for filters: sub-plan 3. Until then, use
+  the remote-search `select` / `multipleSelect` filters, which do the same job.
+- **Orderable, Tree and DialogTree**: phase 3.
+
 ## Development
 
     composer install
-    composer test      # Pest
+    composer test      # Pest (SQLite)
+    BRUME_TEST_DB=mysql DB_PORT=3307 DB_PASSWORD=secret composer test   # the same suite on MySQL
     composer lint      # Pint
     composer serve     # workbench at http://127.0.0.1:8100/admin
 
