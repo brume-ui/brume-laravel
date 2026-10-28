@@ -1,29 +1,5 @@
-import AxeBuilder from '@axe-core/playwright';
-import { expect, type Page, test } from '@playwright/test';
-import { login, useScheme } from './support';
-
-async function axeViolations(page: Page): Promise<unknown[]> {
-  // Inertia's progress bar (NProgress, `.bar[role="bar"]`) stays in the DOM until the visit
-  // finishes. Audit the settled page, not the transient indicator from @inertiajs/react.
-  await expect(page.locator('#nprogress')).toHaveCount(0);
-  // Brume's enter animations (fades, row staggers) pass through low-contrast frames; audit
-  // the settled colors once every finite animation has finished.
-  await page.evaluate(() =>
-    Promise.all(
-      document
-        .getAnimations()
-        .filter((a) => a.effect?.getComputedTiming().endTime !== Number.POSITIVE_INFINITY)
-        .map((a) => a.finished.catch(() => undefined)),
-    ),
-  );
-  const { violations } = await new AxeBuilder({ page }).analyze();
-  return violations.map((v) => ({
-    url: new URL(page.url()).pathname,
-    id: v.id,
-    help: v.help,
-    nodes: v.nodes.map((n) => `${n.target.join(' ')} — ${n.failureSummary}`),
-  }));
-}
+import { expect, test } from '@playwright/test';
+import { axeViolations, login, useScheme } from './support';
 
 test('no light flash on reload in dark mode', async ({ page }) => {
   await login(page);
@@ -87,7 +63,7 @@ for (const scheme of ['light', 'dark'] as const) {
     violations.push(...(await axeViolations(page)));
 
     await page.goto('/admin/orders');
-    await expect(page.getByRole('cell', { name: 'BR-20261027-060' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'BR-20261027-060', exact: true })).toBeVisible();
     violations.push(...(await axeViolations(page)));
 
     await page.goto('/admin/components');

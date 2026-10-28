@@ -42,10 +42,13 @@ test('the dashboard renders the stat cards and charts from the seeded orders, no
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
-test('訂單 lists 60 seeded orders, newest first, 15 per page', async ({ page }) => {
+test('訂單 lists 60 seeded orders, newest first (the default sort), 15 per page', async ({ page }) => {
   await page.getByRole('link', { name: '訂單' }).click();
   await expect(page).toHaveURL(/\/admin\/orders$/);
   await expect(page.getByRole('heading', { name: '訂單', level: 1 })).toBeVisible();
+  // Searchable and sortable now (grid.spec.ts drives them); the default sort is not a header sort.
+  await expect(page.getByRole('searchbox', { name: '搜尋' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /^建立時間/ })).toHaveAttribute('aria-sort', 'none');
 
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(15);

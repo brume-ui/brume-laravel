@@ -35,5 +35,7 @@ class WorkbenchServiceProvider extends ServiceProvider
         }
 
         $this->loadTranslationsFrom(workbench_path('lang'), 'workbench');
+        // Unnamespaced too, for lang/{zh_TW,zh_CN}/validation.php: Laravel ships English only.
+        $this->app['translation.loader']->addPath(workbench_path('lang'));
     }
 }

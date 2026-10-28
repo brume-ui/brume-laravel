@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Hash;
 use Random\Engine\Mt19937;
 use Random\Randomizer;
 use Workbench\App\Models\Order;
+use Workbench\App\Models\ShowcaseItem;
 
 /**
  * Demo data for the workbench and the e2e suite. Faker is seeded, so every run produces the
@@ -22,6 +23,8 @@ class DatabaseSeeder extends Seeder
     public const FAKE_ADMINS = 35;
 
     public const ORDERS = 60;
+
+    public const SHOWCASE_ITEMS = 60;
 
     /** The newest order; the dashboard reports the months up to this one. */
     public const LAST_ORDER_AT = '2026-10-27 18:00:00';
@@ -57,6 +60,30 @@ class DatabaseSeeder extends Seeder
         }
 
         $this->seedOrders();
+        $this->seedShowcaseItems();
+    }
+
+    /**
+     * Grid 示範: one item a day up to LAST_ORDER_AT, each owned by one of the first six admins.
+     */
+    private function seedShowcaseItems(): void
+    {
+        app(Generator::class, ['locale' => 'zh_TW'])->seed(20261030);
+
+        $last = CarbonImmutable::parse(self::LAST_ORDER_AT);
+
+        ShowcaseItem::factory()
+            ->count(self::SHOWCASE_ITEMS)
+            ->state(new Sequence(function (Sequence $sequence) use ($last) {
+                $createdAt = $last->subDays(self::SHOWCASE_ITEMS - 1 - $sequence->index);
+
+                return [
+                    'owner_id' => $sequence->index % 6 + 1,
+                    'created_at' => $createdAt,
+                    'updated_at' => $createdAt,
+                ];
+            }))
+            ->create();
     }
 
     /**

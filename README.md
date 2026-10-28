@@ -237,9 +237,20 @@ What's in it:
 - **儀表板**: brume-react's chart components (`StatCard`, `LineChart`, `DonutChart`,
   `BarChart`) fed from the seeded orders: `DashboardController` computes the figures and passes
   them as props to the registered `KpiRow` and `ChartCard` components (`components/`).
-- **訂單**: a Grid over 60 seeded orders (`workbench/database`): numeric amount, a status
-  column rendered by the registered `OrderStatus` cell component, `created_at` formatted with
-  `display()`, 15 per page.
+- **訂單**: the phase-2 Grid set up like an everyday list (`OrderController`, `Route::brumeGrid`)
+  over 60 seeded orders: newest first (`defaultSort`), quick search on number and customer,
+  sortable 金額 and 建立時間, filters (狀態 select, 分類 multipleSelect, 金額 and 建立時間 ranges,
+  a remote 客戶 select), the 本月 scope and a 狀態 selector, the status as a `label()` edited
+  inline with a select, 「標記出貨」 shown on paid rows, 「複製訂單編號」 and 刪除 in the ⋯ menu,
+  batch 標記出貨 and 刪除, and the Excel export. The order number links to a `#edit-{id}` stub
+  until the forms of sub-plan 2.
+- **Grid 示範** (`/admin/grid-showcase`, `GridShowcaseController`): 60 seeded `showcase_items`
+  with every display, every inline editor (`switch` and `switchGroup` included), all 11
+  column-header filters, and panel filters for `findInSet` (tags), a JSON array (channels), a
+  JSON path (`meta->color`), `group`, a remote select, `whereBetween`, `newline()` and
+  `columns(2)`, plus a `hidden` filter (`?filter[owner_id]=2`). 負責人 is a relation column
+  (`owner.name`), eager loaded with `with('owner')`. Its images and downloads come from
+  `/admin/_demo/swatch/{color}.svg`, so it needs no network.
 - **元件展示**: every public brume-react component (buttons, inputs, Field, Card, EmptyState,
   Skeleton, DataTable + Pagination, Dialog, confirm, toasts, PageHeader, the charts; breadcrumbs
   come from the shell) in the real shell, as one registered component
@@ -249,7 +260,9 @@ What's in it:
   time) and `/admin/_demo/missing-component` (the guidance shown for an unregistered component).
 
 The demo menu, routes and dashboard live in `workbench/` and are only active on the dev server,
-not under Pest. `WORKBENCH_EMPTY_LIST=1 composer serve` empties the 管理員 list, to check its
+not under Pest (`tests/Feature/WorkbenchGridsTest.php` registers the two grids itself). Laravel
+ships English validation messages only, so the workbench adds `workbench/lang/{zh_TW,zh_CN}/validation.php`
+for the common rules: an inline edit that fails validation reads in Chinese. `WORKBENCH_EMPTY_LIST=1 composer serve` empties the 管理員 list, to check its
 empty state. The workbench uses SQLite and the session cookie `brume_workbench_session`, so it
 does not clash with other local Laravel apps.
 
@@ -265,7 +278,8 @@ Precompiled mode (`dist/`) is what `brume:install` without `--frontend` uses; it
 database, `display_errors=1` so PHP warnings printed into a response fail the suite). It never
 reuses a running server: stop `composer serve` first, or run the suite on another port with
 `E2E_PORT=8103 composer e2e`. Both use the same SQLite file, so the suite reseeds the database a
-running `composer serve` reads.
+running `composer serve` reads. `e2e/tests/grid.spec.ts` ships and deletes seeded orders, so
+it runs as its own Playwright project after the other specs.
 
     composer smoke -- 12 precompiled                # or: 12 vite, 13 precompiled, 13 vite
 

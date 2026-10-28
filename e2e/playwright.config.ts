@@ -16,7 +16,12 @@ export default defineConfig({
     timezoneId: 'Asia/Taipei',
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: 'grid.spec.ts' },
+    // grid.spec.ts ships and deletes seeded orders, which the dashboard and 訂單 checks above
+    // count on, so it runs once they are done.
+    { name: 'grid', use: { ...devices['Desktop Chrome'] }, testMatch: 'grid.spec.ts', dependencies: ['chromium'] },
+  ],
   webServer: {
     // Builds the workbench frontend, migrates and seeds a fresh database, then serves the workbench.
     command: './serve.sh',

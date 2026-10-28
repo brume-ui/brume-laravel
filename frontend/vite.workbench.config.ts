@@ -16,18 +16,26 @@ const sources = resolve(workbench, 'resources/js');
 const publicDir = resolve(packageRoot, 'vendor/orchestra/testbench-core/laravel/public');
 
 /**
- * The workbench components use Lucide icons. lucide-react is a dependency of brume-react, not of
- * frontend/package.json (which installed projects receive), so resolve it from brume-react: the
- * same copy the shell already bundles for menu icons.
+ * Packages the workbench components share with the shell resolve to the shell's own copies:
+ * lucide-react (a dependency of brume-react, not of frontend/package.json, which installed
+ * projects receive), React (one copy, or hooks fail) and @inertiajs/react (one router). Installed
+ * from npm these are the same copies frontend/ has; with brume-ui linked (see the README) the
+ * shell's come from brume-ui's node_modules, and a second React would break every hook.
  */
-function lucideFromBrumeReact(): Plugin {
-  const brumeReact = realpathSync(resolve(frontend, 'node_modules/@brume-ui/brume-react'));
+function sharedWithShell(): Plugin {
+  const from = (pkg: string) => resolve(realpathSync(resolve(frontend, 'node_modules', pkg)), 'package.json');
+  const owners: Array<[RegExp, string]> = [
+    [/^lucide-react$/, from('@brume-ui/brume-react')],
+    [/^react(?:-dom)?(?:\/.*)?$/, from('@brume-ui/brume-react')],
+    [/^@inertiajs\/react$/, from('@brume-ui/brume-inertia')],
+  ];
   return {
-    name: 'brume:workbench-lucide',
+    name: 'brume:workbench-shared-with-shell',
     enforce: 'pre',
     resolveId(source, importer, options) {
-      if (source !== 'lucide-react' || !importer?.startsWith(sources)) return null;
-      return this.resolve(source, resolve(brumeReact, 'package.json'), { ...options, skipSelf: true });
+      if (!importer?.startsWith(sources)) return null;
+      const owner = owners.find(([pattern]) => pattern.test(source))?.[1];
+      return owner ? this.resolve(source, owner, { ...options, skipSelf: true }) : null;
     },
   };
 }
@@ -39,7 +47,7 @@ export default defineConfig({
   base: '/build-brume/',
   publicDir: false,
   envDir: frontend,
-  plugins: [lucideFromBrumeReact(), resolveImportsFromFrontend(sources), react(), tailwindcss()],
+  plugins: [sharedWithShell(), resolveImportsFromFrontend(sources), react(), tailwindcss()],
   build: {
     outDir: resolve(publicDir, 'build-brume'),
     emptyOutDir: true,
