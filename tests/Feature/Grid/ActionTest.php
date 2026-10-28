@@ -6,7 +6,6 @@ use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\Models\ActionItem;
-use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -314,14 +313,8 @@ it('answers 401 JSON when signed out', function () {
 it('answers 419 without a CSRF token', function () {
     [$a] = actionItems();
     actionRoutes(fn (Grid $grid) => $grid->rowActions(closeAction()));
-    // The middleware skips its check while running tests; this one checks.
-    $this->app->bind(PreventRequestForgery::class, fn ($app) => new class($app, $app['encrypter']) extends PreventRequestForgery
-    {
-        protected function runningUnitTests()
-        {
-            return false;
-        }
-    });
+    // The CSRF middleware skips its check in the testing environment.
+    app()->detectEnvironment(fn () => 'local');
 
     $response = $this->postJson('/admin/items/_brume/actions/close', ['target' => 'row', 'ids' => [$a->id]])->assertStatus(419);
 
