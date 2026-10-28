@@ -6,6 +6,7 @@ use Brume\Grid\Editor;
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Tests\Support\JsonSchema;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Workbench\App\Models\Order;
@@ -166,6 +167,14 @@ it('sends the raw value of an edited column with a display closure in _meta.raw'
         // Not edited, or edited without a closure: nothing to add.
         ->and(displayColumn('customer')->display(fn ($value) => "客戶 {$value}")->rowMeta($order))->toBe([])
         ->and(displayColumn('customer')->editable()->rowMeta($order))->toBe([]);
+});
+
+it('passes the display closure the attribute as the model casts it', function () {
+    $order = displayOrder(['created_at' => '2026-10-29 08:30:00']);
+    $displayed = displayColumn('created_at')->editable()->display(fn (?CarbonInterface $at) => $at?->format('Y-m-d'));
+
+    expect($displayed->value($order))->toBe('2026-10-29')
+        ->and($displayed->rowMeta($order)['raw'])->toBe($order->created_at->format(DateTimeInterface::ATOM));
 });
 
 it('sends switch values as booleans', function () {

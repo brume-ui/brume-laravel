@@ -259,10 +259,11 @@ class Column
      */
     public function value(mixed $row): mixed
     {
-        $value = $this->rawValue($row);
+        // The closure gets the attribute as the model has it (a Carbon date, an enum, ...).
+        $value = $this->editedValue($row, data_get($row, $this->key));
 
         if ($this->display === null) {
-            return $this->shapeDisplayed($value);
+            return $this->shapeDisplayed(static::normalize($value));
         }
 
         $value = ($this->display)($value, $row);
@@ -316,8 +317,11 @@ class Column
         };
     }
 
+    /**
+     * The value the editor starts from, JSON-safe.
+     */
     protected function rawValue(mixed $row): mixed
     {
-        return $this->editedValue($row, static::normalize(data_get($row, $this->key)));
+        return static::normalize($this->editedValue($row, data_get($row, $this->key)));
     }
 }
