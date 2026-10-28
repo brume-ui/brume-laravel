@@ -30,6 +30,12 @@ return [
         'forbidden' => 'This action is not available for that row.',
         'too_many' => 'You can act on at most :max rows at once.',
     ],
+    // The inline-edit (cell) endpoint.
+    'cell' => [
+        'not_editable' => 'This column cannot be edited here.',
+        'not_found' => 'This row could not be found. It may have been deleted, or is not in this list.',
+        'not_text' => 'The :attribute must be text.',
+    ],
     // Grid::deletable(). {count} stays as is: the page fills it in.
     'delete' => [
         'label' => 'Delete',

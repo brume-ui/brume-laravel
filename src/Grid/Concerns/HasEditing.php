@@ -21,7 +21,9 @@ trait HasEditing
 
     /**
      * Edit the cell in place with $editor (a text input by default), validating the new value
-     * with $rules. With a display() closure the row also carries the raw value for the editor.
+     * with $rules (the select, radio and checkbox options, a switch's boolean and the editor's
+     * bounds are added). With a display() closure the row also carries the raw value for the
+     * editor. Only the model's own attributes can be edited, not a relation's (a dotted key).
      *
      * @param  array<int|string, mixed>|string  $rules
      */
@@ -29,6 +31,10 @@ trait HasEditing
     {
         if ($this->primary) {
             throw new LogicException(static::primaryEditableMessage($this->key));
+        }
+
+        if (str_contains($this->key, '.')) {
+            throw new InvalidArgumentException("欄位「{$this->key}」是關聯欄位：行內編輯（editable()、switch()、switchGroup()）目前只能改模型自己的欄位，關聯欄位的編輯會在之後的版本提供。");
         }
 
         $this->editor = $editor ?? Editor::text();
@@ -101,6 +107,16 @@ trait HasEditing
     public function editRules(): array|string
     {
         return $this->editRules;
+    }
+
+    /**
+     * @internal
+     *
+     * @return array<string, string> attribute => label, for switchGroup()
+     */
+    public function switchKeys(): array
+    {
+        return $this->switchKeys;
     }
 
     /**

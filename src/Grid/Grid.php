@@ -284,6 +284,34 @@ class Grid implements Renderable, Responsable
     }
 
     /**
+     * The declared column keyed $key when it is edited inline (editable(), switch(), switchGroup()).
+     *
+     * @internal
+     */
+    public function editableColumn(string $key): ?Column
+    {
+        foreach ($this->columns as $column) {
+            if ($column->key() === $key && $column->isEditable()) {
+                return $column;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The row as the list sends it (declared columns and _meta), for an endpoint's answer.
+     *
+     * @internal
+     *
+     * @return array<string, mixed>
+     */
+    public function rowFor(Model $model): array
+    {
+        return $this->row($model, $this->actionsOf('row'));
+    }
+
+    /**
      * The most rows one batch action takes: the largest page the list can show.
      *
      * @internal
@@ -424,10 +452,17 @@ class Grid implements Renderable, Responsable
      */
     protected function needsEndpoints(): bool
     {
-        if ($this->filters()->hasRemote() || $this->deletable || array_merge(...array_values($this->actions)) !== []) {
-            return true;
-        }
+        return $this->filters()->hasRemote() || $this->deletable || array_merge(...array_values($this->actions)) !== []
+            || $this->editsInline();
+    }
 
+    /**
+     * Whether a column is edited inline (editable(), switch(), switchGroup()).
+     *
+     * @internal
+     */
+    public function editsInline(): bool
+    {
         foreach ($this->columns as $column) {
             if ($column->isEditable()) {
                 return true;

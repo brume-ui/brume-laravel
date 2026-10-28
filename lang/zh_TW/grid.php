@@ -30,6 +30,12 @@ return [
         'forbidden' => '這筆資料不能執行這項操作。',
         'too_many' => '一次最多只能操作 :max 筆。',
     ],
+    // The inline-edit (cell) endpoint.
+    'cell' => [
+        'not_editable' => '這個欄位不能直接編輯。',
+        'not_found' => '找不到這筆資料，可能已經刪除，或不在這個列表裡。',
+        'not_text' => ':attribute 必須是文字。',
+    ],
     // Grid::deletable(). {count} stays as is: the page fills it in.
     'delete' => [
         'label' => '刪除',

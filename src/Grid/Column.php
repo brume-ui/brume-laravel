@@ -59,6 +59,16 @@ class Column
         return $this->key;
     }
 
+    /**
+     * The header text (label() is the label display).
+     *
+     * @internal
+     */
+    public function heading(): string
+    {
+        return $this->label;
+    }
+
     public static function defaultLabel(string $key): string
     {
         return Str::headline($key);

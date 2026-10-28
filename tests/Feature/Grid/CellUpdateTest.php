@@ -1,0 +1,328 @@
+<?php
+
+use Brume\Grid\Column;
+use Brume\Grid\Editor;
+use Brume\Grid\Grid;
+use Brume\Http\Middleware\HandleBrumeRequests;
+use Brume\Tests\Support\JsonSchema;
+use Brume\Tests\Support\Models\CellItem;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Testing\TestResponse;
+
+/**
+ * /admin/cells: shop 1's items on a Route::brumeGrid page behind brume.auth, with one column per
+ * inline editor. $customer and $status replace those columns' editors; $declare adds columns.
+ */
+function cellRoutes(?Closure $declare = null, ?Editor $customer = null, ?Editor $status = null): void
+{
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('cells', function () use ($declare, $customer, $status) {
+            $grid = Grid::make(CellItem::query()->where('shop_id', 1))->title('Cells');
+            $grid->column('shop_id', '商店');
+            $grid->column('customer', '客戶')->editable($customer, 'required|max:5')->display(fn (string $value) => "客戶 {$value}");
+            $grid->column('status', '狀態')->editable($status ?? Editor::select(['open' => '未處理', 'paid' => '已付款', 'done' => '完成']));
+            $grid->column('amount', '金額')->numeric()->editable(Editor::number(0, 1000));
+            $grid->column('tags', '標籤')->editable(Editor::checkbox(['a' => 'A', 'b' => 'B', 'c' => 'C']))
+                ->display(fn (?array $tags) => implode(',', $tags ?? []));
+            $grid->column('is_active', '啟用')->switch();
+            $grid->column('flags', '標記')->switchGroup(['is_featured' => '精選', 'is_new' => '新品']);
+            $declare?->__invoke($grid);
+
+            return $grid;
+        }));
+}
+
+/**
+ * Items 1 and 2 in shop 1, item 3 in shop 2.
+ *
+ * @return array{0: CellItem, 1: CellItem, 2: CellItem}
+ */
+function cellItems(): array
+{
+    return [
+        CellItem::query()->create(['shop_id' => 1, 'customer' => 'Ada', 'password' => 'secret']),
+        CellItem::query()->create(['shop_id' => 1, 'customer' => 'Bea']),
+        CellItem::query()->create(['shop_id' => 2, 'customer' => 'Cy']),
+    ];
+}
+
+function patchCell(int|string $id, array $body): TestResponse
+{
+    return test()->patchJson('/admin/cells/_brume/cells/'.$id, $body);
+}
+
+beforeEach(function () {
+    $this->actingAs(brumeUser(), 'brume');
+
+    // A project's zh_TW validation messages (Laravel itself ships English only).
+    app('translator')->addLines([
+        'validation.required' => ':attribute 不能空白。',
+        'validation.max.string' => ':attribute 不能超過 :max 個字。',
+        'validation.in' => '所選的 :attribute 無效。',
+        'validation.boolean' => ':attribute 只能是是或否。',
+        'validation.array' => ':attribute 必須是陣列。',
+    ], 'zh_TW');
+});
+
+it('saves a text cell and answers the recomputed row', function () {
+    [$a, $b] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => 'customer', 'value' => 'Eve'])->assertOk();
+
+    expect(JsonSchema::errors($response->json(), 'CellUpdateResponse'))->toBe([])
+        ->and($response->json('row.id'))->toBe($a->id)
+        ->and($response->json('row.customer'))->toBe('客戶 Eve')
+        ->and($response->json('row._meta.raw.customer'))->toBe('Eve')
+        ->and($a->fresh()->customer)->toBe('Eve')
+        ->and($b->fresh()->customer)->toBe('Bea');
+});
+
+it('answers only the declared columns in the row', function () {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $row = patchCell($a->id, ['column' => 'status', 'value' => 'paid'])->assertOk()->json('row');
+
+    expect(array_keys($row))->toBe(['id', 'shop_id', 'customer', 'status', 'amount', 'tags', 'is_active', 'flags', '_meta'])
+        ->and($row)->not->toHaveKey('password')
+        ->and(json_encode($row))->not->toContain('secret');
+});
+
+it('answers a failed rule as 422 keyed by the column, with the label in the message', function (mixed $value, string $message) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => 'customer', 'value' => $value])->assertUnprocessable();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and($response->json('errors'))->toBe(['customer' => [$message]])
+        ->and($a->fresh()->customer)->toBe('Ada');
+})->with([
+    'too long' => ['Evelyn', '客戶 不能超過 5 個字。'],
+    'empty' => ['', '客戶 不能空白。'],
+    'null' => [null, '客戶 不能空白。'],
+]);
+
+it('accepts only the declared options of a select or radio', function (string $type) {
+    [$a] = cellItems();
+    $options = ['open' => '未處理', 'paid' => '已付款'];
+    cellRoutes(status: $type === 'select' ? Editor::select($options) : Editor::radio($options));
+
+    $response = patchCell($a->id, ['column' => 'status', 'value' => 'done'])->assertUnprocessable();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and($response->json('errors'))->toBe(['status' => ['所選的 狀態 無效。']])
+        ->and($a->fresh()->status)->toBe('open');
+
+    patchCell($a->id, ['column' => 'status', 'value' => 'paid'])->assertOk()->assertJsonPath('row.status', 'paid');
+
+    expect($a->fresh()->status)->toBe('paid');
+})->with(['select', 'radio']);
+
+it('refuses a select value outside the options', function (mixed $value) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    patchCell($a->id, ['column' => 'status', 'value' => $value])->assertUnprocessable()
+        ->assertJsonValidationErrors(['status']);
+
+    expect($a->fresh()->status)->toBe('open');
+})->with([
+    'unknown' => ['refunded'],
+    'null' => [null],
+    'a list' => [['paid']],
+]);
+
+it('saves a checkbox list of declared options', function () {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => 'tags', 'value' => ['a', 'c']])->assertOk();
+
+    expect($response->json('row.tags'))->toBe('a,c')
+        ->and($response->json('row._meta.raw.tags'))->toBe(['a', 'c'])
+        ->and($a->fresh()->tags)->toBe(['a', 'c']);
+});
+
+it('refuses a checkbox value that is not a list of declared options', function (mixed $value) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => 'tags', 'value' => $value])->assertUnprocessable();
+
+    expect(array_keys($response->json('errors')))->toBe(['tags'])
+        ->and($a->fresh()->tags)->toBeNull();
+})->with([
+    'an undeclared option' => [['a', 'z']],
+    'a string' => ['a'],
+    'an object' => [['x' => 'a']],
+]);
+
+it('saves a switch as a boolean', function (mixed $value, bool $saved) {
+    [$a] = cellItems();
+    $a->update(['is_active' => ! $saved]);
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => 'is_active', 'value' => $value])->assertOk();
+
+    expect($response->json('row.is_active'))->toBe($saved)
+        ->and(CellItem::query()->whereKey($a->id)->value('is_active'))->toEqual($saved ? 1 : 0)
+        ->and($a->fresh()->is_active)->toBe($saved);
+})->with([
+    '"1"' => ['1', true],
+    'true' => [true, true],
+    '1' => [1, true],
+    '"0"' => ['0', false],
+    'false' => [false, false],
+]);
+
+it('refuses a switch value that is not a boolean', function (mixed $value) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => 'is_active', 'value' => $value])->assertUnprocessable();
+
+    expect($response->json('errors'))->toBe(['is_active' => ['啟用 只能是是或否。']])
+        ->and($a->fresh()->is_active)->toBeFalse();
+})->with(['yes', 2, null]);
+
+it('saves both attributes of a switchGroup at once', function () {
+    [$a] = cellItems();
+    $a->update(['is_new' => true]);
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => 'flags', 'value' => ['is_featured' => true, 'is_new' => false]])->assertOk();
+
+    expect(JsonSchema::errors($response->json(), 'CellUpdateResponse'))->toBe([])
+        ->and($response->json('row.flags'))->toBe(['is_featured' => true, 'is_new' => false])
+        ->and($a->fresh()->only('is_featured', 'is_new'))->toBe(['is_featured' => true, 'is_new' => false]);
+});
+
+it('refuses a switchGroup value with an undeclared or non-boolean attribute', function (mixed $value) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => 'flags', 'value' => $value])->assertUnprocessable();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and(array_keys($response->json('errors')))->toBe(['flags'])
+        ->and($a->fresh()->only('is_featured', 'is_new', 'password'))->toBe(['is_featured' => false, 'is_new' => false, 'password' => 'secret']);
+})->with([
+    'an undeclared attribute' => [['is_featured' => true, 'password' => 'x']],
+    'only an undeclared attribute' => [['shop_id' => 2]],
+    'a non-boolean' => [['is_featured' => 'maybe']],
+    'a list' => [[true, false]],
+    'empty' => [[]],
+    'a scalar' => [true],
+]);
+
+it('checks a number against the editor bounds', function (mixed $value) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    patchCell($a->id, ['column' => 'amount', 'value' => $value])->assertUnprocessable()->assertJsonValidationErrors(['amount']);
+
+    expect($a->fresh()->amount)->toBe(0);
+})->with(['abc', -1, 1001, [[5]]]);
+
+it('checks a text against the editor maximum length', function (mixed $value) {
+    [$a] = cellItems();
+    cellRoutes(customer: Editor::text(3));
+
+    patchCell($a->id, ['column' => 'customer', 'value' => $value])->assertUnprocessable()
+        ->assertJsonValidationErrors(['customer']);
+
+    expect($a->fresh()->customer)->toBe('Ada');
+})->with([
+    'longer than the editor allows' => ['Evel'],
+    'a list' => [['Eve']],
+]);
+
+it('answers 422 for a column that cannot be edited inline', function (string $column) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($a->id, ['column' => $column, 'value' => 2])->assertUnprocessable();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and($response->json('errors'))->toBe(['column' => ['這個欄位不能直接編輯。']])
+        ->and($a->fresh()->shop_id)->toBe(1);
+})->with([
+    'a declared, not editable column' => ['shop_id'],
+    'an undeclared attribute' => ['password'],
+    'a switchGroup attribute' => ['is_featured'],
+]);
+
+it('answers 422 to a body that is not a CellUpdateRequest', function (array $body) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($a->id, $body)->assertUnprocessable();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and($a->fresh()->customer)->toBe('Ada');
+})->with([
+    'no column' => [['value' => 'Eve']],
+    'a column that is not a string' => [['column' => ['customer'], 'value' => 'Eve']],
+    'no value' => [['column' => 'customer']],
+]);
+
+it('answers 404 for an id outside the grid query', function (Closure $id) {
+    [$a, $b, $c] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($id($c), ['column' => 'customer', 'value' => 'Eve'])->assertNotFound();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and($response->json('message'))->toBe('找不到這筆資料，可能已經刪除，或不在這個列表裡。')
+        ->and($c->fresh()->customer)->toBe('Cy');
+})->with([
+    'another shop\'s row' => [fn (CellItem $c) => $c->id],
+    'a missing id' => [fn (CellItem $c) => $c->id + 1000],
+]);
+
+it('answers 422 for an id that cannot be a key', function (string $id) {
+    [$a] = cellItems();
+    cellRoutes();
+
+    $response = patchCell($id, ['column' => 'customer', 'value' => 'Eve'])->assertUnprocessable();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and(array_keys($response->json('errors')))->toBe(['id'])
+        ->and($a->fresh()->customer)->toBe('Ada');
+})->with([
+    'letters after digits' => ['1abc'],
+    'a leading space' => ['%201'],
+    'a sign' => ['-1'],
+    'a decimal' => ['1.0'],
+]);
+
+it('reads an id with leading zeros as that number', function () {
+    [$a] = cellItems();
+    cellRoutes();
+
+    patchCell('00'.$a->id, ['column' => 'customer', 'value' => 'Eve'])->assertOk()->assertJsonPath('row.id', $a->id);
+
+    expect($a->fresh()->customer)->toBe('Eve');
+});
+
+it('answers 401 JSON when signed out', function () {
+    [$a] = cellItems();
+    cellRoutes();
+    auth('brume')->logout();
+
+    $response = patchCell($a->id, ['column' => 'customer', 'value' => 'Eve'])->assertUnauthorized();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and($a->fresh()->customer)->toBe('Ada');
+});
+
+it('refuses inline editing of a relation column at declaration', function (Closure $declare) {
+    $declare(new Column('customer.name', 'Customer'));
+})->throws(InvalidArgumentException::class, '關聯欄位')->with([
+    'editable' => [fn (Column $c) => $c->editable()],
+    'switch' => [fn (Column $c) => $c->switch()],
+    'switchGroup' => [fn (Column $c) => $c->switchGroup(['is_featured' => '精選'])],
+]);
