@@ -351,6 +351,26 @@ it('drops hrefs with an unsafe scheme', function (?string $href, ?string $sent) 
     'null' => [null, null],
 ]);
 
+it('drops image and downloadable urls with an unsafe scheme', function (Closure $declare, mixed $expected) {
+    $column = displayColumn('value');
+    $declare($column);
+
+    expect($column->value(displayOrder(['value' => 'javascript:alert(1)'])))->toBe($expected);
+})->with([
+    'image, from the attribute' => [fn (Column $c) => $c->image(), null],
+    'image, a url' => [fn (Column $c) => $c->image()->display(fn () => " JaVa\tScRiPt:alert(1)"), null],
+    'image, a list' => [
+        fn (Column $c) => $c->image()->display(fn () => ['data:image/svg+xml,x', '/a.png', 'https://example.test/b.png']),
+        ['/a.png', 'https://example.test/b.png'],
+    ],
+    'downloadable, from the attribute' => [fn (Column $c) => $c->downloadable(), null],
+    'downloadable, a file' => [fn (Column $c) => $c->downloadable()->display(fn () => ['url' => 'vbscript:x', 'name' => 'A']), null],
+    'downloadable, a list' => [
+        fn (Column $c) => $c->downloadable()->display(fn () => ['javascript:x', ['url' => 'data:x', 'name' => 'B'], '/a.pdf', ['url' => 'mailto:a@example.test']]),
+        ['/a.pdf', ['url' => 'mailto:a@example.test']],
+    ],
+]);
+
 it('requires Route::brumeGrid for an editable column in local', function () {
     app()->detectEnvironment(fn () => 'local');
     $grid = Grid::make(Order::class)->title('訂單');

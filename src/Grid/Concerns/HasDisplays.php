@@ -255,7 +255,7 @@ trait HasDisplays
         $value = static::normalize($value);
 
         if ($value === null || is_scalar($value) || ($type === 'downloadable' && static::isFileItem($value))) {
-            return $value;
+            return static::safeUrlItem($type, $value);
         }
 
         if ((is_array($value) && array_is_list($value)) || $value instanceof Traversable) {
@@ -268,13 +268,36 @@ trait HasDisplays
                     throw new InvalidArgumentException("欄位「{$this->key}」的 {$type}() 顯示器清單裡有 ".get_debug_type($item).'，每一項都必須是'.static::listItemHint($type).'。');
                 }
 
-                $items[] = $item;
+                // An item with an unsafe URL is left out of the list.
+                if ($item === null || ($item = static::safeUrlItem($type, $item)) !== null) {
+                    $items[] = $item;
+                }
             }
 
             return $items;
         }
 
         throw new InvalidArgumentException("欄位「{$this->key}」的 {$type}() 顯示器收到 ".get_debug_type($value).'，值必須是'.static::listItemHint($type).'，或它們的清單。');
+    }
+
+    /**
+     * An image or downloadable item, or null when its URL has a scheme safeHref() refuses.
+     */
+    protected static function safeUrlItem(string $type, mixed $item): mixed
+    {
+        if (! in_array($type, ['image', 'downloadable'], true)) {
+            return $item;
+        }
+
+        if (is_string($item)) {
+            return static::safeHref($item);
+        }
+
+        if (is_array($item)) {
+            return static::safeHref($item['url']) !== null ? $item : null;
+        }
+
+        return $item;
     }
 
     /**
