@@ -33,6 +33,8 @@ return [
     // The export endpoint (Grid::exportable()).
     'export' => [
         'too_many' => '一次最多只能匯出 :max 筆。',
+        // The last row of a file whose export failed part way.
+        'interrupted' => '匯出中斷：:message',
     ],
     // The inline-edit (cell) endpoint.
     'cell' => [

@@ -12,6 +12,7 @@ use DateTimeInterface;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Contracts\Support\Jsonable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -219,7 +220,9 @@ class Column
      * The Excel cell value for a row: exportUsing()'s result when there is one; otherwise the
      * row's value (the display closure applied, a component's raw value), with label() options
      * turned into their labels, a switchGroup as the labels that are on, and a list joined
-     * with 、. Scalars stay as they are.
+     * with 、. Scalars stay as they are; a numeric string of an attribute cast to a number (or of
+     * a numeric() column) becomes a number. Without exportUsing(), an attribute in the model's
+     * $hidden (through relations too) is refused.
      *
      * @internal
      */
@@ -229,7 +232,18 @@ class Column
             return $this->exportScalar(($this->exportUsing)(data_get($row, $this->key), $row));
         }
 
+        if (($hidden = $this->hiddenReads($row)) !== null) {
+            throw new LogicException(sprintf(
+                '欄位「%s」讀取的 %s 在 %s 的 $hidden 裡，匯出會把它寫進 Excel。請用 exportUsing() 指定要匯出的內容，或用 ->exportable(false) 不匯出這個欄位。',
+                $this->key, implode('、', $hidden[0]), $hidden[1],
+            ));
+        }
+
         $value = $this->value($row);
+
+        if (is_string($value) && is_numeric($value) && $this->display === null && $this->exportsNumber($row)) {
+            return $value + 0;
+        }
 
         if ($this->editor?->type() === 'switchGroup' && $this->display === null && is_array($value)) {
             $value = array_values(array_map(fn (string|int $key) => $this->switchKeys[$key], array_keys(array_filter($value))));
@@ -403,21 +417,80 @@ class Column
      */
     protected function assertRawVisible(mixed $row): void
     {
-        if (! $row instanceof Model) {
-            return;
-        }
-
-        $attributes = $this->editor?->type() === 'switchGroup'
-            ? array_map('strval', array_keys($this->switchKeys))
-            : [Str::before($this->key, '.')];
-        $hidden = array_values(array_intersect($attributes, $row->getHidden()));
-
-        if ($hidden !== []) {
+        if (($hidden = $this->hiddenReads($row)) !== null) {
             throw new LogicException(sprintf(
                 '欄位「%s」的 %s 在 %s 的 $hidden 裡：行內編輯加上 display() 時，原始值會放在 _meta.raw 送到頁面。請不要行內編輯隱藏的欄位，或拿掉 display()。',
-                $this->key, implode('、', $hidden), $row::class,
+                $this->key, implode('、', $hidden[0]), $hidden[1],
             ));
         }
+    }
+
+    /**
+     * The attributes this column reads that a model hides ($hidden), with that model's class, or
+     * null. A switchGroup reads its keys on the row; a dotted key reads each segment on the model
+     * reached so far (a relation's first model for a to-many relation).
+     *
+     * @return array{0: list<string>, 1: class-string<Model>}|null
+     */
+    protected function hiddenReads(mixed $row): ?array
+    {
+        if (! $row instanceof Model) {
+            return null;
+        }
+
+        if ($this->editor?->type() === 'switchGroup') {
+            $hidden = array_values(array_intersect(array_map('strval', array_keys($this->switchKeys)), $row->getHidden()));
+
+            return $hidden !== [] ? [$hidden, $row::class] : null;
+        }
+
+        [$model, $attribute] = $this->attributeOwner($row);
+
+        return $model !== null && in_array($attribute, $model->getHidden(), true) ? [[$attribute], $model::class] : null;
+    }
+
+    /**
+     * The model the column's (dotted) key ends on and the attribute read there; the model is
+     * null when the path leaves models (a null relation, an array). A hidden relation on the way
+     * is reported as the attribute.
+     *
+     * @return array{0: Model|null, 1: string}
+     */
+    protected function attributeOwner(Model $row): array
+    {
+        $segments = explode('.', $this->key);
+        $model = $row;
+
+        foreach ($segments as $i => $segment) {
+            if ($i === count($segments) - 1 || in_array($segment, $model->getHidden(), true)) {
+                return [$model, $segment];
+            }
+
+            $next = data_get($model, $segment);
+            $next = $next instanceof EloquentCollection ? $next->first() : $next;
+
+            if (! $next instanceof Model) {
+                return [null, $segment];
+            }
+
+            $model = $next;
+        }
+
+        return [null, $this->key];
+    }
+
+    /**
+     * Whether the column holds a number: numeric(), or an attribute cast to int, float or decimal.
+     */
+    protected function exportsNumber(mixed $row): bool
+    {
+        if ($this->numeric) {
+            return true;
+        }
+
+        [$model, $attribute] = $row instanceof Model ? $this->attributeOwner($row) : [null, ''];
+
+        return $model !== null && $model->hasCast($attribute, ['int', 'integer', 'float', 'double', 'real', 'decimal']);
     }
 
     /**

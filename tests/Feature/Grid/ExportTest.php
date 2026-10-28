@@ -2,12 +2,61 @@
 
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
+use Brume\Models\User;
 use Brume\Tests\Support\JsonSchema;
+use Brume\Tests\Support\Models\FilterItem;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 use OpenSpout\Reader\XLSX\Reader;
 use Workbench\App\Models\Order;
+
+/**
+ * An order whose customer is hidden.
+ */
+class ExportSecretOrder extends Order
+{
+    protected $table = 'orders';
+
+    protected $hidden = ['customer'];
+}
+
+/**
+ * A filter item whose order hides the customer.
+ */
+class ExportItem extends FilterItem
+{
+    protected $table = 'filter_items';
+
+    /**
+     * @return BelongsTo<ExportSecretOrder, $this>
+     */
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(ExportSecretOrder::class, 'order_id');
+    }
+}
+
+/**
+ * An order whose amount is a decimal (a string such as "1250.00") and whose category code is a
+ * digit string, as MySQL returns a DECIMAL column.
+ */
+class ExportDecimalOrder extends Order
+{
+    protected $table = 'orders';
+
+    protected function casts(): array
+    {
+        return ['amount' => 'decimal:2'];
+    }
+
+    public function getCategoryCodeAttribute(): string
+    {
+        return '42';
+    }
+}
 
 /**
  * /admin/orders: the orders outside 食品, on a Route::brumeGrid page behind brume.auth as a
@@ -64,15 +113,19 @@ function exportId(int $n): int
 }
 
 /**
- * The sheet's rows as values, read back with openspout.
+ * The sheet's rows as values, read back with openspout from the response or a file.
  *
  * @return list<list<mixed>>
  */
-function exportSheet(TestResponse $response): array
+function exportSheet(TestResponse|string $response): array
 {
-    $response->assertOk();
-    $path = tempnam(sys_get_temp_dir(), 'brume-export-');
-    file_put_contents($path, $response->streamedContent());
+    if ($response instanceof TestResponse) {
+        $response->assertOk();
+        $path = tempnam(sys_get_temp_dir(), 'brume-export-');
+        file_put_contents($path, $response->streamedContent());
+    } else {
+        $path = $response;
+    }
 
     $reader = new Reader;
     $reader->open($path);
@@ -229,7 +282,8 @@ it('answers with an xlsx download named after the title', function () {
     expect($response->headers->get('Content-Type'))->toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         ->and($response->headers->get('Content-Disposition'))
         ->toContain("filename*=UTF-8''".rawurlencode('訂單-2026-10-29-090507.xlsx'))
-        ->toStartWith('attachment; filename="');
+        // One "_" per CJK character in the ASCII fallback.
+        ->toStartWith('attachment; filename="__-2026-10-29-090507.xlsx"; ');
 });
 
 it('uses the filename exportable() gives', function () {
@@ -269,34 +323,131 @@ it('requires Route::brumeGrid for an export in local', function () {
 it('streams 1,200 rows within a small memory budget', function () {
     exportOrders(1200);
     exportRoutes();
-    gc_collect_cycles();
-    $before = memory_get_peak_usage();
+    $response = $this->get('/admin/orders/_brume/export')->assertOk();
+    $path = tempnam(sys_get_temp_dir(), 'brume-export-');
+    $file = fopen($path, 'wb');
 
-    $response = $this->get('/admin/orders/_brume/export');
-    $content = $response->streamedContent();
+    // The output goes straight to a file in 8 KB chunks, so only what the export holds counts.
+    gc_collect_cycles();
+    memory_reset_peak_usage();
+    $before = memory_get_usage();
+    ob_start(function (string $chunk) use ($file) {
+        fwrite($file, $chunk);
+
+        return '';
+    }, 8192);
+
+    try {
+        $response->baseResponse->sendContent();
+    } finally {
+        ob_end_clean();
+        fclose($file);
+    }
 
     expect(memory_get_peak_usage() - $before)->toBeLessThan(32 * 1024 * 1024)
-        ->and(strlen($content))->toBeGreaterThan(0)
-        ->and(count(exportSheet($response)))->toBe(1201);
+        ->and(filesize($path))->toBeGreaterThan(0)
+        ->and(count(exportSheet($path)))->toBe(1201);
 });
 
-it('refuses a cell value that is not a scalar, pointing at exportUsing()', function () {
-    $this->withoutExceptionHandling();
+it('refuses a cell value that is not a scalar before the download starts', function () {
     exportOrders(1);
     exportRoutes(function (Grid $grid) {
         $grid->column('self', '本身')->exportUsing(fn ($value, Order $row) => $row);
         $grid->exportable();
     });
 
-    $response = $this->get('/admin/orders/_brume/export');
-    ob_start();
-
-    try {
-        $response->baseResponse->sendContent();
-    } finally {
-        ob_end_clean();
-    }
+    $this->getJson('/admin/orders/_brume/export?export_scope=page')->assertStatus(500);
+    $this->withoutExceptionHandling();
+    $this->get('/admin/orders/_brume/export');
 })->throws(InvalidArgumentException::class, 'exportUsing()');
+
+it('ends the file with a 匯出中斷 row when a later row fails', function () {
+    Log::spy();
+    exportOrders(3);
+    exportRoutes(function (Grid $grid) {
+        $grid->column('check', '檢查')->exportUsing(fn ($value, Order $row) => $row->number === 'BR0002' ? throw new RuntimeException('第二筆壞了') : 'ok');
+        $grid->exportable();
+    });
+
+    expect(exportSheet($this->get('/admin/orders/_brume/export')))->toBe([
+        ['訂單編號', '狀態', '金額', '檢查'],
+        ['BR0001', '已付款', 10, 'ok'],
+        ['匯出中斷：第二筆壞了'],
+    ]);
+    Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message) => str_contains($message, '第二筆壞了'));
+});
+
+it('refuses a column reading a $hidden attribute, with a pointer to exportUsing() or exportable(false)', function () {
+    $this->withoutExceptionHandling();
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('users', function () {
+            $grid = Grid::make(User::class)->title('使用者')->exportable();
+            $grid->column('username', '帳號');
+            $grid->column('password', '密碼');
+
+            return $grid;
+        }));
+
+    $this->get('/admin/users/_brume/export');
+})->throws(LogicException::class, '欄位「password」讀取的 password 在 '.User::class.' 的 $hidden 裡，匯出會把它寫進 Excel。請用 exportUsing() 指定要匯出的內容，或用 ->exportable(false)');
+
+it('refuses a dotted column reading a $hidden attribute of the related model', function () {
+    $this->withoutExceptionHandling();
+    exportOrders(1);
+    ExportItem::query()->create(['order_id' => exportId(1)]);
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('items', function () {
+            $grid = Grid::make(ExportItem::query()->with('order'))->title('品項')->exportable();
+            $grid->column('order.number', '訂單');
+            $grid->column('order.customer', '客戶');
+
+            return $grid;
+        }));
+
+    $this->get('/admin/items/_brume/export');
+})->throws(LogicException::class, '欄位「order.customer」讀取的 customer 在 '.ExportSecretOrder::class.' 的 $hidden 裡');
+
+it('exports a $hidden attribute through exportUsing(), and columns hidden by default', function () {
+    exportOrders(1);
+    ExportItem::query()->create(['order_id' => exportId(1)]);
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('items', function () {
+            $grid = Grid::make(ExportItem::query()->with('order'))->title('品項')->exportable();
+            $grid->column('order.number', '訂單')->hidden();
+            $grid->column('order.customer', '客戶')->exportUsing(fn ($value) => mb_substr($value, 0, 1).'＊');
+
+            return $grid;
+        }));
+
+    // hidden() only sets the starting column visibility; the export has every exportable column.
+    expect(exportSheet($this->get('/admin/items/_brume/export')))->toBe([['訂單', '客戶'], ['BR0001', '客＊']]);
+});
+
+it('writes numbers cast as decimals or declared numeric() as numbers, other digit strings as text', function () {
+    Order::query()->insert(['number' => '00123', 'customer' => '00456', 'amount' => 1250, 'status' => 'paid', 'category' => '服飾', 'created_at' => now(), 'updated_at' => now()]);
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('decimals', function () {
+            $grid = Grid::make(ExportDecimalOrder::class)->title('金額')->exportable();
+            $grid->column('number', '編號');
+            $grid->column('customer', '客戶');
+            $grid->column('amount', '金額');
+            $grid->column('category_code', '分類碼')->numeric();
+
+            return $grid;
+        }));
+
+    $row = exportSheet($this->get('/admin/decimals/_brume/export'))[1];
+
+    expect($row[0])->toBe('00123')
+        ->and($row[1])->toBe('00456')
+        // decimal:2 gives the string "1250.00".
+        ->and($row[2])->toEqual(1250)->not->toBeString()
+        ->and($row[3])->toEqual(42)->not->toBeString();
+});
 
 it('writes exportUsing dates as Y-m-d H:i:s, lists joined and a switchGroup as the labels that are on', function () {
     exportOrders(1);

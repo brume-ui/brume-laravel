@@ -33,6 +33,8 @@ return [
     // The export endpoint (Grid::exportable()).
     'export' => [
         'too_many' => 'You can export at most :max selected rows at once.',
+        // The last row of a file whose export failed part way.
+        'interrupted' => 'Export interrupted: :message',
     ],
     // The inline-edit (cell) endpoint.
     'cell' => [
