@@ -273,14 +273,24 @@ class Grid implements Renderable, Responsable
     }
 
     /**
-     * The rows actions may run on: the grid's query (its conditions and global scopes) without
-     * the list's search, filters, sort or paging.
+     * The rows actions and inline edits may touch: the grid's query (its conditions and global
+     * scopes) without the list's search, filters, sort or paging.
      *
      * @internal
      */
-    public function actionQuery(): Builder
+    public function rows(): RowLookup
     {
-        return clone $this->query;
+        return new RowLookup(clone $this->query);
+    }
+
+    /**
+     * The most rows one batch action takes: the largest page the list can show.
+     *
+     * @internal
+     */
+    public function maxBatchSize(): int
+    {
+        return max($this->perPageChoices());
     }
 
     public function toSchema(Request $request): array

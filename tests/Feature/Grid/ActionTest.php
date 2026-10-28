@@ -6,6 +6,7 @@ use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\Models\ActionItem;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -281,11 +282,109 @@ it('answers 422 to a body that is not an ActionRequest', function (array $body) 
     'an id that is not a string or number' => [['target' => 'batch', 'ids' => [[':a']]]],
     'a boolean id' => [['target' => 'batch', 'ids' => [true]]],
     'a float id' => [['target' => 'batch', 'ids' => [1.5]]],
+    'digits followed by letters' => [['target' => 'batch', 'ids' => ['1abc']]],
+    'an empty string id' => [['target' => 'batch', 'ids' => ['']]],
+    'a whitespace id' => [['target' => 'batch', 'ids' => [' ']]],
+    'a negative id' => [['target' => 'batch', 'ids' => [-1]]],
+    'a signed string id' => [['target' => 'batch', 'ids' => ['+1']]],
+    'a decimal string id' => [['target' => 'batch', 'ids' => ['1.0']]],
+    'an id beyond PHP_INT_MAX' => [['target' => 'batch', 'ids' => ['99999999999999999999']]],
     'a row with two ids' => [['target' => 'row', 'ids' => [':a', ':b']]],
     'a row with no id' => [['target' => 'row', 'ids' => []]],
     'a batch with no id' => [['target' => 'batch', 'ids' => []]],
     'a tool with ids' => [['target' => 'tool', 'ids' => [':a']]],
 ]);
+
+it('checks ids strictly against the key type', function (string $keyType, mixed $id, int|string|null $normalized) {
+    $model = new class extends Model
+    {
+        protected $table = 'action_items';
+    };
+    $model->setKeyType($keyType);
+
+    expect(Grid::make($model->newQuery())->rows()->normalizeId($id))->toBe($normalized);
+})->with([
+    'int key, int' => ['int', 7, 7],
+    'int key, zero' => ['int', 0, 0],
+    'int key, digits' => ['int', '7', 7],
+    'int key, leading zeros' => ['int', '007', 7],
+    'int key, all zeros' => ['int', '00', 0],
+    'int key, PHP_INT_MAX' => ['int', (string) PHP_INT_MAX, PHP_INT_MAX],
+    // The app's TrimStrings middleware trims request input, but not a URL's {id}.
+    'int key, leading space' => ['int', ' 7', null],
+    'int key, trailing newline' => ['int', "7\n", null],
+    'int key, letters after digits' => ['int', '7abc', null],
+    'int key, empty' => ['int', '', null],
+    'int key, negative int' => ['int', -7, null],
+    'int key, signed string' => ['int', '+7', null],
+    'int key, decimal string' => ['int', '7.0', null],
+    'int key, exponent' => ['int', '7e1', null],
+    'int key, beyond PHP_INT_MAX' => ['int', '9223372036854775808', null],
+    'int key, float' => ['int', 7.0, null],
+    'int key, bool' => ['int', true, null],
+    'int key, null' => ['int', null, null],
+    'string key, string' => ['string', 'a1-b2', 'a1-b2'],
+    'string key, int' => ['string', 7, '7'],
+    'string key, leading zeros kept' => ['string', '007', '007'],
+    'string key, blank' => ['string', '  ', null],
+    'string key, empty' => ['string', '', null],
+    'string key, array' => ['string', ['a'], null],
+]);
+
+it('reads an integer id with leading zeros as that number', function () {
+    [$a, $b] = actionItems();
+    $received = new ArrayObject;
+    actionRoutes(fn (Grid $grid) => $grid->batchActions(Action::make('close', '結案')->handle(function (Collection $models) use ($received) {
+        $received->exchangeArray($models->pluck('id')->all());
+    })));
+
+    $this->postJson('/admin/items/_brume/actions/close', ['target' => 'batch', 'ids' => ['0'.$a->id, (string) $a->id, $a->id]])->assertOk();
+
+    expect($received->getArrayCopy())->toBe([$a->id]);
+});
+
+it('takes at most the largest page of ids in one batch', function () {
+    [$a, $b, $c] = actionItems();
+    $d = ActionItem::query()->create(['shop_id' => 1, 'name' => 'D']);
+    actionRoutes(fn (Grid $grid) => $grid->perPage(2)->perPageOptions([2, 3])->batchActions(closeAction()));
+
+    $response = $this->postJson('/admin/items/_brume/actions/close', ['target' => 'batch', 'ids' => [$a->id, $b->id, $d->id, $a->id]])
+        ->assertUnprocessable();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and($response->json('errors.ids'))->toBe(['一次最多只能操作 3 筆。'])
+        ->and(ActionItem::query()->where('status', 'done')->count())->toBe(0);
+
+    $this->postJson('/admin/items/_brume/actions/close', ['target' => 'batch', 'ids' => [$a->id, $b->id, $d->id]])->assertOk();
+
+    expect(ActionItem::query()->where('status', 'done')->pluck('id')->all())->toEqualCanonicalizing([$a->id, $b->id, $d->id]);
+});
+
+it('compares the requested ids, not a row count, when a join repeats rows', function () {
+    [$a, $b, $c] = actionItems();
+    $received = new ArrayObject;
+    // Each of shop 1's rows comes back twice, joined with both of shop 1's rows.
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
+        ->group(fn () => Route::brumeGrid('items', function () use ($received) {
+            $grid = Grid::make(ActionItem::query()->select('action_items.*')
+                ->join('action_items as twin', 'twin.shop_id', '=', 'action_items.shop_id')
+                ->where('action_items.shop_id', 1))->title('Items');
+            $grid->column('name');
+
+            return $grid->batchActions(Action::make('close', '結案')->handle(function (Collection $models) use ($received) {
+                $received->exchangeArray($models->pluck('id')->all());
+            }));
+        }));
+
+    $this->postJson('/admin/items/_brume/actions/close', ['target' => 'batch', 'ids' => [$a->id, $c->id]])->assertNotFound();
+
+    expect($received->getArrayCopy())->toBe([]);
+
+    $this->postJson('/admin/items/_brume/actions/close', ['target' => 'batch', 'ids' => [$a->id, $b->id]])->assertOk();
+
+    expect($received->getArrayCopy())->toEqualCanonicalizing([$a->id, $b->id]);
+});
 
 it('answers 404 for an action the target does not declare', function (string $target, string $key) {
     [$a] = actionItems();
@@ -320,6 +419,23 @@ it('answers 419 without a CSRF token', function () {
 
     expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
         ->and($a->fresh()->status)->toBe('open');
+});
+
+it('accepts the X-XSRF-TOKEN header the page sends from its cookie', function () {
+    [$a] = actionItems();
+    actionRoutes(fn (Grid $grid) => $grid->rowActions(closeAction()));
+    $cookie = collect($this->get('/admin/items')->assertOk()->headers->getCookies())
+        ->first(fn ($cookie) => $cookie->getName() === 'XSRF-TOKEN');
+
+    expect($cookie)->not->toBeNull();
+
+    // The CSRF middleware skips its check in the testing environment.
+    app()->detectEnvironment(fn () => 'local');
+
+    $this->postJson('/admin/items/_brume/actions/close', ['target' => 'row', 'ids' => [$a->id]], ['X-XSRF-TOKEN' => $cookie->getValue()])
+        ->assertOk();
+
+    expect($a->fresh()->status)->toBe('done');
 });
 
 it('lists the row actions each row allows in _meta.actions when one declares visible()', function () {

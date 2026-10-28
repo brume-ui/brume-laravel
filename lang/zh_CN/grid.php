@@ -4,6 +4,8 @@ return [
     // Label of the applied-search chip.
     'search' => '搜索',
     'endpoint_unavailable' => '这个列表没有提供这项功能。',
+    // An id in an action request or a cell URL that cannot be a key of the grid's model.
+    'invalid_id' => 'id 的格式不正确：只能是这个列表的数据编号。',
     // Label of the applied-scope chip.
     'scope' => '范围',
     // Between the labels of several chosen options on a chip.
@@ -26,7 +28,7 @@ return [
         'done' => '已完成「:label」',
         'not_found' => '找不到要操作的数据，可能已经删除，或不在这个列表里。',
         'forbidden' => '这条数据不能执行这项操作。',
-        'invalid_id' => '每个 id 都必须是字符串或整数。',
+        'too_many' => '一次最多只能操作 :max 条。',
     ],
     // Grid::deletable(). {count} stays as is: the page fills it in.
     'delete' => [

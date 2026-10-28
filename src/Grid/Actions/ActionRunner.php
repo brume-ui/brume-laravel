@@ -3,8 +3,8 @@
 namespace Brume\Grid\Actions;
 
 use Brume\Grid\Grid;
+use Brume\Grid\RowLookup;
 use Closure;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,16 +16,18 @@ use Illuminate\Validation\ValidationException;
  * $key, with an ActionResponse { feedback } or an ErrorResponse.
  *
  * The rows come from the grid's own query (the developer's conditions and global scopes, not the
- * list's search, filters or paging), so an id the list could never show is refused with 404, and a
- * row the action's visible() refuses with 403, before anything runs. The action runs in a database
- * transaction on the model's connection.
+ * list's search, filters or paging; see Grid::rows()), so an id the list could never show is refused
+ * with 404, and a row the action's visible() refuses with 403, before anything runs. A batch takes
+ * at most the grid's largest page of ids. The action runs in a database transaction on the model's
+ * connection.
  */
 class ActionRunner
 {
     public function run(Grid $grid, Request $request, string $key): JsonResponse
     {
         try {
-            ['target' => $target, 'ids' => $ids] = $this->validated($request);
+            $rows = $grid->rows();
+            ['target' => $target, 'ids' => $ids] = $this->validated($request, $rows, $grid->maxBatchSize());
 
             $action = $grid->findAction($target, $key);
 
@@ -33,10 +35,9 @@ class ActionRunner
                 return $this->error(__('brume::grid.endpoint_unavailable'), 404);
             }
 
-            $query = $grid->actionQuery();
-            $models = $ids === [] ? new EloquentCollection : (clone $query)->whereKey($ids)->get();
+            $models = $rows->find($ids);
 
-            if ($models->count() < count($ids)) {
+            if ($models === null) {
                 return $this->error(__('brume::grid.action.not_found'), 404);
             }
 
@@ -44,7 +45,7 @@ class ActionRunner
                 return $this->error(__('brume::grid.action.forbidden'), 403);
             }
 
-            $feedback = $query->getConnection()->transaction(fn () => $action->execute($models, $request));
+            $feedback = $rows->query()->getConnection()->transaction(fn () => $action->execute($models, $request));
         } catch (ValidationException $e) {
             return $this->error($e->getMessage(), $e->status, $e->errors());
         }
@@ -56,14 +57,14 @@ class ActionRunner
     }
 
     /**
-     * The ActionRequest, with each id once: a row action takes one id, a batch action at least
-     * one, a tool none.
+     * The ActionRequest, with each id normalized and once (see RowLookup::normalizeId(): "01" is 1
+     * on an integer key): a row action takes one id, a batch action one to $max, a tool none.
      *
      * @return array{target: 'row'|'batch'|'tool', ids: list<int|string>}
      *
      * @throws ValidationException
      */
-    protected function validated(Request $request): array
+    protected function validated(Request $request, RowLookup $rows, int $max): array
     {
         $target = $request->input('target');
 
@@ -73,19 +74,21 @@ class ActionRunner
                 'present', 'array', 'list',
                 ...match ($target) {
                     'row' => ['size:1'],
-                    'batch' => ['min:1'],
+                    'batch' => ['min:1', 'max:'.$max],
                     'tool' => ['max:0'],
                     default => [],
                 },
             ],
-            'ids.*' => [function (string $attribute, mixed $value, Closure $fail) {
-                if (! is_int($value) && ! (is_string($value) && $value !== '')) {
-                    $fail(__('brume::grid.action.invalid_id'));
+            'ids.*' => [function (string $attribute, mixed $value, Closure $fail) use ($rows) {
+                if ($rows->normalizeId($value) === null) {
+                    $fail(__('brume::grid.invalid_id'));
                 }
             }],
-        ])->validate();
+        ], $target === 'batch' ? ['ids.max' => __('brume::grid.action.too_many', ['max' => $max])] : [])->validate();
 
-        return ['target' => $data['target'], 'ids' => array_values(array_unique($data['ids']))];
+        $ids = array_map(fn (mixed $id) => $rows->normalizeId($id), $data['ids']);
+
+        return ['target' => $data['target'], 'ids' => array_values(array_unique($ids))];
     }
 
     /**

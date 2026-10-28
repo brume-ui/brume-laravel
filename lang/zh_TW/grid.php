@@ -4,6 +4,8 @@ return [
     // Label of the applied-search chip.
     'search' => '搜尋',
     'endpoint_unavailable' => '這個列表沒有提供這項功能。',
+    // An id in an action request or a cell URL that cannot be a key of the grid's model.
+    'invalid_id' => 'id 的格式不正確：只能是這個列表的資料編號。',
     // Label of the applied-scope chip.
     'scope' => '範圍',
     // Between the labels of several chosen options on a chip.
@@ -26,7 +28,7 @@ return [
         'done' => '已完成「:label」',
         'not_found' => '找不到要操作的資料，可能已經刪除，或不在這個列表裡。',
         'forbidden' => '這筆資料不能執行這項操作。',
-        'invalid_id' => '每個 id 都必須是字串或整數。',
+        'too_many' => '一次最多只能操作 :max 筆。',
     ],
     // Grid::deletable(). {count} stays as is: the page fills it in.
     'delete' => [
