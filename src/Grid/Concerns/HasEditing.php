@@ -3,6 +3,8 @@
 namespace Brume\Grid\Concerns;
 
 use Brume\Grid\Editor;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LogicException;
 
@@ -68,6 +70,12 @@ trait HasEditing
             throw new InvalidArgumentException('switchGroup() 需要至少一個欄位，格式是欄位 => 標籤，例如 [\'is_featured\' => \'精選\']。');
         }
 
+        $dotted = array_filter(array_keys($keys), fn (string|int $key) => str_contains((string) $key, '.'));
+
+        if ($dotted !== []) {
+            throw new InvalidArgumentException(sprintf('欄位「%s」的 switchGroup() 有關聯欄位（%s）：行內編輯目前只能改模型自己的欄位，關聯欄位的編輯會在之後的版本提供。', $this->key, implode('、', $dotted)));
+        }
+
         $this->editable(Editor::fromSchema(['type' => 'switchGroup', 'keys' => array_map(
             fn (string|int $key, string $label) => ['key' => (string) $key, 'label' => $label],
             array_keys($keys),
@@ -117,6 +125,33 @@ trait HasEditing
     public function switchKeys(): array
     {
         return $this->switchKeys;
+    }
+
+    /**
+     * A checkbox saves a list, which only an attribute cast to an array (array, json, collection,
+     * object, their encrypted forms, or a cast class) can store.
+     *
+     * @internal
+     *
+     * @throws LogicException
+     */
+    public function assertCheckboxCast(mixed $row): void
+    {
+        if ($this->editor?->type() !== 'checkbox' || ! $row instanceof Model) {
+            return;
+        }
+
+        $cast = $row->getCasts()[$this->key] ?? null;
+        $listCasts = ['array', 'json', 'json:unicode', 'collection', 'object', 'encrypted:array', 'encrypted:collection', 'encrypted:json', 'encrypted:object'];
+
+        if ($cast !== null && (in_array(strtolower($cast), $listCasts, true) || class_exists(Str::before($cast, ':')))) {
+            return;
+        }
+
+        throw new LogicException(sprintf(
+            '欄位「%s」用 checkbox 編輯器，會存成陣列，但 %s 沒有把 %s cast 成 array 或 json：請在模型的 casts() 加上 \'%s\' => \'array\'，或換一種編輯器。',
+            $this->key, $row::class, $this->key, $this->key,
+        ));
     }
 
     /**

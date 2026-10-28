@@ -301,7 +301,8 @@ class Column
 
     /**
      * This column's row._meta entries: href (link, button), content (expand, modal) and, for an
-     * edited column with a display closure, raw (the value the editor starts from).
+     * edited column with a display closure, raw (the value the editor starts from). A checkbox
+     * column must be cast to an array (see assertCheckboxCast()).
      *
      * @internal
      *
@@ -309,6 +310,8 @@ class Column
      */
     public function rowMeta(mixed $row): array
     {
+        $this->assertCheckboxCast($row);
+
         $meta = $this->displayMeta($row);
 
         if ($this->editor !== null && $this->display !== null) {

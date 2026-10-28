@@ -4,6 +4,7 @@ namespace Brume\Grid\Actions;
 
 use Brume\Grid\Grid;
 use Brume\Grid\RowLookup;
+use Brume\Http\ErrorResponse;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -32,22 +33,22 @@ class ActionRunner
             $action = $grid->findAction($target, $key);
 
             if ($action === null) {
-                return $this->error(__('brume::grid.endpoint_unavailable'), 404);
+                return ErrorResponse::make(__('brume::grid.endpoint_unavailable'), 404);
             }
 
             $models = $rows->find($ids);
 
             if ($models === null) {
-                return $this->error(__('brume::grid.action.not_found'), 404);
+                return ErrorResponse::make(__('brume::grid.action.not_found'), 404);
             }
 
             if ($models->contains(fn (Model $row) => ! $action->isVisibleFor($row))) {
-                return $this->error(__('brume::grid.action.forbidden'), 403);
+                return ErrorResponse::make(__('brume::grid.action.forbidden'), 403);
             }
 
             $feedback = $rows->query()->getConnection()->transaction(fn () => $action->execute($models, $request));
         } catch (ValidationException $e) {
-            return $this->error($e->getMessage(), $e->status, $e->errors());
+            return ErrorResponse::make($e->getMessage(), $e->status, $e->errors());
         }
 
         $feedback ??= Feedback::toast('success', __('brume::grid.action.done', ['label' => $action->label()]))->refresh();
@@ -89,15 +90,5 @@ class ActionRunner
         $ids = array_map(fn (mixed $id) => $rows->normalizeId($id), $data['ids']);
 
         return ['target' => $data['target'], 'ids' => array_values(array_unique($ids))];
-    }
-
-    /**
-     * An ErrorResponse: { message, errors? }.
-     *
-     * @param  array<string, list<string>>|null  $errors
-     */
-    protected function error(string $message, int $status, ?array $errors = null): JsonResponse
-    {
-        return new JsonResponse(['message' => $message] + ($errors !== null ? ['errors' => $errors] : []), $status);
     }
 }

@@ -394,6 +394,8 @@ it('validates a grid with every display and editor against PageEnvelope', functi
         ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class])
         ->group(fn () => Route::brumeGrid('orders', fn () => displayGrid())->name('brume.orders.index'));
     $order = Order::factory()->create(['number' => 'BR-001', 'customer' => 'ada', 'status' => 'paid']);
+    // The checkbox editor on 'tags' needs an array cast.
+    Order::retrieved(fn (Order $row) => $row->mergeCasts(['tags' => 'array']));
 
     $envelope = $this->get('/admin/orders')->assertOk()->viewData('page')['props']['envelope'];
     $row = $envelope['page']['rows'][0];

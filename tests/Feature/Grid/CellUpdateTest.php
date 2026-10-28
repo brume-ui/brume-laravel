@@ -6,24 +6,25 @@ use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\Models\CellItem;
+use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 
 /**
  * /admin/cells: shop 1's items on a Route::brumeGrid page behind brume.auth, with one column per
- * inline editor. $customer and $status replace those columns' editors; $declare adds columns.
+ * inline editor. $customer, $status and $tags replace those columns' editors; $declare adds columns.
  */
-function cellRoutes(?Closure $declare = null, ?Editor $customer = null, ?Editor $status = null): void
+function cellRoutes(?Closure $declare = null, ?Editor $customer = null, ?Editor $status = null, ?Editor $tags = null): void
 {
     Route::prefix('admin')
         ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class, 'brume.auth'])
-        ->group(fn () => Route::brumeGrid('cells', function () use ($declare, $customer, $status) {
+        ->group(fn () => Route::brumeGrid('cells', function () use ($declare, $customer, $status, $tags) {
             $grid = Grid::make(CellItem::query()->where('shop_id', 1))->title('Cells');
             $grid->column('shop_id', '商店');
             $grid->column('customer', '客戶')->editable($customer, 'required|max:5')->display(fn (string $value) => "客戶 {$value}");
             $grid->column('status', '狀態')->editable($status ?? Editor::select(['open' => '未處理', 'paid' => '已付款', 'done' => '完成']));
             $grid->column('amount', '金額')->numeric()->editable(Editor::number(0, 1000));
-            $grid->column('tags', '標籤')->editable(Editor::checkbox(['a' => 'A', 'b' => 'B', 'c' => 'C']))
+            $grid->column('tags', '標籤')->editable($tags ?? Editor::checkbox(['a' => 'A', 'b' => 'B', 'c' => 'C']))
                 ->display(fn (?array $tags) => implode(',', $tags ?? []));
             $grid->column('is_active', '啟用')->switch();
             $grid->column('flags', '標記')->switchGroup(['is_featured' => '精選', 'is_new' => '新品']);
@@ -47,8 +48,15 @@ function cellItems(): array
     ];
 }
 
-function patchCell(int|string $id, array $body): TestResponse
+/**
+ * @param  array<string, mixed>|string  $body  a string is sent as the raw JSON body (json_encode() writes 1.0 as 1)
+ */
+function patchCell(int|string $id, array|string $body): TestResponse
 {
+    if (is_string($body)) {
+        return test()->call('PATCH', '/admin/cells/_brume/cells/'.$id, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $body);
+    }
+
     return test()->patchJson('/admin/cells/_brume/cells/'.$id, $body);
 }
 
@@ -326,3 +334,106 @@ it('refuses inline editing of a relation column at declaration', function (Closu
     'switch' => [fn (Column $c) => $c->switch()],
     'switchGroup' => [fn (Column $c) => $c->switchGroup(['is_featured' => '精選'])],
 ]);
+
+it('refuses a switchGroup over a relation attribute at declaration', function () {
+    (new Column('flags', '標記'))->switchGroup(['is_featured' => '精選', 'profile.is_public' => '公開']);
+})->throws(InvalidArgumentException::class, 'profile.is_public');
+
+it('treats a blank value as null for every editor but text, even when the app keeps empty strings', function (string $column, mixed $value) {
+    ConvertEmptyStringsToNull::skipWhen(fn () => true);
+    [$a] = cellItems();
+    cellRoutes();
+    $before = CellItem::query()->whereKey($a->id)->first()->getAttributes();
+
+    $response = patchCell($a->id, ['column' => $column, 'value' => $value])->assertUnprocessable();
+
+    expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and(array_keys($response->json('errors')))->toBe([$column])
+        ->and(CellItem::query()->whereKey($a->id)->first()->getAttributes())->toBe($before);
+})->with([
+    'select, empty' => ['status', ''],
+    'select, spaces' => ['status', '   '],
+    'checkbox, empty' => ['tags', ''],
+    'checkbox, an empty item' => ['tags', ['a', '']],
+    'number, empty' => ['amount', ''],
+    'switch, empty' => ['is_active', ''],
+    'switchGroup, an empty attribute' => ['flags', ['is_featured' => '']],
+])->after(fn () => ConvertEmptyStringsToNull::flushState());
+
+it('saves a blank value as null when the column\'s rules say nullable', function () {
+    ConvertEmptyStringsToNull::skipWhen(fn () => true);
+    [$a] = cellItems();
+    cellRoutes(fn (Grid $grid) => $grid->column('password', '密碼')->editable(Editor::select(['x' => 'X']), 'nullable'));
+
+    patchCell($a->id, ['column' => 'password', 'value' => ''])->assertOk();
+
+    expect(CellItem::query()->whereKey($a->id)->value('password'))->toBeNull();
+})->after(fn () => ConvertEmptyStringsToNull::flushState());
+
+it('matches an option strictly on its string form and saves the declared option', function (string $value, ?string $saved) {
+    [$a] = cellItems();
+    cellRoutes(status: Editor::select([1 => '一', 2 => '二']));
+
+    $response = patchCell($a->id, '{"column": "status", "value": '.$value.'}');
+
+    if ($saved === null) {
+        $response->assertUnprocessable()->assertJsonPath('errors.status', ['所選的 狀態 無效。']);
+    } else {
+        $response->assertOk();
+    }
+
+    expect(CellItem::query()->whereKey($a->id)->value('status'))->toBe($saved ?? 'open');
+})->with([
+    // Raw JSON values.
+    'the option' => ['"1"', '1'],
+    'an int' => ['1', '1'],
+    'true' => ['true', null],
+    'a float' => ['1.0', null],
+    'leading zeros' => ['"01"', null],
+    'a list' => ['["1"]', null],
+]);
+
+it('matches each checkbox item strictly and saves the declared options', function (string $value, ?array $saved) {
+    [$a] = cellItems();
+    cellRoutes(tags: Editor::checkbox([1 => '一', 2 => '二']));
+
+    $response = patchCell($a->id, '{"column": "tags", "value": '.$value.'}');
+
+    $saved === null ? $response->assertUnprocessable()->assertJsonValidationErrors(['tags']) : $response->assertOk();
+
+    expect($a->fresh()->tags)->toBe($saved);
+})->with([
+    // Raw JSON values.
+    'options and ints' => ['["1", 2]', ['1', '2']],
+    'true' => ['[true]', null],
+    'a float' => ['[1.0]', null],
+    'leading zeros' => ['["01"]', null],
+    'a nested list' => ['[["1"]]', null],
+]);
+
+it('refuses a fraction for a number on an integer-cast attribute or with a whole step', function (?Editor $customer, string $column, mixed $value, bool $ok) {
+    [$a] = cellItems();
+    cellRoutes(customer: $customer);
+
+    $response = patchCell($a->id, ['column' => $column, 'value' => $value]);
+
+    $ok ? $response->assertOk() : $response->assertUnprocessable()->assertJsonValidationErrors([$column]);
+})->with([
+    'int cast, a fraction' => [null, 'amount', 1.5, false],
+    'int cast, a fraction string' => [null, 'amount', '1.5', false],
+    'int cast, an exponent' => [null, 'amount', '1e2', false],
+    'int cast, a whole number' => [null, 'amount', '15', true],
+    'whole step, a fraction' => [Editor::number(step: 1), 'customer', '1.5', false],
+    'fractional step, a fraction' => [Editor::number(step: 0.5), 'customer', '1.5', true],
+]);
+
+it('refuses a checkbox on an attribute without an array cast, before saving and on the list', function () {
+    [$a] = cellItems();
+    cellRoutes(status: Editor::checkbox(['open' => '未處理', 'paid' => '已付款']));
+    $this->withoutExceptionHandling();
+
+    expect(fn () => patchCell($a->id, ['column' => 'status', 'value' => ['paid']]))
+        ->toThrow(LogicException::class, "'status' => 'array'")
+        ->and($a->fresh()->status)->toBe('open')
+        ->and(fn () => $this->get('/admin/cells'))->toThrow(LogicException::class, 'cast');
+});

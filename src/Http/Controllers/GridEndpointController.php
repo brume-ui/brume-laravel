@@ -6,6 +6,7 @@ use Brume\Grid\Actions\ActionRunner;
 use Brume\Grid\Editing\CellUpdater;
 use Brume\Grid\Grid;
 use Brume\Grid\GridRouteRegistrar;
+use Brume\Http\ErrorResponse;
 use Brume\Http\Middleware\HandleGridEndpoint;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -51,9 +52,9 @@ class GridEndpointController
         try {
             return new JsonResponse(app(CellUpdater::class)->update($grid, $request, $id));
         } catch (ValidationException $e) {
-            return $this->error($e->getMessage(), $e->status, $e->errors());
+            return ErrorResponse::make($e->getMessage(), $e->status, $e->errors());
         } catch (NotFoundHttpException $e) {
-            return $this->error($e->getMessage(), 404);
+            return ErrorResponse::make($e->getMessage(), 404);
         }
     }
 
@@ -77,16 +78,6 @@ class GridEndpointController
      */
     protected function unavailable(): JsonResponse
     {
-        return $this->error(__('brume::grid.endpoint_unavailable'), 404);
-    }
-
-    /**
-     * An ErrorResponse: { message, errors? }.
-     *
-     * @param  array<string, list<string>>|null  $errors
-     */
-    protected function error(string $message, int $status, ?array $errors = null): JsonResponse
-    {
-        return new JsonResponse(['message' => $message] + ($errors !== null ? ['errors' => $errors] : []), $status);
+        return ErrorResponse::make(__('brume::grid.endpoint_unavailable'), 404);
     }
 }
