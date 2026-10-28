@@ -15,8 +15,9 @@ use Illuminate\Routing\Router;
  * middleware, route model binding (custom keys included) and route caching as the page. The Grid the
  * action returns then answers the endpoint instead of rendering the page (Grid::toResponse()).
  *
- * Route modifiers chained on the result (middleware, can, where, scopeBindings, withTrashed, ...)
- * apply to all five routes; anything else (name, ...) goes to the page route.
+ * Route modifiers chained on the result (domain, middleware, can, where, scopeBindings, withTrashed, ...)
+ * apply to all five routes; anything else (name, ...) goes to the page route. Called without
+ * arguments, domain() and middleware() read the page route's value.
  *
  * @mixin Route
  */
@@ -34,7 +35,7 @@ final class GridRouteRegistrar
 
     /** Modifiers that must reach the endpoints too, or they would bypass the page's rules. */
     protected const SHARED_MODIFIERS = [
-        'middleware', 'withoutMiddleware', 'can', 'scopeBindings', 'withoutScopedBindings', 'withTrashed',
+        'domain', 'middleware', 'withoutMiddleware', 'can', 'scopeBindings', 'withoutScopedBindings', 'withTrashed',
         'missing', 'where', 'whereNumber', 'whereAlpha', 'whereAlphaNumeric', 'whereUuid', 'whereUlid', 'whereIn',
     ];
 
@@ -93,7 +94,7 @@ final class GridRouteRegistrar
      */
     public function __call(string $method, array $arguments): mixed
     {
-        if (in_array($method, self::SHARED_MODIFIERS, true)) {
+        if (in_array($method, self::SHARED_MODIFIERS, true) && ! $this->isGetter($method, $arguments)) {
             foreach ([$this->page, ...array_values($this->endpoints)] as $route) {
                 $route->{$method}(...$arguments);
             }
@@ -106,6 +107,16 @@ final class GridRouteRegistrar
         $result = $this->page->{$method}(...$arguments);
 
         return $result === $this->page ? $this : $result;
+    }
+
+    /**
+     * domain() and middleware() without arguments return the route's value instead of setting one.
+     *
+     * @param  array<int, mixed>  $arguments
+     */
+    protected function isGetter(string $method, array $arguments): bool
+    {
+        return in_array($method, ['domain', 'middleware'], true) && ($arguments[0] ?? null) === null;
     }
 
     /**

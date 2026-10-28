@@ -313,3 +313,20 @@ it('builds the endpoint URLs under the app\'s base path', function () {
         ->and((new OrderGridController)()->toSchema($request)['endpoints']['action'])
         ->toBe('/sub/index.php/admin/orders/_brume/actions/{action}');
 });
+
+it('applies a domain chained on brumeGrid to every endpoint', function () {
+    $routes = Route::brumeGrid('orders', OrderGridController::class)->domain('{tenant}.example.test');
+
+    foreach ([$routes->page(), ...array_values($routes->endpoints())] as $route) {
+        expect($route->getDomain())->toBe('{tenant}.example.test');
+    }
+
+    expect($routes->domain())->toBe('{tenant}.example.test');
+});
+
+it('reads the page route\'s middleware with middleware() and no arguments', function () {
+    $routes = Route::brumeGrid('orders', OrderGridController::class)->middleware(['web', 'can:manage-orders']);
+
+    expect($routes->middleware())->toBe(['web', 'can:manage-orders'])
+        ->and($routes->middleware())->toBe($routes->page()->middleware());
+});
