@@ -1,11 +1,14 @@
 <?php
 
+use Brume\BrumeServiceProvider;
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Pages\ErrorPage;
 use Brume\Support\Assets;
 use Brume\Tests\Support\JsonSchema;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Route as RoutingRoute;
+use Illuminate\Routing\RouteCollection;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia;
 use Workbench\App\Models\Order;
@@ -65,6 +68,40 @@ it('answers an unknown action on a grid endpoint with JSON 404, not the error pa
 
     expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
         ->and($response->json())->not->toHaveKey('component');
+});
+
+it('answers a JSON request (not an Inertia visit) to an unknown admin path with ErrorResponse 404', function () {
+    $this->actingAs(brumeUser(), 'brume');
+
+    $response = $this->getJson('/admin/nope')->assertNotFound();
+
+    expect($response->json())->toBe(['message' => '找不到這個頁面'])
+        ->and(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([])
+        ->and($response->headers->has('X-Inertia'))->toBeFalse();
+});
+
+it('answers another method on an unknown admin path with 405, since the fallback is GET only', function () {
+    $this->actingAs(brumeUser(), 'brume');
+
+    $this->post('/admin/nope')->assertStatus(405);
+    $this->deleteJson('/admin/nope')->assertStatus(405);
+});
+
+it('registers no fallback without a route prefix, leaving unknown paths to Laravel', function () {
+    config(['brume.route.prefix' => '']);
+    app('router')->setRoutes(new RouteCollection);
+    (fn () => $this->registerRoutes())->call(app()->getProvider(BrumeServiceProvider::class));
+    app('router')->getRoutes()->refreshNameLookups();
+
+    $fallbacks = array_filter(app('router')->getRoutes()->getRoutes(), fn (RoutingRoute $route) => $route->isFallback);
+    expect($fallbacks)->toBe([])
+        ->and(app('router')->getRoutes()->getByName('brume.login')?->uri())->toBe('login');
+
+    // A guest is not sent to the admin login, and a signed-in user gets Laravel's 404, not the shell.
+    $this->get('/nope')->assertNotFound();
+    $this->actingAs(brumeUser(), 'brume');
+    $response = $this->get('/nope')->assertNotFound();
+    expect($response->getContent())->not->toContain('brume/page');
 });
 
 it('builds the not-found page with the home url under the configured prefix', function () {

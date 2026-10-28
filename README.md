@@ -196,6 +196,13 @@ A signed-in visit to an unknown path under the Brume prefix (for example `/admin
 404 with the error page inside the shell: 「找不到這個頁面」, with a 「回到首頁」 link. A guest is sent
 to the login page; paths outside the prefix are left to Laravel.
 
+- A JSON request that is not an Inertia visit (`Accept: application/json`, as `fetch` or axios
+  send it) gets `{ "message": "找不到這個頁面" }` with 404 instead of the page.
+- The not-found route is a GET fallback, so another method on an unknown path (`POST
+  /admin/nope`) answers 405 Method Not Allowed.
+- With an empty `route.prefix` Brume registers no fallback: it would catch every unknown path of
+  the app and send guests to the admin login. Unknown paths then get Laravel's own 404.
+
 ## Not yet available
 
 These are planned for later sub-plans and phases:
