@@ -187,6 +187,8 @@ it('quick-searches the declared columns with OR', function () {
     queryUsers(['Ada Lovelace', 'Grace Hopper', 'Alan Turing']);
     User::query()->whereKey(3)->update(['username' => 'ada_fan']);
     $grid = queryGrid()->quickSearch('username', 'name');
+    // HandleBrumeRequests sets the locale per request; this calls toSchema() directly.
+    app()->setLocale('zh_TW');
 
     $page = queryPage($grid, ['q' => 'ada']);
 
