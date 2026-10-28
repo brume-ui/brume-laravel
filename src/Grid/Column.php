@@ -9,7 +9,10 @@ use Brume\Grid\Filters\Filter;
 use Brume\Grid\Filters\Filters;
 use Closure;
 use DateTimeInterface;
+use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Contracts\Support\Jsonable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LogicException;
@@ -133,10 +136,15 @@ class Column
     /**
      * The column that opens the row (its edit entry). Only a plain-text column becomes the edit
      * link: with another display (label(), link(), a component, ...) the cell keeps that display
-     * and is not wrapped as the edit link.
+     * and is not wrapped as the edit link. A primary column cannot also be edited inline
+     * (editable(), switch(), switchGroup()).
      */
     public function primary(): static
     {
+        if ($this->editor !== null) {
+            throw new LogicException(static::primaryEditableMessage($this->key));
+        }
+
         $this->primary = true;
 
         return $this;
@@ -262,16 +270,14 @@ class Column
         // The closure gets the attribute as the model has it (a Carbon date, an enum, ...).
         $value = $this->editedValue($row, data_get($row, $this->key));
 
-        if ($this->display === null) {
-            return $this->shapeDisplayed(static::normalize($value));
+        if ($this->display !== null) {
+            $value = ($this->display)($value, $row);
+        } elseif (! $this->displaysList()) {
+            return static::normalize($value);
         }
 
-        $value = ($this->display)($value, $row);
-
-        if ($this->displaysList() && is_iterable($value)) {
-            return $this->tableColumns !== []
-                ? $this->shapeDisplayed($value)
-                : array_map(static::normalize(...), array_values(collect($value)->all()));
+        if ($this->displaysList()) {
+            return $this->listDisplayValue($value);
         }
 
         $value = static::normalize($value);
@@ -296,6 +302,7 @@ class Column
         $meta = $this->displayMeta($row);
 
         if ($this->editor !== null && $this->display !== null) {
+            $this->assertRawVisible($row);
             $meta['raw'] = $this->rawValue($row);
         }
 
@@ -303,7 +310,8 @@ class Column
     }
 
     /**
-     * Made JSON-safe: dates as ISO 8601, enums as their value, Stringables as strings.
+     * Made JSON-safe: dates as ISO 8601, enums as their value, Stringables (other than models and
+     * collections) as strings.
      *
      * @internal
      */
@@ -312,9 +320,34 @@ class Column
         return match (true) {
             $value instanceof DateTimeInterface => $value->format(DateTimeInterface::ATOM),
             $value instanceof BackedEnum => $value->value,
-            $value instanceof Stringable => (string) $value,
+            // Models and collections are Stringable too (as JSON); they stay objects so the checks
+            // on cell values can refuse them instead of sending every attribute as text.
+            $value instanceof Stringable && ! $value instanceof Arrayable && ! $value instanceof Jsonable => (string) $value,
             default => $value,
         };
+    }
+
+    /**
+     * _meta.raw sends the stored value even when display() masks it, so an attribute the model
+     * hides ($hidden) must not be edited inline behind a display closure.
+     */
+    protected function assertRawVisible(mixed $row): void
+    {
+        if (! $row instanceof Model) {
+            return;
+        }
+
+        $attributes = $this->editor?->type() === 'switchGroup'
+            ? array_map('strval', array_keys($this->switchKeys))
+            : [Str::before($this->key, '.')];
+        $hidden = array_values(array_intersect($attributes, $row->getHidden()));
+
+        if ($hidden !== []) {
+            throw new LogicException(sprintf(
+                '欄位「%s」的 %s 在 %s 的 $hidden 裡：行內編輯加上 display() 時，原始值會放在 _meta.raw 送到頁面。請不要行內編輯隱藏的欄位，或拿掉 display()。',
+                $this->key, implode('、', $hidden), $row::class,
+            ));
+        }
     }
 
     /**

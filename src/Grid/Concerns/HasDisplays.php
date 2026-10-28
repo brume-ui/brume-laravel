@@ -7,6 +7,7 @@ use Brume\Support\ComponentRef;
 use Closure;
 use InvalidArgumentException;
 use LogicException;
+use Traversable;
 
 /**
  * How a column shows its cell (its Display). A column has at most one: a built-in display or a
@@ -107,6 +108,9 @@ trait HasDisplays
      */
     public function image(?int $width = null, ?int $height = null): static
     {
+        static::assertBound($width, 'image() 的寬度');
+        static::assertBound($height, 'image() 的高度');
+
         return $this->useDisplay(['type' => 'image']
             + ($width !== null ? ['width' => $width] : [])
             + ($height !== null ? ['height' => $height] : []), 'image()');
@@ -141,6 +145,8 @@ trait HasDisplays
      */
     public function qrcode(?int $size = null): static
     {
+        static::assertBound($size, 'qrcode() 的尺寸');
+
         return $this->useDisplay(['type' => 'qrcode'] + ($size !== null ? ['size' => $size] : []), 'qrcode()');
     }
 
@@ -223,15 +229,72 @@ trait HasDisplays
     }
 
     /**
-     * A table() value cut down to its declared columns; other values unchanged.
+     * The value of a label(), image(), downloadable() or table() cell, checked against what the
+     * display takes, so a model or a nested object never reaches the page whole:
+     * - label: a scalar or a list of scalars;
+     * - image: a URL or a list of URLs;
+     * - downloadable: a URL, ['url' => ..., 'name' => ...], or a list of either;
+     * - table: rows (arrays, objects or models) cut down to the declared columns.
      */
-    protected function shapeDisplayed(mixed $value): mixed
+    protected function listDisplayValue(mixed $value): mixed
     {
-        if ($this->tableColumns === [] || ! is_iterable($value)) {
+        $type = $this->displaySchema['type'];
+
+        if ($type === 'table') {
+            if ($value === null) {
+                return null;
+            }
+
+            if (! is_iterable($value)) {
+                throw new InvalidArgumentException("欄位「{$this->key}」是 table() 顯示器，值必須是一組資料列（陣列或 Collection），目前是 ".get_debug_type($value).'。');
+            }
+
+            return Content::tableRows($this->tableColumns, $value);
+        }
+
+        $value = static::normalize($value);
+
+        if ($value === null || is_scalar($value) || ($type === 'downloadable' && static::isFileItem($value))) {
             return $value;
         }
 
-        return Content::tableRows($this->tableColumns, $value);
+        if ((is_array($value) && array_is_list($value)) || $value instanceof Traversable) {
+            $items = [];
+
+            foreach ($value as $item) {
+                $item = static::normalize($item);
+
+                if (! ($item === null || is_scalar($item) || ($type === 'downloadable' && static::isFileItem($item)))) {
+                    throw new InvalidArgumentException("欄位「{$this->key}」的 {$type}() 顯示器清單裡有 ".get_debug_type($item).'，每一項都必須是'.static::listItemHint($type).'。');
+                }
+
+                $items[] = $item;
+            }
+
+            return $items;
+        }
+
+        throw new InvalidArgumentException("欄位「{$this->key}」的 {$type}() 顯示器收到 ".get_debug_type($value).'，值必須是'.static::listItemHint($type).'，或它們的清單。');
+    }
+
+    /**
+     * ['url' => string, 'name' => ?string] and nothing else.
+     */
+    protected static function isFileItem(mixed $value): bool
+    {
+        return is_array($value)
+            && isset($value['url']) && is_string($value['url'])
+            && (! array_key_exists('name', $value) || is_string($value['name']))
+            && array_diff(array_keys($value), ['url', 'name']) === [];
+    }
+
+    protected static function listItemHint(string $type): string
+    {
+        return match ($type) {
+            'image' => '圖片網址（字串）',
+            'downloadable' => '網址字串或 [\'url\' => ..., \'name\' => ...]',
+            default => '純量（字串或數字）',
+        };
     }
 
     /**
@@ -243,8 +306,8 @@ trait HasDisplays
     {
         $meta = [];
 
-        if ($this->href !== null && ($href = ($this->href)($row)) !== null) {
-            $meta['href'] = (string) $href;
+        if ($this->href !== null && ($href = static::safeHref(($this->href)($row))) !== null) {
+            $meta['href'] = $href;
         }
 
         if ($this->content !== null && ($content = ($this->content)($row)) !== null) {
@@ -256,6 +319,35 @@ trait HasDisplays
         }
 
         return $meta;
+    }
+
+    /**
+     * The href, or null (the cell shows plain text) for a scheme other than http, https, mailto and
+     * tel, such as javascript: or data:. Relative URLs pass. Browsers ignore whitespace and control
+     * characters around and inside a scheme, so they are dropped before it is read.
+     */
+    protected static function safeHref(mixed $href): ?string
+    {
+        if ($href === null) {
+            return null;
+        }
+
+        $href = (string) $href;
+        $compact = strtolower((string) preg_replace('/[\x00-\x20\x7F]+/', '', $href));
+
+        if (preg_match('/^([a-z][a-z0-9+.\-]*):/', $compact, $match) === 1
+            && ! in_array($match[1], ['http', 'https', 'mailto', 'tel'], true)) {
+            return null;
+        }
+
+        return $href;
+    }
+
+    protected static function assertBound(?int $value, string $what): void
+    {
+        if ($value !== null && $value < 1) {
+            throw new InvalidArgumentException("{$what}至少要是 1。");
+        }
     }
 
     protected static function assertTone(string $tone): void

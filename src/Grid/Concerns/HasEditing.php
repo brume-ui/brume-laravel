@@ -4,6 +4,7 @@ namespace Brume\Grid\Concerns;
 
 use Brume\Grid\Editor;
 use InvalidArgumentException;
+use LogicException;
 
 /**
  * Inline editing of a column, saved through the Route::brumeGrid cell endpoint.
@@ -26,6 +27,10 @@ trait HasEditing
      */
     public function editable(?Editor $editor = null, array|string $rules = []): static
     {
+        if ($this->primary) {
+            throw new LogicException(static::primaryEditableMessage($this->key));
+        }
+
         $this->editor = $editor ?? Editor::text();
         $this->editRules = $rules;
         $this->switchKeys = [];
@@ -65,6 +70,11 @@ trait HasEditing
         $this->switchKeys = $keys;
 
         return $this;
+    }
+
+    protected static function primaryEditableMessage(string $key): string
+    {
+        return "欄位「{$key}」：primary 欄位點擊會開啟編輯，不能同時行內編輯。請把 primary() 放在另一個欄位，或拿掉行內編輯。";
     }
 
     /**

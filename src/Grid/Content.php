@@ -93,7 +93,13 @@ final class Content
             $cells = [];
 
             foreach (array_keys($columns) as $key) {
-                $cells[(string) $key] = Column::normalize(data_get($row, (string) $key));
+                $cell = Column::normalize(data_get($row, (string) $key));
+
+                if ($cell !== null && ! is_scalar($cell)) {
+                    throw new InvalidArgumentException("表格欄位「{$key}」的值必須是純量（字串或數字）或 null，目前是 ".get_debug_type($cell).'。關聯資料請先轉成字串，避免把整個 model 送到頁面。');
+                }
+
+                $cells[(string) $key] = $cell;
             }
 
             $table[] = $cells;

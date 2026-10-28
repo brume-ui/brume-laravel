@@ -257,6 +257,98 @@ it('rejects invalid declarations', function (Closure $declare) {
     'empty select options' => [fn (Column $c) => $c->editable(Editor::select([]))],
     'empty switchGroup' => [fn (Column $c) => $c->switchGroup([])],
     'switchGroup keys as a list' => [fn (Column $c) => $c->switchGroup(['精選', '新品'])],
+    'image width below 1' => [fn (Column $c) => $c->image(0)],
+    'image height below 1' => [fn (Column $c) => $c->image(10, -1)],
+    'qrcode size below 1' => [fn (Column $c) => $c->qrcode(0)],
+    'text editor max length below 1' => [fn (Column $c) => $c->editable(Editor::text(0))],
+]);
+
+it('rejects inline editing on the primary column', function (Closure $declare) {
+    $declare(displayColumn());
+})->throws(LogicException::class, 'primary 欄位點擊會開啟編輯，不能同時行內編輯')->with([
+    'primary, then editable' => [fn (Column $c) => $c->primary()->editable()],
+    'editable, then primary' => [fn (Column $c) => $c->editable()->primary()],
+    'primary, then switch' => [fn (Column $c) => $c->primary()->switch()],
+    'switchGroup, then primary' => [fn (Column $c) => $c->switchGroup(['is_new' => '新品'])->primary()],
+]);
+
+it('shapes list display values per display', function (Closure $declare, mixed $expected) {
+    $column = displayColumn('value');
+    $declare($column);
+
+    expect($column->value(displayOrder(['value' => ['url' => '/b.pdf', 'name' => 'B']])))->toBe($expected);
+})->with([
+    'downloadable, one file from display()' => [
+        fn (Column $c) => $c->downloadable()->display(fn () => ['url' => '/a.pdf', 'name' => 'A']), ['url' => '/a.pdf', 'name' => 'A'],
+    ],
+    'downloadable, one file from the attribute' => [fn (Column $c) => $c->downloadable(), ['url' => '/b.pdf', 'name' => 'B']],
+    'downloadable, a list of urls and files' => [
+        fn (Column $c) => $c->downloadable()->display(fn () => collect(['/a.pdf', ['url' => '/c.pdf']])), ['/a.pdf', ['url' => '/c.pdf']],
+    ],
+    'downloadable, a url' => [fn (Column $c) => $c->downloadable()->display(fn () => '/a.pdf'), '/a.pdf'],
+    'image, a url' => [fn (Column $c) => $c->image()->display(fn () => '/a.png'), '/a.png'],
+    'image, a collection of urls' => [fn (Column $c) => $c->image()->display(fn () => collect([2 => '/a.png', 5 => '/b.png'])), ['/a.png', '/b.png']],
+    'label, a scalar' => [fn (Column $c) => $c->label()->display(fn () => 3), 3],
+    'label, a list' => [fn (Column $c) => $c->label()->display(fn () => ['a', 1, null]), ['a', 1, null]],
+]);
+
+it('refuses list display values that are not what the display takes', function (Closure $declare) {
+    $column = displayColumn('value');
+    $declare($column);
+
+    $column->value(displayOrder(['value' => displayOrder()]));
+})->throws(InvalidArgumentException::class, '欄位「value」')->with([
+    'label, an associative array' => [fn (Column $c) => $c->label()->display(fn () => ['a' => 'A'])],
+    'label, a list of models' => [fn (Column $c) => $c->label()->display(fn () => [displayOrder()])],
+    'label, a collection of models' => [fn (Column $c) => $c->label()->display(fn () => collect([displayOrder()]))],
+    'label, a model attribute' => [fn (Column $c) => $c->label()],
+    'image, a file item' => [fn (Column $c) => $c->image()->display(fn () => ['url' => '/a.png'])],
+    'image, nested lists' => [fn (Column $c) => $c->image()->display(fn () => [['/a.png']])],
+    'downloadable, a file with extra keys' => [fn (Column $c) => $c->downloadable()->display(fn () => ['url' => '/a', 'secret' => 'x'])],
+    'downloadable, a model' => [fn (Column $c) => $c->downloadable()->display(fn () => [displayOrder()])],
+    'table, a single model' => [fn (Column $c) => $c->table(['number' => '編號'])],
+    'badge, a model from display()' => [fn (Column $c) => $c->badge()->display(fn ($v) => $v)],
+]);
+
+it('refuses table cells that are not scalar', function () {
+    Content::table(['customer' => '客戶'], [['customer' => displayOrder()]]);
+})->throws(InvalidArgumentException::class, '表格欄位「customer」');
+
+it('refuses table display cells that are not scalar', function () {
+    displayColumn('lines')->table(['items' => '品項'])->value(displayOrder(['lines' => [['items' => collect([1])]]]));
+})->throws(InvalidArgumentException::class, '表格欄位「items」');
+
+it('refuses to send a hidden attribute in _meta.raw', function (Column $column) {
+    $column->rowMeta(displayOrder(['is_new' => true])->setHidden(['customer', 'is_new']));
+})->throws(LogicException::class, '$hidden')->with([
+    'editable' => [fn () => displayColumn('customer')->editable()->display(fn () => '***')],
+    'switchGroup' => [fn () => displayColumn('flags')->switchGroup(['is_featured' => '精選', 'is_new' => '新品'])->display(fn () => '')],
+]);
+
+it('sends a hidden attribute edited without a display closure as its value only', function () {
+    $order = displayOrder()->setHidden(['customer']);
+
+    expect(displayColumn('customer')->editable()->rowMeta($order))->toBe([]);
+});
+
+it('drops hrefs with an unsafe scheme', function (?string $href, ?string $sent) {
+    $meta = displayColumn('number')->link(fn () => $href)->rowMeta(displayOrder());
+
+    expect($meta['href'] ?? null)->toBe($sent);
+})->with([
+    'relative path' => ['/admin/orders/7', '/admin/orders/7'],
+    'relative, colon later' => ['orders/javascript:x', 'orders/javascript:x'],
+    'protocol-relative' => ['//cdn.example.test/a', '//cdn.example.test/a'],
+    'https' => ['https://example.test', 'https://example.test'],
+    'http, upper case' => ['HTTP://example.test', 'HTTP://example.test'],
+    'mailto' => ['mailto:a@example.test', 'mailto:a@example.test'],
+    'tel' => ['tel:+886212345678', 'tel:+886212345678'],
+    'javascript' => ['javascript:alert(1)', null],
+    'javascript, mixed case and padded' => ["  JaVa\tScRiPt:alert(1)", null],
+    'javascript, control characters' => ["\x01java\nscript:alert(1)", null],
+    'data' => ['data:text/html;base64,PHNjcmlwdD4=', null],
+    'vbscript' => ['vbscript:msgbox(1)', null],
+    'null' => [null, null],
 ]);
 
 it('requires Route::brumeGrid for an editable column in local', function () {

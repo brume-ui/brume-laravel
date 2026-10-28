@@ -18,6 +18,10 @@ final class Editor
 
     public static function text(?int $maxLength = null): self
     {
+        if ($maxLength !== null && $maxLength < 1) {
+            throw new InvalidArgumentException('Editor::text() 的最大長度至少要是 1。');
+        }
+
         return new self(['type' => 'text'] + ($maxLength !== null ? ['maxLength' => $maxLength] : []));
     }
 
