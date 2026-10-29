@@ -4,6 +4,7 @@ use Brume\Grid\Actions\Action;
 use Brume\Grid\Grid;
 use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\Controllers\GridEndpointController;
+use Brume\Http\Middleware\Authenticate;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Http\Middleware\HandleGridEndpoint;
 use Brume\Models\User;
@@ -361,4 +362,15 @@ it('reads the page route\'s middleware with middleware() and no arguments', func
 
     expect($routes->middleware())->toBe(['web', 'can:manage-orders'])
         ->and($routes->middleware())->toBe($routes->page()->middleware());
+});
+
+it('does not remember an endpoint (the export) as the page to return to after login', function () {
+    adminRoutes(fn () => Route::brumeGrid('orders', fn () => Grid::make(Order::query())->exportable())->middleware('brume.auth'));
+    auth('brume')->logout();
+
+    $this->get('/admin/orders/_brume/export')->assertRedirect(route('brume.login'));
+    expect(session(Authenticate::INTENDED_KEY))->toBeNull();
+
+    $this->get('/admin/orders')->assertRedirect(route('brume.login'));
+    expect(session(Authenticate::INTENDED_KEY))->toBe('http://localhost/admin/orders');
 });
