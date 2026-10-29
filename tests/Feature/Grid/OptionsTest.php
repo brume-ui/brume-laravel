@@ -164,3 +164,11 @@ it('requires Route::brumeGrid for a remote filter in local', function () {
 
     $grid->toSchema(Request::create('/admin/orders'));
 })->throws(LogicException::class, 'Route::brumeGrid');
+
+it('refuses a hidden attribute as the label, value or a search column', function (array $args) {
+    RemoteOptions::make(User::class, ...$args);
+})->with([
+    'label' => [['password']],
+    'value' => [['name', 'remember_token']],
+    'search' => [['name', null, ['name', 'password']]],
+])->throws(InvalidArgumentException::class, '的 $hidden 裡');

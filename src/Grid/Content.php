@@ -3,7 +3,9 @@
 namespace Brume\Grid;
 
 use Brume\Support\ComponentRef;
+use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
+use LogicException;
 
 /**
  * What an expand() or modal() cell opens (a CellContent): text, a small table or a frontend
@@ -77,7 +79,7 @@ final class Content
 
     /**
      * Each row cut down to the declared keys, so nothing else on the models (a password, say)
-     * reaches the page.
+     * reaches the page. A declared key the model hides ($hidden) is refused too.
      *
      * @internal
      *
@@ -93,6 +95,10 @@ final class Content
             $cells = [];
 
             foreach (array_keys($columns) as $key) {
+                if ($row instanceof Model && in_array((string) $key, $row->getHidden(), true)) {
+                    throw new LogicException(sprintf('表格欄位「%s」在 %s 的 $hidden 裡，表格會把它送到頁面。請拿掉這個欄位，或先在 display() 裡轉成要顯示的內容。', $key, $row::class));
+                }
+
                 $cell = Column::normalize(data_get($row, (string) $key));
 
                 if ($cell !== null && ! is_scalar($cell)) {

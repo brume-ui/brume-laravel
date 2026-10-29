@@ -13,6 +13,10 @@ use InvalidArgumentException;
  * Options a remote select loads page by page from a model: GET endpoints.options/{source}
  * ?q=&page=&per_page= answers an OptionsResponse, and ?value[]= turns chosen values back into
  * their labels.
+ *
+ * The options come from the query given, not from the grid's: on a grid limited to one shop, pass
+ * a Builder limited the same way (Customer::where('shop_id', $shop->id)), or every shop's rows are
+ * offered.
  */
 final class RemoteOptions
 {
@@ -47,12 +51,37 @@ final class RemoteOptions
             }
         }
 
-        return new self(
+        $options = new self(
             $query,
             $labelColumn,
             $valueColumn ?? $query->getModel()->getKeyName(),
             $searchColumns === [] ? [$labelColumn] : array_values($searchColumns),
         );
+        $options->assertVisible();
+
+        return $options;
+    }
+
+    /**
+     * The label and value reach the page, and a search column answers whether a value matches, so
+     * none of them may be an attribute the model hides ($hidden, or left out of $visible), as the
+     * list's columns and export refuse them too.
+     */
+    protected function assertVisible(): void
+    {
+        $model = $this->query->getModel();
+        $hidden = $model->getHidden();
+        $visible = $model->getVisible();
+        $columns = array_unique([$this->labelColumn, $this->valueColumn, ...$this->searchColumns]);
+
+        foreach ($columns as $column) {
+            if (in_array($column, $hidden, true) || ($visible !== [] && ! in_array($column, $visible, true))) {
+                throw new InvalidArgumentException(sprintf(
+                    '遠端選項用到的「%s」在 %s 的 $hidden 裡（或不在 $visible 裡），選項會把它送到頁面或用來比對搜尋。請改用其他欄位。',
+                    $column, $model::class,
+                ));
+            }
+        }
     }
 
     /**

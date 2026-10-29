@@ -227,6 +227,14 @@ it('outputs only the declared columns of a table display', function () {
         ->toBe([['qty' => 3]]);
 });
 
+it('refuses a table column the row models hide', function () {
+    $users = collect([brumeUser(['username' => 'ada'])]);
+
+    expect(Content::tableRows(['username' => '帳號'], $users))->toBe([['username' => 'ada']])
+        ->and(fn () => Content::tableRows(['username' => '帳號', 'password' => '密碼'], $users))
+        ->toThrow(LogicException::class, '表格欄位「password」在 '.User::class.' 的 $hidden 裡');
+});
+
 it('lets a display closure return a list for label, image, downloadable and table only', function () {
     $order = displayOrder();
 
