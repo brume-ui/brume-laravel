@@ -49,14 +49,15 @@ mode, re-publish the assets after every `composer update brume/laravel`:
 
 Admin routes go in `routes/brume.php` (the file `brume.routes.host` points to). Brume loads it
 inside its own route group, so every route already has the `/admin` prefix, the middleware from
-`config/brume.php` and requires a signed-in admin. A controller returns a page object:
+`config/brume.php` and requires a signed-in admin. A list is a controller that returns a `Grid`,
+registered with `Route::brumeGrid`:
 
 ```php
 // routes/brume.php
 use App\Http\Controllers\Admin\OrderController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('orders', OrderController::class)->name('brume.orders.index');
+Route::brumeGrid('orders', OrderController::class)->name('brume.orders.index');
 ```
 
 ```php
@@ -81,6 +82,11 @@ class OrderController
     }
 }
 ```
+
+`Route::brumeGrid('orders', ...)` registers the list page (`GET orders`) plus the endpoints under
+`orders/_brume/` that actions, inline editing, the export and remote filter options talk to. See
+[Grid](#grid) for what a list can do. A page that only shows rows (no actions, editing, export or
+remote filters) also works on a plain `Route::get`.
 
 Paging (`?page=`) is handled for you. To show the page in the sidebar, add it to `menu` in
 `config/brume.php` (`url` is relative to the prefix):
@@ -129,28 +135,184 @@ switch to `--frontend`, instead of an empty slot.
 ## Grid
 
 `Grid::make()` takes a model class or a query; the list, the `_brume` endpoints (actions, inline
-editing) and the Excel export all start from that query.
+editing, remote options) and the Excel export all start from that query. A complete example is
+the workbench's `workbench/app/Http/Controllers/OrderController.php`.
 
-- **Relation columns.** A dotted column such as `customer.name` reads the relation on every row.
-  Eager load it on the base query, or the list and the export run one query per row (N+1):
+### Routes: `Route::brumeGrid`
 
-  ```php
-  $grid = Grid::make(Order::query()->with('customer'));
-  $grid->column('customer.name', '客戶');
-  ```
+```php
+Route::brumeGrid('shops/{shop}/orders', [ShopOrderController::class, 'index'])
+    ->middleware('can:viewAny,App\Models\Order')
+    ->name('brume.shop-orders.index');
+```
 
-- **Hidden attributes.** A column that reads an attribute in the model's `$hidden` (directly or
-  through a relation) is refused in the list unless it has a `display()` closure, which decides
-  what is shown. The export refuses it unless the column has `exportUsing()` (or
-  `exportable(false)`), and inline editing refuses it behind a `display()` closure, because the
-  stored value would be sent as `_meta.raw`.
-- **Decimals.** MySQL returns a `decimal` column as a string. Cast it (`'decimal:2'`) or declare the
-  column `numeric()` so the export writes it as a number.
-- **String keys** are matched exactly. With MySQL's default case-insensitive collation the
-  database also returns the row `abc` for the id `ABC`; Brume answers 404 for it, as SQLite and
-  PostgreSQL do.
+This registers five routes: the page (`GET shops/{shop}/orders`) and, under
+`shops/{shop}/orders/_brume/`, `POST actions/{action}`, `PATCH cells/{id}`, `GET export` and
+`GET options/{source}`. Every endpoint runs **the page's own controller action**, so it goes
+through the same middleware (group, route and controller middleware), route model binding and
+route caching as the page; the `Grid` the action returns then answers the endpoint instead of
+rendering the page. Modifiers chained on the result (`middleware`, `can`, `where*`,
+`scopeBindings`, `withTrashed`, `domain`, ...) apply to all five routes; `name()` names the page.
+
+A grid that declares actions, inline editing, an export or remote filter options on a plain
+`Route::get` throws in the `local` environment; elsewhere those features are left out and a
+warning is logged.
+
+### Columns
+
+```php
+$grid->column('number', '訂單編號')->primary()->hideable(false);  // links to editUrl()
+$grid->column('customer.name', '客戶');                           // a relation (eager load it)
+$grid->column('amount', '金額')->numeric()->sortable()->width('8rem')
+    ->display(fn (int $value) => number_format($value))           // shown value…
+    ->exportUsing(fn (int $value) => $value);                     // …and the Excel cell
+$grid->column('updated_at', '更新時間')->hidden();                 // off until shown from 顯示欄位
+$grid->editUrl(fn (Order $order) => route('brume.orders.edit', $order));
+```
+
+- Column keys are unique, and `_meta` is reserved.
+- **A column keyed `id` is the row's id** (`row.id`, which actions, inline edits, selection and the
+  export send back), so it shows the model key unchanged: `display()`, `label()`, `image()`,
+  `downloadable()`, `table()` and inline editing throw on it. For a formatted number, declare
+  another key that reads the model:
+  `$grid->column('no', '編號')->display(fn ($value, Order $row) => sprintf('#%05d', $row->id))`.
+- `editUrl()` and the URLs of `link()`, `button()`, `image()` and `downloadable()` may only be
+  `http`, `https`, `mailto`, `tel` or relative. Another scheme (`javascript:`) makes `editUrl()`
+  throw in `local` and is dropped (and logged) elsewhere; a display shows plain text instead.
+
+### Sorting, search and paging
+
+- `sortable()` on a column lets its header sort (`?sort=amount`, `?sort=-amount`); a dotted key
+  needs the closure, `sortable(fn (Builder $query, string $direction) => ...)`.
+  `defaultSort('created_at', 'desc')` applies when the URL asks for none. Every sort ends with the
+  primary key, so pages never repeat or skip rows.
+- `quickSearch('number', 'customer.name', fn (Builder $q, string $term) => ...)` searches `?q=`
+  with a case-insensitive "contains" on each column, joined with OR;
+  `quickSearchPlaceholder('搜尋訂單編號或客戶')` sets the hint.
+- `perPage(15)` and `perPageOptions([15, 50, 100])` (`?per_page=`). Invalid paging, sort or
+  per-page values fall back to the defaults instead of failing.
+- `emptyState('還沒有訂單', '建立第一筆訂單後會顯示在這裡。', '新增訂單', route(...))` replaces the
+  empty list's copy.
+
+### Filters
+
+`$grid->filters()` holds the panel filters (under 「篩選」), hidden filters, selector pills and
+scopes; `$column->filter()` adds one in the column header. Each reads `filter[key]` from the URL.
+
+```php
+$filters = $grid->filters()->columns(2);
+$filters->equal('status', '狀態')->select(Order::STATUS_LABELS)->default('paid');
+$filters->in('category', '分類')->multipleSelect($categories);
+$filters->between('amount', '金額')->number();
+$filters->between('created_at', '建立時間')->date();
+$filters->equal('customer', '客戶', 'customer_id')->remoteSelect(Customer::where('shop_id', $shopId), 'name');
+$filters->newline();
+$filters->group('stock_rule', '庫存條件', ['equal', 'gt', 'lt'], 'stock')->number();
+$filters->where('vip', '只看 VIP', fn (Builder $q, $value) => $q->whereHas('customer', ...));
+$filters->hidden('customer_id');                    // ?filter[customer_id]=5 from a link
+$filters->scope('this_month', '本月', fn (Builder $q) => $q->where('created_at', '>=', now()->startOfMonth()));
+$filters->selector('stage', '狀態', Order::STATUS_LABELS, multiple: true, column: 'status');
+
+$grid->column('sku', '貨號')->filter('startWith');
+$grid->column('price', '售價')->numeric()->filter('between');
+```
+
+- Conditions: `equal`, `notEqual`, `like`, `ilike`, `startWith`, `endWith`, `gt`, `lt`, `ngt`,
+  `nlt`, `between`, `in`, `notIn`, `findInSet`, `date`, `day`, `month`, `year`, `group` (an
+  operator picked next to the value), `where` and `whereBetween` (your closure). The third
+  argument is the database column when it differs from the key (`meta->color` for a JSON path,
+  `customer.name` through a relation).
+- Inputs: `text()` (the default), `number()`, `date()`, `select()`, `multipleSelect()`,
+  `radio()`, `checkbox()`, `remoteSelect()` and `remoteMultipleSelect()`.
+- `remoteSelect(Model::class or a Builder, $labelColumn, $valueColumn = key, $searchColumns)`
+  loads its options page by page from the `options` endpoint. The options come from the query you
+  pass, not from the grid's: on a grid limited to one shop, pass a Builder limited the same way.
+  Its label, value and search columns may not be in the model's `$hidden`.
+- `default()` gives a filter a value **only while the URL has no `filter` parameter at all**. Any
+  `filter` parameter turns every default off, including an empty `filter[status]=` and a bare
+  `filter=`: when the user removes the last filter (a chip's ✕, a header filter's 「清除」,
+  deselecting a pill, 「清除所有篩選」), the page sends `filter=`, so a removed default stays removed
+  and 「清除所有篩選」 shows the unfiltered list.
+- Header filters (`$column->filter($type, $options)`) take `between`, `checkbox`, `equal`, `gt`,
+  `in`, `input` (contains), `like`, `lt`, `ngt`, `nlt` and `startWith`; `in` and `checkbox`
+  need `$options`.
+
+Some conditions depend on the database; see
+[Filters that depend on the database](#filters-that-depend-on-the-database).
+
+### Displays
+
+One display per column; the value is the attribute (after `display()`):
+
+| Display | Shows |
+| --- | --- |
+| `label($options, $tone)`, `badge($tone)` | a pill per value (`$options` maps values to text, or to `[text, tone]`) |
+| `link(fn ($row) => $url, external: true)`, `button(fn ($row) => $url)` | a link, or a link styled as a button |
+| `image($width, $height)`, `downloadable()` | one or more images / files (URLs, or `['url' => ..., 'name' => ...]`) |
+| `limit($length)`, `copyable()`, `qrcode($size)`, `progressBar($max)` | shortened text with the rest on click, a copy button, a QR code, a bar |
+| `table(['size' => '尺寸', ...])` | a small table of a list of rows, only the declared keys |
+| `expand(fn ($row) => Content::..., $label)`, `modal(fn ($row) => Content::..., $title, $label)` | content under the row, or in a dialog: `Content::text()`, `Content::table()`, `Content::component()` |
+| `component('StockBadge', $props)` | your own React component (`--frontend`) |
+
+### Inline editing
+
+```php
+$grid->column('status', '狀態')->label($statuses)->editable(Editor::select(Order::STATUS_LABELS));
+$grid->column('slogan', '標語')->editable(Editor::text(20), ['required', 'string']);
+$grid->column('price', '售價')->numeric()->editable(Editor::number(0, 99999, 10), ['required', 'integer']);
+$grid->column('channels', '通路')->editable(Editor::checkbox($channels)); // cast the attribute to an array
+$grid->column('is_active', '上架')->switch();
+$grid->column('flags', '標記')->switchGroup(['is_featured' => '精選', 'is_new' => '新品']);
+```
+
+Editors: `text`, `textarea`, `number`, `select`, `radio`, `checkbox`, `switch` and `switchGroup`.
+The second argument holds Laravel validation rules; the options of `select`, `radio` and
+`checkbox`, a switch's boolean and the editor's bounds are added for you. A save is a `PATCH` to
+the `cells` endpoint with the row looked up in the grid's query, and a 422 shows the message next
+to the cell.
+
+**Inline edits bypass `$fillable`.** The column declaration is the allowlist: only a column
+declared `editable()`, `switch()` or `switchGroup()` can be written, and only the declared
+attributes, with your rules. Declare a column editable only for users who may change it (see
+[Authorizing](#authorizing)). Relation columns (dotted keys) cannot be edited yet.
 
 ### Actions
+
+```php
+use Brume\Grid\Actions\Action;
+use Brume\Grid\Actions\Feedback;
+
+$grid->rowActions(
+    Action::make('ship', '標記出貨')->icon('truck')->exposed()
+        ->visible(fn (Order $order) => $order->status === 'paid')
+        ->handle(fn (Collection $orders) => $orders->each->ship()),
+);
+$grid->batchActions(
+    Action::make('ship', '標記出貨')->confirm('將 {count} 筆訂單標記為已出貨？')
+        ->handle(fn (Collection $orders) => Feedback::toast('success', "{$orders->count()} 筆已出貨")->refresh()),
+);
+$grid->tools(Action::make('sync', '同步庫存')->icon('refresh-cw')->handle(fn () => Inventory::sync()));
+$grid->deletable();   // 刪除 for rows and the selection, with the confirm copy
+```
+
+- Row actions sit in each row's ⋯ menu (and its right-click menu); up to two `exposed()` ones
+  also show as buttons. Batch actions show while rows are selected; tools sit in the toolbar.
+- `handle(fn (Collection $models, Request $request): ?Feedback)` gets one model for a row action,
+  the selection for a batch, none for a tool. `danger()`, `confirm($title, $description,
+  $confirmLabel)` (`{count}` is the number of rows), `shortcut('c')` and `icon()` style it.
+- Return `Feedback` to say what happens next: `Feedback::toast('success'|'info'|'warning'|'error',
+  $message)`, `->refresh()`, `->redirect($url)`, `->download($url, $filename)`. Without one, the
+  page shows 「已完成「{label}」」 and refreshes. Redirect and download URLs are checked like
+  `editUrl()`.
+- **Actions run on the grid's base query, not on the list's filters** (R23). The ids in a request
+  are looked up in `Grid::make()`'s query, with its conditions and global scopes, so an id the
+  list could never show answers 404; the search, filters, scope and paging of the list the user
+  was looking at are not applied again. Put a restriction that must hold for actions (a shop, a
+  tenant) on the base query, not in a filter.
+- `deletable()` deletes each row with `$model->delete()`, so model events fire and soft deletes
+  are kept; rows a `deleting` listener keeps are reported as not deleted.
+
+#### Transactions and one-time actions
 
 An action runs inside a database transaction on the model's connection, and a thrown exception
 rolls it back. The rollback covers only database writes on that connection: mail, HTTP calls,
@@ -173,6 +335,62 @@ Action::make('refund', '退款')->handle(function (Collection $orders) {
     $locked->each->update(['status' => 'refunded']);
 });
 ```
+
+### Export
+
+`exportable($filename = null)` adds 「匯出 Excel」: all matching rows, the current page or the
+selected rows, as an `.xlsx` of the columns (the shown value, or `exportUsing(fn ($value, $row) =>
+...)`; leave a column out with `exportable(false)`). The export uses the list's search, filters and
+sort; text that looks like a formula is written as text. The file name defaults to
+`{title}-{Y-m-d-His}.xlsx`.
+
+### Authorizing
+
+There are no per-user permissions in Brume yet (phase 4). Two Laravel tools cover it:
+
+- **Middleware on the route**, for the whole list and its endpoints:
+  `Route::brumeGrid('orders', OrderController::class)->middleware('can:viewAny,App\Models\Order')`.
+  The endpoints run the same middleware, controller middleware included.
+- **Declare only what the user may use.** The endpoints answer from the `Grid` your controller
+  returns, so an action, an editable column or the export you do not declare does not exist for
+  that request: it is not shown, and a request for it is refused (404 for an action or the
+  export, 422 for a cell that is not editable).
+
+  ```php
+  if ($request->user()->can('refund', Order::class)) {
+      $grid->rowActions(Action::make('refund', '退款')->danger()->handle(...));
+  }
+  $column = $grid->column('status', '狀態');
+  if ($request->user()->can('update', Order::class)) {
+      $column->editable(Editor::select(Order::STATUS_LABELS));
+  }
+  ```
+
+  `visible(fn (Order $order) => $request->user()->can('ship', $order))` decides it per row: the
+  action is left out of that row's menu, and a request naming the row answers 403.
+
+### More about columns and queries
+
+- **Relation columns.** A dotted column such as `customer.name` reads the relation on every row.
+  Eager load it on the base query, or the list and the export run one query per row (N+1):
+
+  ```php
+  $grid = Grid::make(Order::query()->with('customer'));
+  $grid->column('customer.name', '客戶');
+  ```
+
+- **Hidden attributes.** A column that reads an attribute in the model's `$hidden` (directly or
+  through a relation) is refused in the list unless it has a `display()` closure, which decides
+  what is shown. The export refuses it unless the column has `exportUsing()` (or
+  `exportable(false)`), and inline editing refuses it behind a `display()` closure, because the
+  stored value would be sent as `_meta.raw`. `table()` cells and remote options refuse hidden
+  attributes too.
+- **Decimals.** MySQL returns a `decimal` column as a string. Cast it (`'decimal:2'`) or declare the
+  column `numeric()` so the export writes it as a number.
+- **String keys** are matched exactly. With MySQL's default case-insensitive collation the
+  database also returns the row `abc` for the id `ABC`; Brume answers 404 for it, as SQLite and
+  PostgreSQL do.
+- **Host tests.** The endpoints keep working under `$this->withoutMiddleware()` and `Event::fake()`.
 
 ### Filters that depend on the database
 
@@ -200,6 +418,10 @@ to the login page; paths outside the prefix are left to Laravel.
   send it) gets `{ "message": "找不到這個頁面" }` with 404 instead of the page.
 - The not-found route is a GET fallback, so another method on an unknown path (`POST
   /admin/nope`) answers 405 Method Not Allowed.
+- Laravel matches `Route::fallback` routes in the order they were registered. If your app
+  registers its own `Route::fallback` before Brume's service provider boots, that one answers
+  `/admin/<unknown>` too. Register the app's fallback after Brume's, or limit it to your own
+  prefix or domain.
 - With an empty `route.prefix` and no `route.domain`, Brume registers no fallback: it would catch
   every unknown path of the app and send guests to the admin login. Unknown paths then get
   Laravel's own 404. On an admin domain of its own (`route.domain`) the fallback stays.
@@ -212,6 +434,8 @@ These are planned for later sub-plans and phases:
 - **Actions with input fields** (a refund reason, ...): sub-plan 2.
 - **The SelectTable / MultipleSelectTable picker dialog** for filters: sub-plan 3. Until then, use
   the remote-search `select` / `multipleSelect` filters, which do the same job.
+- **Inline editors for dates, money, tags and custom fields**: they need the field registry of
+  sub-plan 2 and the custom registry of sub-plan 3.
 - **Orderable, Tree and DialogTree**: phase 3.
 
 ## Development
