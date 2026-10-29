@@ -209,6 +209,10 @@ trait HasDisplays
      */
     protected function useDisplay(array $schema, string $method): static
     {
+        if (in_array($schema['type'], ['label', 'image', 'downloadable', 'table'], true)) {
+            $this->assertKeepsRowId($method);
+        }
+
         if ($this->displaySchema !== null) {
             $current = $this->displaySchema['type'] === 'component' ? 'component()' : "「{$this->displaySchema['type']}」顯示器";
 

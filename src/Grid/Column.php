@@ -41,6 +41,9 @@ class Column
 
     protected bool $primary = false;
 
+    /** The column keyed `id`: its cell is the row's id (row.id), so it shows that value unchanged. */
+    protected bool $rowId = false;
+
     protected ?Filters $filters = null;
 
     protected ?Filter $filter = null;
@@ -70,6 +73,32 @@ class Column
         return $this->label;
     }
 
+    /**
+     * Marks the column keyed `id`. Its value is the row's id, which actions, inline edits,
+     * selection and export send back, so nothing may change it (see assertKeepsRowId()).
+     *
+     * @internal
+     */
+    public function asRowId(): static
+    {
+        $this->rowId = true;
+
+        return $this;
+    }
+
+    /**
+     * The `id` column shows row.id as it is: display(), label(), image(), downloadable(), table()
+     * and inline editing would replace the id every action and edit sends back.
+     *
+     * @internal
+     */
+    public function assertKeepsRowId(string $method): void
+    {
+        if ($this->rowId) {
+            throw new LogicException("欄位「id」是每一列的識別碼（row.id），Action、行內編輯、勾選和匯出都靠它找回這一列，所以不能用 {$method} 改變它的值。要顯示格式化的編號，請另外宣告一個欄位，例如 \$grid->column('no', '編號')->display(fn (\$value, \$row) => sprintf('#%05d', \$row->id))。");
+        }
+    }
+
     public static function defaultLabel(string $key): string
     {
         return Str::headline($key);
@@ -93,6 +122,7 @@ class Column
      */
     public function display(Closure $fn): static
     {
+        $this->assertKeepsRowId('display()');
         $this->display = $fn;
 
         return $this;

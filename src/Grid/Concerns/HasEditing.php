@@ -31,6 +31,8 @@ trait HasEditing
      */
     public function editable(?Editor $editor = null, array|string $rules = []): static
     {
+        $this->assertKeepsRowId('行內編輯');
+
         if ($this->primary) {
             throw new LogicException(static::primaryEditableMessage($this->key));
         }

@@ -3,6 +3,7 @@
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Models\User;
+use Brume\Tests\Support\Models\CodeItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -191,4 +192,62 @@ it('keeps an order the query already has', function () {
     // No primary-key tiebreaker is added after the query's own order.
     expect($select)->toBe(User::query()->orderByDesc('username')->limit(20)->offset(0)->toSql())
         ->and(array_column($schema['rows'], 'id'))->toBe(User::query()->orderByDesc('username')->pluck('id')->all());
+});
+
+describe('row identity', function () {
+    it('keeps row.id the model key; an id column shows it unchanged', function () {
+        seedUsers(1);
+        $grid = Grid::make(User::query())->title('Users');
+        $grid->column('id')->numeric()->copyable();
+        $grid->column('username');
+
+        $row = schemaFor($grid)['rows'][0];
+        $user = User::query()->first();
+
+        expect($row['id'])->toBe($user->getKey())
+            ->and(array_key_first($row))->toBe('id');
+    });
+
+    it('refuses anything that would change the id column', function (Closure $declare, string $method) {
+        $grid = Grid::make(User::query());
+
+        expect(fn () => $declare($grid->column('id')))->toThrow(
+            LogicException::class,
+            "所以不能用 {$method} 改變它的值",
+        );
+    })->with([
+        'display()' => [fn ($column) => $column->display(fn ($v) => sprintf('#%05d', $v)), 'display()'],
+        'label()' => [fn ($column) => $column->label(), 'label()'],
+        'table()' => [fn ($column) => $column->table(['a' => 'A']), 'table()'],
+        'editable()' => [fn ($column) => $column->editable(), '行內編輯'],
+        'switch()' => [fn ($column) => $column->switch(), '行內編輯'],
+    ]);
+
+    it('a formatted number goes in its own column, reading the model', function () {
+        seedUsers(1);
+        $grid = Grid::make(User::query());
+        $grid->column('no', '編號')->display(fn ($value, $row) => sprintf('#%05d', $row->id));
+
+        $row = schemaFor($grid)['rows'][0];
+
+        expect($row['no'])->toBe(sprintf('#%05d', $row['id']));
+    });
+
+    it('refuses an id column when the model key has another name', function () {
+        expect(fn () => Grid::make(CodeItem::query())->column('id'))
+            ->toThrow(InvalidArgumentException::class, '這個模型的主鍵是「code」');
+    });
+
+    it('refuses a column keyed _meta', function () {
+        expect(fn () => Grid::make(User::query())->column('_meta'))
+            ->toThrow(InvalidArgumentException::class, '欄位 key 不能是「_meta」');
+    });
+
+    it('refuses a duplicate column key', function () {
+        $grid = Grid::make(User::query());
+        $grid->column('name');
+
+        expect(fn () => $grid->column('name', '另一個名稱'))
+            ->toThrow(InvalidArgumentException::class, '列表已經有 key 為「name」的欄位');
+    });
 });

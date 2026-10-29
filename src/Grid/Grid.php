@@ -179,7 +179,33 @@ class Grid implements Renderable, Responsable
      */
     public function column(string $key, ?string $label = null): Column
     {
-        return $this->columns[] = (new Column($key, $label ?? Column::defaultLabel($key)))->withFilters($this->filters());
+        $this->assertColumnKey($key);
+        $column = (new Column($key, $label ?? Column::defaultLabel($key)))->withFilters($this->filters());
+
+        return $this->columns[] = $key === 'id' ? $column->asRowId() : $column;
+    }
+
+    /**
+     * A column key names a cell of the row, next to the row's own `id` and `_meta`. Keys are unique,
+     * `_meta` is reserved, and `id` is the row's id, so a column keyed `id` must read the model key.
+     */
+    protected function assertColumnKey(string $key): void
+    {
+        if ($key === '_meta') {
+            throw new InvalidArgumentException('欄位 key 不能是「_meta」：每一列用這個鍵傳送連結、內容和原始值。請換一個 key。');
+        }
+
+        foreach ($this->columns as $column) {
+            if ($column->key() === $key) {
+                throw new InvalidArgumentException("列表已經有 key 為「{$key}」的欄位，欄位的 key 不能重複。要用同一個屬性顯示兩次，請換一個 key 並用 display() 讀取它。");
+            }
+        }
+
+        $keyName = $this->query->getModel()->getKeyName();
+
+        if ($key === 'id' && $keyName !== 'id') {
+            throw new InvalidArgumentException("欄位 key「id」是每一列的識別碼（row.id），這個模型的主鍵是「{$keyName}」，兩者會互相覆蓋。請換一個 key，例如 \$grid->column('{$keyName}')。");
+        }
     }
 
     /**
@@ -711,7 +737,7 @@ class Grid implements Renderable, Responsable
      */
     protected function row(Model $model, array $rowActions = []): array
     {
-        $row = ['id' => $model->getKey()];
+        $row = ['id' => null];
         $meta = ['href' => [], 'content' => [], 'raw' => []];
 
         foreach ($this->columns as $column) {
@@ -721,6 +747,9 @@ class Grid implements Renderable, Responsable
                 $meta[$entry][$column->key()] = $value;
             }
         }
+
+        // Written last, so nothing a column holds can replace the row's identity.
+        $row['id'] = $model->getKey();
 
         $meta = array_filter($meta);
 
