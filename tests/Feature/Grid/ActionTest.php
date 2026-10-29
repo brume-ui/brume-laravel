@@ -470,6 +470,47 @@ it('sends editUrl in _meta.editUrl', function () {
         ->and(array_key_exists('_meta', $page['rows'][1]))->toBeFalse();
 });
 
+describe('developer URLs with an unsafe scheme', function () {
+    it('drops a javascript: editUrl outside local, with a warning', function () {
+        actionItems();
+        Log::spy();
+
+        $page = actionPage(fn (Grid $grid) => $grid->editUrl(fn () => 'javascript:alert(1)'));
+
+        expect(collect($page['rows'])->pluck('_meta')->filter()->all())->toBe([]);
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message) => str_contains($message, 'editUrl()'));
+    });
+
+    it('throws for a javascript: editUrl in local', function () {
+        actionItems();
+        app()->detectEnvironment(fn () => 'local');
+        $this->withoutExceptionHandling();
+
+        expect(fn () => actionPage(fn (Grid $grid) => $grid->editUrl(fn () => ' JavaScript:alert(1)')))
+            ->toThrow(InvalidArgumentException::class, 'editUrl() 的網址');
+    });
+
+    it('drops an unsafe Feedback redirect or download outside local', function () {
+        Log::spy();
+
+        $feedback = Feedback::toast('success', '好了')
+            ->redirect('javascript:alert(1)')
+            ->download('data:text/html,<script>alert(1)</script>', 'x.html');
+
+        expect($feedback->toArray())->toBe(['toast' => ['type' => 'success', 'message' => '好了']]);
+        Log::shouldHaveReceived('warning')->twice();
+    });
+
+    it('throws for an unsafe Feedback URL in local, keeps safe ones', function () {
+        app()->detectEnvironment(fn () => 'local');
+
+        expect(fn () => Feedback::make()->redirect('vbscript:x'))
+            ->toThrow(InvalidArgumentException::class, 'Feedback::redirect()')
+            ->and(Feedback::make()->redirect('/admin/orders')->download('https://cdn.example.com/a.xlsx')->toArray())
+            ->toBe(['redirect' => '/admin/orders', 'download' => ['url' => 'https://cdn.example.com/a.xlsx']]);
+    });
+});
+
 it('validates a grid with every kind of action against PageEnvelope', function () {
     actionItems();
 

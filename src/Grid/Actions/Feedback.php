@@ -2,6 +2,7 @@
 
 namespace Brume\Grid\Actions;
 
+use Brume\Support\Href;
 use InvalidArgumentException;
 
 /**
@@ -52,16 +53,23 @@ final class Feedback
         return $this;
     }
 
+    /**
+     * Visit $url after the action. Only http, https, mailto, tel or relative URLs (Href::checked()).
+     */
     public function redirect(string $url): self
     {
-        $this->redirect = $url;
+        $this->redirect = Href::checked($url, 'Feedback::redirect()');
 
         return $this;
     }
 
+    /**
+     * Download $url after the action. Only http, https, mailto, tel or relative URLs (Href::checked()).
+     */
     public function download(string $url, ?string $filename = null): self
     {
-        $this->download = ['url' => $url] + ($filename !== null ? ['filename' => $filename] : []);
+        $url = Href::checked($url, 'Feedback::download()');
+        $this->download = $url !== null ? ['url' => $url] + ($filename !== null ? ['filename' => $filename] : []) : null;
 
         return $this;
     }

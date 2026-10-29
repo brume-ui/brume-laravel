@@ -9,6 +9,7 @@ use Brume\Grid\Actions\DeleteAction;
 use Brume\Grid\Filters\Filters;
 use Brume\Grid\Query\Like;
 use Brume\Http\Controllers\GridEndpointController;
+use Brume\Support\Href;
 use Closure;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Database\Eloquent\Builder;
@@ -275,7 +276,8 @@ class Grid implements Renderable, Responsable
 
     /**
      * The row's edit page, fn (Model $row): ?string, sent in _meta.editUrl: the primary column
-     * links to it and the row offers 編輯.
+     * links to it and the row offers 編輯. Only http, https, mailto, tel or relative URLs: another
+     * scheme (javascript:) throws in the local environment and is dropped (and logged) elsewhere.
      */
     public function editUrl(Closure $fn): static
     {
@@ -753,7 +755,9 @@ class Grid implements Renderable, Responsable
 
         $meta = array_filter($meta);
 
-        if ($this->editUrl !== null && ($editUrl = ($this->editUrl)($model)) !== null) {
+        $editUrl = $this->editUrl !== null ? ($this->editUrl)($model) : null;
+
+        if ($editUrl !== null && ($editUrl = Href::checked((string) $editUrl, 'editUrl()')) !== null) {
             $meta['editUrl'] = $editUrl;
         }
 

@@ -4,6 +4,7 @@ namespace Brume\Grid\Concerns;
 
 use Brume\Grid\Content;
 use Brume\Support\ComponentRef;
+use Brume\Support\Href;
 use Closure;
 use InvalidArgumentException;
 use LogicException;
@@ -349,25 +350,11 @@ trait HasDisplays
     }
 
     /**
-     * The href, or null (the cell shows plain text) for a scheme other than http, https, mailto and
-     * tel, such as javascript: or data:. Relative URLs pass. Browsers ignore whitespace and control
-     * characters around and inside a scheme, so they are dropped before it is read.
+     * The href, or null (the cell shows plain text) for a scheme Href::safe() refuses.
      */
     protected static function safeHref(mixed $href): ?string
     {
-        if ($href === null) {
-            return null;
-        }
-
-        $href = (string) $href;
-        $compact = strtolower((string) preg_replace('/[\x00-\x20\x7F]+/', '', $href));
-
-        if (preg_match('/^([a-z][a-z0-9+.\-]*):/', $compact, $match) === 1
-            && ! in_array($match[1], ['http', 'https', 'mailto', 'tel'], true)) {
-            return null;
-        }
-
-        return $href;
+        return Href::safe($href);
     }
 
     protected static function assertBound(?int $value, string $what): void
