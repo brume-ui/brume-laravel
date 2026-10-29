@@ -64,6 +64,9 @@ class Grid implements Renderable, Responsable
 
     protected ?string $exportFilename = null;
 
+    /** @var array<string, true> lists already warned about (see endpoints()), by title */
+    protected static array $warnedWithoutEndpoints = [];
+
     final public function __construct(protected Builder $query) {}
 
     /**
@@ -587,7 +590,11 @@ class Grid implements Renderable, Responsable
                 throw new LogicException($message);
             }
 
-            Log::warning($message.' 目前先省略這些功能。');
+            // Once per list and process, not on every page view.
+            if (! isset(self::$warnedWithoutEndpoints[$this->title])) {
+                self::$warnedWithoutEndpoints[$this->title] = true;
+                Log::warning($message.' 目前先省略這些功能。');
+            }
         }
 
         return null;

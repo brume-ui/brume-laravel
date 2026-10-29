@@ -362,7 +362,8 @@ it('refuses a cell value that is not a scalar before the download starts', funct
     $this->get('/admin/orders/_brume/export');
 })->throws(InvalidArgumentException::class, 'exportUsing()');
 
-it('ends the file with a 匯出中斷 row when a later row fails', function () {
+it('ends the file with a 匯出中斷 row when a later row fails', function (bool $debug, string $notice) {
+    config(['app.debug' => $debug]);
     Log::spy();
     exportOrders(3);
     exportRoutes(function (Grid $grid) {
@@ -373,10 +374,13 @@ it('ends the file with a 匯出中斷 row when a later row fails', function () {
     expect(exportSheet($this->get('/admin/orders/_brume/export')))->toBe([
         ['訂單編號', '狀態', '金額', '檢查'],
         ['BR0001', '已付款', 10, 'ok'],
-        ['匯出中斷：第二筆壞了'],
+        [$notice],
     ]);
     Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message) => str_contains($message, '第二筆壞了'));
-});
+})->with([
+    'with APP_DEBUG, the message' => [true, '匯出中斷：第二筆壞了'],
+    'in production, no internal details' => [false, '匯出中斷，檔案只有前面的資料。請再匯出一次，或聯絡管理員。'],
+]);
 
 it('refuses a column reading a $hidden attribute, with a pointer to exportUsing() or exportable(false)', function () {
     $this->withoutExceptionHandling();

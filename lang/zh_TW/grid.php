@@ -35,6 +35,7 @@ return [
         'too_many' => '一次最多只能匯出 :max 筆。',
         // The last row of a file whose export failed part way.
         'interrupted' => '匯出中斷：:message',
+        'interrupted_generic' => '匯出中斷，檔案只有前面的資料。請再匯出一次，或聯絡管理員。',
     ],
     // The inline-edit (cell) endpoint.
     'cell' => [
@@ -50,5 +51,7 @@ return [
         'confirm_batch' => '刪除所選的 {count} 筆資料？',
         'confirm_batch_label' => '刪除 {count} 筆',
         'done' => '已刪除 :count 筆',
+        'partial' => '已刪除 :count 筆，另外 :kept 筆沒有刪除。',
+        'none' => '沒有刪除任何資料。',
     ],
 ];

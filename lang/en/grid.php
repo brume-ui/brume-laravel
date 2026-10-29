@@ -35,6 +35,7 @@ return [
         'too_many' => 'You can export at most :max selected rows at once.',
         // The last row of a file whose export failed part way.
         'interrupted' => 'Export interrupted: :message',
+        'interrupted_generic' => 'Export interrupted: the file has only the rows before the error. Export again, or contact an administrator.',
     ],
     // The inline-edit (cell) endpoint.
     'cell' => [
@@ -50,5 +51,7 @@ return [
         'confirm_batch' => 'Delete the {count} selected rows?',
         'confirm_batch_label' => 'Delete {count}',
         'done' => 'Deleted 1 row|Deleted :count rows',
+        'partial' => 'Deleted :count of :total rows; the others were kept.',
+        'none' => 'Nothing was deleted.',
     ],
 ];

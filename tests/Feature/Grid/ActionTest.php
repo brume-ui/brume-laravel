@@ -166,6 +166,19 @@ it('deletes rows one by one, firing model events and soft deleting', function (s
     'batch' => ['batch', fn ($a, $b) => [$a->id, $b->id], '已刪除 2 筆'],
 ]);
 
+it('warns instead of reporting success when deleting listeners keep rows', function (array $keep, string $message) {
+    [$a, $b] = actionItems();
+    ActionItem::deleting(fn (ActionItem $item) => in_array($item->name, $keep, true) ? false : null);
+    actionRoutes(fn (Grid $grid) => $grid->deletable());
+
+    $response = $this->postJson('/admin/items/_brume/actions/delete', ['target' => 'batch', 'ids' => [$a->id, $b->id]])->assertOk();
+
+    expect($response->json('feedback.toast'))->toBe(['type' => 'warning', 'message' => $message]);
+})->with([
+    'some kept' => [['A'], '已刪除 1 筆，另外 1 筆沒有刪除。'],
+    'all kept' => [['A', 'B'], '沒有刪除任何資料。'],
+]);
+
 it('declares delete with the confirm copy on rows and batches', function () {
     $page = actionPage(fn (Grid $grid) => $grid->deletable());
 
@@ -398,6 +411,13 @@ it('answers 404 for an action the target does not declare', function (string $ta
     'a row action run as a batch' => ['batch', 'close'],
 ]);
 
+it('answers 404, not 422, for an unknown action key with a malformed body', function () {
+    actionRoutes(fn (Grid $grid) => $grid->rowActions(closeAction()));
+
+    $this->postJson('/admin/items/_brume/actions/nope', ['target' => 'everything'])->assertNotFound();
+    $this->postJson('/admin/items/_brume/actions/close', ['target' => 'everything'])->assertUnprocessable();
+});
+
 it('answers 401 JSON when signed out', function () {
     [$a] = actionItems();
     actionRoutes(fn (Grid $grid) => $grid->rowActions(closeAction()));
@@ -549,11 +569,13 @@ it('leaves the actions out and logs a warning in production for a grid on a plai
     app()->detectEnvironment(fn () => 'production');
     Log::spy();
     actionItems();
-    $grid = Grid::make(ActionItem::class)->title('Items')->deletable()
+    // The warning is logged once per list and process: a title no other test uses.
+    $grid = Grid::make(ActionItem::class)->title('Items on Route::get')->deletable()
         ->rowActions(closeAction()->visible(fn () => true))->tools(closeAction());
     $grid->column('name');
 
     $page = $grid->toSchema(Request::create('/admin/items'));
+    $grid->toSchema(Request::create('/admin/items?page=2'));
 
     expect($page['actions'])->toBe(['row' => [], 'batch' => [], 'tools' => []])
         ->and(array_key_exists('endpoints', $page))->toBeFalse()

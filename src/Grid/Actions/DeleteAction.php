@@ -41,7 +41,14 @@ class DeleteAction extends Action
     {
         // A deleting listener that returns false keeps its row, which is then not counted.
         $deleted = $models->filter(fn (Model $model) => $model->delete() !== false)->count();
+        $kept = $models->count() - $deleted;
 
-        return Feedback::toast('success', trans_choice('brume::grid.delete.done', $deleted, ['count' => $deleted]))->refresh();
+        $feedback = match (true) {
+            $deleted === 0 => Feedback::toast('warning', __('brume::grid.delete.none')),
+            $kept > 0 => Feedback::toast('warning', __('brume::grid.delete.partial', ['count' => $deleted, 'kept' => $kept, 'total' => $models->count()])),
+            default => Feedback::toast('success', trans_choice('brume::grid.delete.done', $deleted, ['count' => $deleted])),
+        };
+
+        return $feedback->refresh();
     }
 }

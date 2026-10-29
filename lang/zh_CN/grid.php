@@ -35,6 +35,7 @@ return [
         'too_many' => '一次最多只能导出 :max 条。',
         // The last row of a file whose export failed part way.
         'interrupted' => '导出中断：:message',
+        'interrupted_generic' => '导出中断，文件只有前面的数据。请再导出一次，或联系管理员。',
     ],
     // The inline-edit (cell) endpoint.
     'cell' => [
@@ -50,5 +51,7 @@ return [
         'confirm_batch' => '删除所选的 {count} 条数据？',
         'confirm_batch_label' => '删除 {count} 条',
         'done' => '已删除 :count 条',
+        'partial' => '已删除 :count 条，另外 :kept 条没有删除。',
+        'none' => '没有删除任何数据。',
     ],
 ];

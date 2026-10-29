@@ -69,9 +69,13 @@ class XlsxExporter
                     $writer->addRow(new Row(array_map($this->cell(...), $this->values($columns, $model))));
                 }
             } catch (Throwable $e) {
-                // Too late for an error response: log it and end the file with a row saying so.
+                // Too late for an error response: log it and end the file with a row saying so. The
+                // message (SQL, paths…) goes in the file only with APP_DEBUG; the log always has it.
                 Log::error('Brume 匯出 Excel 時中斷：'.$e->getMessage(), ['exception' => $e]);
-                $writer->addRow(new Row([new Cell\StringCell(__('brume::grid.export.interrupted', ['message' => $e->getMessage()]), null)]));
+                $notice = app()->hasDebugModeEnabled()
+                    ? __('brume::grid.export.interrupted', ['message' => $e->getMessage()])
+                    : __('brume::grid.export.interrupted_generic');
+                $writer->addRow(new Row([new Cell\StringCell($notice, null)]));
             }
 
             $writer->close();

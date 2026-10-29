@@ -26,6 +26,12 @@ class ActionRunner
 {
     public function run(Grid $grid, Request $request, string $key): JsonResponse
     {
+        // An action key the grid does not have is a 404 whatever the body says, like an
+        // endpoint the grid does not offer.
+        if (array_filter(['row', 'batch', 'tool'], fn (string $target) => $grid->findAction($target, $key) !== null) === []) {
+            return ErrorResponse::make(__('brume::grid.endpoint_unavailable'), 404);
+        }
+
         try {
             $rows = $grid->rows();
             ['target' => $target, 'ids' => $ids] = $this->validated($request, $rows, $grid->maxBatchSize());
