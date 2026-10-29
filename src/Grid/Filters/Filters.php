@@ -304,7 +304,8 @@ class Filters
 
     /**
      * The usable values of the request's `filter` parameter, keyed by filter. Defaults apply only
-     * when $useDefaults, i.e. the request has no `filter` parameter at all (Filter::default()).
+     * when $useDefaults, i.e. the request has no `filter` parameter at all, not even a bare
+     * `filter=` (Filter::default()).
      *
      * @internal
      *

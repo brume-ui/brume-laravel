@@ -333,6 +333,22 @@ it('reads ?filter[status]= from the URL as defaults off', function () {
         ->and($page['appliedFilters'])->toBe([]);
 });
 
+it('reads a bare ?filter= (the frontend clearing every filter, R28) as defaults off', function (string $url) {
+    $grid = filterGrid(function (Filters $f) {
+        $f->equal('status', '狀態')->default('shipped');
+        $f->between('amount', '金額')->number()->default(['start' => '400']);
+    });
+
+    $page = $grid->toSchema(Request::create($url));
+
+    expect(filterIds($page))->toBe([1, 2, 3, 4])
+        ->and($page['query']['filters'])->toEqual((object) [])
+        ->and($page['appliedFilters'])->toBe([]);
+})->with([
+    'alone' => ['/admin/orders?filter='],
+    'kept through a sort and a page' => ['/admin/orders?sort=-amount&page=1&filter='],
+]);
+
 it('ignores a list filter with more than 100 values', function () {
     $grid = filterGrid(fn (Filters $f) => $f->in('status', '狀態')->multipleSelect(FILTER_STATUSES));
     $many = array_merge(['paid'], array_fill(0, FilterInput::MAX_LIST, 'shipped'));

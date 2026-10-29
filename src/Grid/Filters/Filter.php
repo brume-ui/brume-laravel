@@ -142,9 +142,10 @@ class Filter
      * The value used while the URL has no filter[...] parameter at all, in the URL's shape: a
      * string, a list, ['start' => ..., 'end' => ...] or ['op' => ..., 'value' => ...].
      *
-     * Any filter in the URL (even another one, or filter[key]= left empty) turns every default
-     * off, so the chips show exactly what applies. Clearing the last chip leaves no filter
-     * parameter, so the defaults come back: 清除所有篩選 = 回到預設.
+     * Any filter parameter in the URL turns every default off, so the chips show exactly what
+     * applies: another filter, filter[key]= left empty, or a bare filter=. The frontend sends the
+     * bare filter= when the user removes the last filter (a chip's ✕, 清除, 清除所有篩選), so a
+     * removed default stays removed and 清除所有篩選 shows the unfiltered list (R28).
      */
     public function default(mixed $value): static
     {
