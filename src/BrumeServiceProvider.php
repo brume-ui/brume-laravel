@@ -9,11 +9,13 @@ use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\Controllers\NotFoundController;
 use Brume\Http\Middleware\Authenticate;
 use Brume\Http\Middleware\HandleBrumeRequests;
+use Brume\Http\Middleware\HandleGridEndpoint;
 use Brume\Http\Middleware\RedirectIfAuthenticated;
 use Brume\Support\Assets;
 use Brume\Support\Color;
 use Closure;
 use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Routing\Events\RouteMatched;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -68,6 +70,13 @@ class BrumeServiceProvider extends ServiceProvider
         $router = $this->app->make(Router::class);
         $router->aliasMiddleware('brume.auth', Authenticate::class);
         $router->aliasMiddleware('brume.guest', RedirectIfAuthenticated::class);
+
+        // Before any middleware, so a Route::brumeGrid endpoint keeps working when a host test
+        // disables middleware (withoutMiddleware()).
+        $this->app['events']->listen(
+            RouteMatched::class,
+            fn (RouteMatched $event) => HandleGridEndpoint::takeArgument($event->route, $event->request),
+        );
 
         $this->registerRoutes();
     }

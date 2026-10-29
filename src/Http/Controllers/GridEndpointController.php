@@ -24,6 +24,7 @@ class GridEndpointController
     public function handle(Grid $grid, Request $request): Response
     {
         $request->attributes->set(HandleGridEndpoint::HANDLED, true);
+        HandleGridEndpoint::takeArgument($request->route(), $request);
         $argument = $request->attributes->get(HandleGridEndpoint::ARGUMENT);
 
         return match ($request->route()->getAction(GridRouteRegistrar::ACTION_KEY)) {

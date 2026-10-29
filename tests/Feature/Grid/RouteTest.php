@@ -1,5 +1,6 @@
 <?php
 
+use Brume\Grid\Actions\Action;
 use Brume\Grid\Grid;
 use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\Controllers\GridEndpointController;
@@ -12,6 +13,7 @@ use Brume\Tests\Support\Controllers\NotAGridController;
 use Brume\Tests\Support\Controllers\OrderGridController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Workbench\App\Models\Order;
@@ -197,6 +199,36 @@ it('hands the endpoint its own parameter', function () {
 
     expect(app('test.seen'))->toBe(['42', ['id' => '3']]);
 });
+
+it('keeps the endpoints working without middleware or with faked events', function (string $mode) {
+    $seen = [];
+    $ran = 0;
+    adminRoutes(function () use (&$seen, &$ran) {
+        Route::brumeGrid('shops/{id}/orders', function (string $id) use (&$seen, &$ran) {
+            $seen[] = func_get_args();
+
+            return Grid::make(Order::query())->tools(
+                Action::make('sync', '同步')->handle(function () use (&$ran) {
+                    $ran++;
+                }),
+            );
+        });
+    });
+
+    if ($mode === 'withoutMiddleware') {
+        // A host test that disables all middleware: HandleGridEndpoint does not run.
+        $this->withoutMiddleware();
+    } else {
+        // A host test that fakes every event: the RouteMatched listener does not run.
+        Event::fake();
+    }
+
+    $this->postJson('/admin/shops/3/orders/_brume/actions/sync', ['target' => 'tool', 'ids' => []])->assertOk();
+
+    expect($ran)->toBe(1)
+        // The page action gets only the page's parameters, not the action key.
+        ->and($seen)->toBe([['3']]);
+})->with(['withoutMiddleware', 'Event::fake()']);
 
 it('binds route models with a custom key for the endpoints', function () {
     $owner = brumeUser(['username' => 'owner']);
