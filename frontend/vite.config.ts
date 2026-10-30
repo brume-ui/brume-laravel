@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { resolveImportsFromFrontend } from './vite/resolve-from-frontend.ts';
+import { canonicalManifestPlugin } from './vite/canonical-manifest.mjs';
 
 // Builds the precompiled frontend shipped in dist/. It compiles the same stubs/frontend/app.tsx
 // that `brume:install --frontend` copies into projects, with the empty component registry, so
@@ -49,7 +50,7 @@ export default defineConfig({
     'import.meta.env.VITE_BRUME_MODE': JSON.stringify('precompiled'),
   },
   // Same Tailwind setup as the --frontend stub (stubs/frontend/vite.brume.config.ts).
-  plugins: [resolveImportsFromFrontend(stubs), react(), tailwindcss(), fontLicenses()],
+  plugins: [resolveImportsFromFrontend(stubs), react(), tailwindcss(), fontLicenses(), canonicalManifestPlugin()],
   build: {
     outDir: resolve(packageRoot, 'dist'),
     emptyOutDir: true,
