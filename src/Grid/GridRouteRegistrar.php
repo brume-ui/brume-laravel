@@ -16,7 +16,7 @@ use Illuminate\Routing\Router;
  * action returns then answers the endpoint instead of rendering the page (Grid::toResponse()).
  *
  * Route modifiers chained on the result (domain, middleware, can, where, scopeBindings, withTrashed, ...)
- * apply to all five routes; anything else (name, ...) goes to the page route. Called without
+ * apply to all six routes; anything else (name, ...) goes to the page route. Called without
  * arguments, domain() and middleware() read the page route's value.
  *
  * @mixin Route
@@ -55,6 +55,7 @@ final class GridRouteRegistrar
         $base = ($uri === '' ? '' : $uri.'/').'_brume';
 
         $endpoints = [
+            'quick-create' => ['post', 'quick-create'],
             'action' => ['post', 'actions/{'.self::ENDPOINT_PARAMETERS['action'].'}'],
             'cell' => ['patch', 'cells/{'.self::ENDPOINT_PARAMETERS['cell'].'}'],
             'export' => ['get', 'export'],
@@ -82,7 +83,7 @@ final class GridRouteRegistrar
     }
 
     /**
-     * @return array<string, Route> keyed by action, cell, export, options
+     * @return array<string, Route> keyed by quick-create, action, cell, export, options
      */
     public function endpoints(): array
     {

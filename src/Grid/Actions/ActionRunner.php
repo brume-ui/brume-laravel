@@ -52,7 +52,9 @@ class ActionRunner
                 return ErrorResponse::make(__('brume::grid.action.forbidden'), 403);
             }
 
-            $feedback = $rows->query()->getConnection()->transaction(fn () => $action->execute($models, $request));
+            $input = $action->validateInput($request, $rows->query()->getModel());
+
+            $feedback = $rows->query()->getConnection()->transaction(fn () => $action->execute($models, $request, $input));
         } catch (ValidationException $e) {
             return ErrorResponse::make($e->getMessage(), $e->status, $e->errors());
         }

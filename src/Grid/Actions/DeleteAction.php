@@ -17,7 +17,7 @@ class DeleteAction extends Action
 
     protected ?\Closure $form = null;
 
-    public function form(?\Closure $form): static
+    public function resourceForm(?\Closure $form): static
     {
         $this->form = $form;
 

@@ -4,6 +4,7 @@ namespace Brume\Grid;
 
 use Brume\Contracts\Renderable;
 use Brume\Facades\Brume;
+use Brume\Form\Form;
 use Brume\Grid\Actions\Action;
 use Brume\Grid\Actions\DeleteAction;
 use Brume\Grid\Filters\Filters;
@@ -59,6 +60,41 @@ class Grid implements Renderable, Responsable
     protected ?array $resource = null;
 
     protected ?Closure $deleteForm = null;
+
+    protected ?Closure $quickFields = null;
+
+    protected ?string $quickLabel = null;
+
+    public function quickCreate(Closure $fields, ?string $label = null): static
+    {
+        $this->quickFields = $fields;
+        $this->quickLabel = $label;
+
+        return $this;
+    }
+
+    public function quickForm(): ?Form
+    {
+        if ($this->quickFields === null) {
+            return null;
+        }
+        $form = Form::make($this->rows()->query());
+        if ($this->editUrl !== null) {
+            $form->urls(fn (Model $record) => ['edit' => ($this->editUrl)($record)]);
+        }
+        ($this->quickFields)($form);
+        $form->initialize();
+        $form->plainFields();
+
+        return $form;
+    }
+
+    protected function quickSchema(Request $request): array
+    {
+        $form = $this->quickForm();
+
+        return ['label' => $this->quickLabel ?? __('brume::grid.quick_create'), 'fields' => array_map(fn ($field) => $field->toSchema(null), $form->plainFields()), 'submitUrl' => $this->endpointBase($request).'/quick-create'];
+    }
 
     public function resource(array $resource): static
     {
@@ -474,6 +510,7 @@ class Grid implements Renderable, Responsable
             + ($endpoints !== null ? ['endpoints' => $endpoints] : [])
             + ($endpoints !== null && $this->exportable ? ['export' => ['url' => $this->endpointBase($request).'/export']] : [])
             + ($this->empty !== null ? ['empty' => $this->empty] : [])
+            + ($endpoints !== null && $this->quickFields !== null ? ['quickCreate' => $this->quickSchema($request)] : [])
             + ($this->resource !== null ? ['resource' => $this->resource] : []);
     }
 
@@ -561,7 +598,7 @@ class Grid implements Renderable, Responsable
      */
     protected function needsEndpoints(): bool
     {
-        return $this->filters()->hasRemote() || $this->deletable || array_merge(...array_values($this->actions)) !== []
+        return $this->quickFields !== null || $this->filters()->hasRemote() || $this->deletable || array_merge(...array_values($this->actions)) !== []
             || $this->editsInline() || $this->exportable;
     }
 
@@ -748,8 +785,8 @@ class Grid implements Renderable, Responsable
     {
         $delete = match (true) {
             ! $this->deletable => [],
-            $target === 'row' => [DeleteAction::forRow()->form($this->deleteForm)],
-            $target === 'batch' => [DeleteAction::forBatch()->form($this->deleteForm)],
+            $target === 'row' => [DeleteAction::forRow()->resourceForm($this->deleteForm)],
+            $target === 'batch' => [DeleteAction::forBatch()->resourceForm($this->deleteForm)],
             default => [],
         };
 

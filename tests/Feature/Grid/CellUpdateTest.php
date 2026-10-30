@@ -438,3 +438,36 @@ it('refuses a checkbox on an attribute without an array cast, before saving and 
         ->and($a->fresh()->status)->toBe('open')
         ->and(fn () => $this->get('/admin/cells'))->toThrow(LogicException::class, 'cast');
 });
+
+it('supports currency scales and strict dates and tags editors', function () {
+    [$item] = cellItems();
+    cellRoutes(function (Grid $grid) {
+        $grid->column('price')->editable(Editor::currency(decimals: 2));
+        $grid->column('due_date')->editable(Editor::date())->display(fn ($value) => 'Due '.$value);
+    }, tags: Editor::tags());
+    patchCell($item->id, ['column' => 'price', 'value' => '1280.5'])->assertOk();
+    expect((string) $item->fresh()->price)->toBe('1280.50');
+    patchCell($item->id, ['column' => 'price', 'value' => 'abc'])->assertUnprocessable();
+    patchCell($item->id, ['column' => 'due_date', 'value' => '2026-02-30'])->assertUnprocessable();
+    patchCell($item->id, ['column' => 'tags', 'value' => 'bad'])->assertUnprocessable();
+    expect(Editor::currency()->toSchema()['decimals'])->toBe(0);
+});
+
+it('recomputes date display and canonical datetime raw values', function () {
+    [$item] = cellItems();
+    cellRoutes(function (Grid $grid) {
+        $grid->column('due_date')->editable(Editor::date())->display(fn ($value) => 'Due '.$value);
+        $grid->column('due_at')->editable(Editor::date(true))->display(fn ($value) => 'At '.$value);
+        $grid->column('note')->editable(Editor::currency());
+    }, tags: Editor::tags(['a' => 'A']));
+    $date = patchCell($item->id, ['column' => 'due_date', 'value' => '2026-02-28'])->assertOk();
+    expect($date->json('row.due_date'))->toBe('Due 2026-02-28');
+    $datetime = patchCell($item->id, ['column' => 'due_at', 'value' => '2026-02-28T14:30'])->assertOk();
+    expect($datetime->json('row._meta.raw.due_at'))->toBe('2026-02-28T14:30');
+    patchCell($item->id, ['column' => 'due_at', 'value' => '2026-02-30T14:30'])->assertUnprocessable();
+    patchCell($item->id, ['column' => 'note', 'value' => '1280.5'])->assertOk();
+    expect($item->fresh()->note)->toBe('1281');
+    patchCell($item->id, ['column' => 'tags', 'value' => ['custom']])->assertOk();
+    expect($item->fresh()->tags)->toBe(['custom']);
+    expect(JsonSchema::errors($datetime->json(), 'CellUpdateResponse'))->toBe([]);
+});

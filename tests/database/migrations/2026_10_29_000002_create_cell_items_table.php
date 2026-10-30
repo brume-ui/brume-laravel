@@ -11,6 +11,9 @@ return new class extends Migration
     {
         Schema::create('cell_items', function (Blueprint $table) {
             $table->id();
+            $table->decimal('price', 20, 2)->nullable();
+            $table->date('due_date')->nullable();
+            $table->dateTime('due_at')->nullable();
             $table->unsignedInteger('shop_id');
             $table->string('customer');
             $table->string('status', 16)->default('open');

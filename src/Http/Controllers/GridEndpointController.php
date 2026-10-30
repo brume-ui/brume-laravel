@@ -2,6 +2,7 @@
 
 namespace Brume\Http\Controllers;
 
+use Brume\Form\FormSaver;
 use Brume\Grid\Actions\ActionRunner;
 use Brume\Grid\Editing\CellUpdater;
 use Brume\Grid\Export\XlsxExporter;
@@ -28,11 +29,25 @@ class GridEndpointController
         $argument = $request->attributes->get(HandleGridEndpoint::ARGUMENT);
 
         return match ($request->route()->getAction(GridRouteRegistrar::ACTION_KEY)) {
+            'quick-create' => $this->quickCreate($grid, $request),
             'action' => $this->action($grid, $request, (string) $argument),
             'cell' => $this->cell($grid, $request, (string) $argument),
             'export' => $this->export($grid, $request),
             'options' => $this->options($grid, $request, (string) $argument),
         };
+    }
+
+    public function quickCreate(Grid $grid, Request $request): JsonResponse
+    {
+        $form = $grid->quickForm();
+        if ($form === null) {
+            return $this->unavailable();
+        }
+        try {
+            return new JsonResponse(app(FormSaver::class)->save($form, null, $request));
+        } catch (ValidationException $e) {
+            return ErrorResponse::make($e->getMessage(), $e->status, $e->errors());
+        }
     }
 
     /**

@@ -31,6 +31,7 @@ class CellItem extends Model
     {
         return [
             'amount' => 'integer',
+            'price' => 'decimal:2',
             'tags' => 'array',
             'is_active' => 'boolean',
             'is_featured' => 'boolean',

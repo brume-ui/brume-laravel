@@ -5,7 +5,6 @@ namespace Brume\Grid\Editing;
 use Brume\Grid\Column;
 use Brume\Grid\Grid;
 use Brume\Grid\RowLookup;
-use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -64,8 +63,7 @@ class CellUpdater
         $column->assertCheckboxCast($model);
 
         match ($column->editor()->type()) {
-            'switchGroup' => array_walk($value, fn (mixed $on, string|int $attribute) => $model->setAttribute((string) $attribute, $this->toBoolean($on))),
-            'switch' => $model->setAttribute($column->key(), $value === null ? null : $this->toBoolean($value)),
+            'switchGroup' => array_walk($value, fn (mixed $on, string|int $attribute) => $model->setAttribute((string) $attribute, $on)),
             default => $model->setAttribute($column->key(), $value),
         };
 
@@ -93,128 +91,19 @@ class CellUpdater
     protected function validValue(Column $column, mixed $value, Model $model): mixed
     {
         $key = $column->key();
-        $type = $column->editor()->type();
-        $options = array_column($column->editor()->toSchema()['options'] ?? [], 'value');
-
-        // Laravel runs no rule but required-like ones on a blank string.
-        if (! in_array($type, ['text', 'textarea'], true)) {
-            $value = $this->blankToNull($value);
-        }
-
-        $validator = Validator::make([$key => $value], $this->rules($column, $model, $options), [], $this->attributeNames($column));
+        $editor = $column->editor();
+        $value = $editor->prepare($value);
+        $rules = $editor->rules($column, $model);
+        $declared = $column->editRules();
+        $declared = is_string($declared) ? array_filter(explode('|', $declared), fn ($rule) => $rule !== '') : $declared;
+        $rules[$key] = [...$rules[$key], ...array_values($declared)];
+        $validator = Validator::make([$key => $value], $rules, [], $this->attributeNames($column));
 
         if ($validator->fails()) {
             throw ValidationException::withMessages([$key => array_values(array_unique($validator->errors()->all()))]);
         }
 
-        return match (true) {
-            $value === null => null,
-            in_array($type, ['select', 'radio'], true) => $this->matchOption($options, $value),
-            $type === 'checkbox' => array_map(fn (mixed $item) => $this->matchOption($options, $item), $value),
-            default => $value,
-        };
-    }
-
-    /**
-     * A blank string as null, also inside a list or a switchGroup's object.
-     */
-    protected function blankToNull(mixed $value): mixed
-    {
-        return match (true) {
-            is_string($value) && trim($value) === '' => null,
-            is_array($value) => array_map(fn (mixed $item) => $this->blankToNull($item), $value),
-            default => $value,
-        };
-    }
-
-    /**
-     * The declared option $value names: a string or int whose string form is an option value
-     * exactly ("01" is not "1"; true and 1.0 are no option), else null.
-     *
-     * @param  list<string>  $options
-     */
-    protected function matchOption(array $options, mixed $value): ?string
-    {
-        if (! is_string($value) && ! is_int($value)) {
-            return null;
-        }
-
-        return in_array((string) $value, $options, true) ? (string) $value : null;
-    }
-
-    /**
-     * The column's rules with those its editor implies. A select, radio or checkbox value must be
-     * a declared option (see matchOption()); a number must be whole when $model casts the
-     * attribute to int or the editor's step is whole.
-     *
-     * @param  list<string>  $options
-     * @return array<string, list<mixed>>
-     */
-    protected function rules(Column $column, Model $model, array $options): array
-    {
-        $key = $column->key();
-        $editor = $column->editor()->toSchema();
-        $declared = $column->editRules();
-        $declared = is_string($declared) ? array_values(array_filter(explode('|', $declared), fn (string $rule) => $rule !== '')) : array_values($declared);
-        $whole = $model->hasCast($key, ['int', 'integer'])
-            || (isset($editor['step']) && floor($editor['step']) === (float) $editor['step']);
-
-        return match ($editor['type']) {
-            'select', 'radio' => [$key => [...$declared, $this->optionRule($options)]],
-            'checkbox' => [$key => ['array', 'list', ...$declared, $this->optionsRule($options)]],
-            'switch' => [$key => [...$declared, 'boolean']],
-            'switchGroup' => [$key => ['required', 'array:'.implode(',', array_keys($column->switchKeys()))]]
-                + array_fill_keys(array_map(fn (string|int $attribute) => "{$key}.{$attribute}", array_keys($column->switchKeys())), ['boolean']),
-            'number' => [$key => [
-                ...$declared, 'numeric',
-                ...($whole ? ['integer'] : []),
-                ...(isset($editor['min']) ? ['min:'.$editor['min']] : []),
-                ...(isset($editor['max']) ? ['max:'.$editor['max']] : []),
-            ]],
-            default => [$key => [
-                ...$declared, $this->textRule(),
-                ...(isset($editor['maxLength']) ? ['max:'.$editor['maxLength']] : []),
-            ]],
-        };
-    }
-
-    /**
-     * @param  list<string>  $options
-     */
-    protected function optionRule(array $options): Closure
-    {
-        return function (string $attribute, mixed $value, Closure $fail) use ($options) {
-            if ($this->matchOption($options, $value) === null) {
-                $fail(__('validation.in'));
-            }
-        };
-    }
-
-    /**
-     * Each item of a list is a declared option (a value that is not a list is refused by 'array').
-     *
-     * @param  list<string>  $options
-     */
-    protected function optionsRule(array $options): Closure
-    {
-        return function (string $attribute, mixed $value, Closure $fail) use ($options) {
-            if (is_array($value) && array_filter($value, fn (mixed $item) => $this->matchOption($options, $item) === null) !== []) {
-                $fail(__('validation.in'));
-            }
-        };
-    }
-
-    /**
-     * A text or textarea takes a scalar (or null, which the column's rules may refuse), not a
-     * list or an object.
-     */
-    protected function textRule(): Closure
-    {
-        return function (string $attribute, mixed $value, Closure $fail) {
-            if (! is_scalar($value) && $value !== null) {
-                $fail(__('brume::grid.cell.not_text'));
-            }
-        };
+        return $column->editor()->normalize($value);
     }
 
     /**
@@ -232,13 +121,5 @@ class CellUpdater
         }
 
         return $names;
-    }
-
-    /**
-     * A value the boolean rule accepted (true, false, 1, 0, '1', '0') as a bool.
-     */
-    protected function toBoolean(mixed $value): bool
-    {
-        return in_array($value, [true, 1, '1'], true);
     }
 }

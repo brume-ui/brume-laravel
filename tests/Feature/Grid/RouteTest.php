@@ -35,7 +35,7 @@ beforeEach(function () {
     $this->actingAs(brumeUser(), 'brume');
 });
 
-it('registers the page route and the four endpoints', function () {
+it('registers the page route and the five endpoints', function () {
     $route = null;
     adminRoutes(function () use (&$route) {
         $route = Route::brumeGrid('orders', OrderGridController::class)->name('brume.orders.index');
@@ -49,6 +49,7 @@ it('registers the page route and the four endpoints', function () {
 
     expect($registered)->toEqualCanonicalizing([
         'GET admin/orders',
+        'POST admin/orders/_brume/quick-create',
         'POST admin/orders/_brume/actions/{_brume_action}',
         'PATCH admin/orders/_brume/cells/{_brume_id}',
         'GET admin/orders/_brume/export',
@@ -293,7 +294,7 @@ it('runs the page controller\'s own middleware on every endpoint', function (str
 ]);
 
 /**
- * The page and the four endpoints answer 403 when denied; allowed, the page renders and the
+ * The page and the five endpoints answer 403 when denied; allowed, the page renders and the
  * endpoints reach their (still empty) handlers.
  */
 function expectEndpointsGuarded($test, bool $allowed): void
@@ -301,6 +302,7 @@ function expectEndpointsGuarded($test, bool $allowed): void
     $test->get('/admin/orders')->assertStatus($allowed ? 200 : 403);
 
     foreach ([
+        ['POST', '/admin/orders/_brume/quick-create'],
         ['POST', '/admin/orders/_brume/actions/ship'],
         ['PATCH', '/admin/orders/_brume/cells/1'],
         ['GET', '/admin/orders/_brume/export'],

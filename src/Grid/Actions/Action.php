@@ -2,10 +2,13 @@
 
 namespace Brume\Grid\Actions;
 
+use Brume\Form\Form;
+use Brume\Form\FormValidator;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use LogicException;
 
@@ -36,6 +39,41 @@ class Action
     protected ?Closure $visible = null;
 
     protected ?Closure $handler = null;
+
+    protected ?Form $inputForm = null;
+
+    protected ?string $formTitle = null;
+
+    protected ?string $submitLabel = null;
+
+    protected array $validatedInput = [];
+
+    public function form(Closure $fields, ?string $title = null, ?string $submitLabel = null): static
+    {
+        $model = new class extends Model {};
+        $form = Form::make($model->newQuery());
+        $fields($form);
+        $form->initialize();
+        $form->plainFields();
+        $this->inputForm = $form;
+        $this->formTitle = $title;
+        $this->submitLabel = $submitLabel;
+
+        return $this;
+    }
+
+    public function validateInput(Request $request, ?Model $model = null): array
+    {
+        if ($this->inputForm === null) {
+            return [];
+        }
+        $raw = $request->input('input', []);
+        if (! is_array($raw)) {
+            throw ValidationException::withMessages(['input' => 'Input must be an object.']);
+        }
+
+        return FormValidator::validateFields(FormValidator::editableFields($this->inputForm), FormValidator::editableValues($this->inputForm, $raw), null, $model);
+    }
 
     final public function __construct(protected string $key, protected string $label)
     {
@@ -115,7 +153,7 @@ class Action
     }
 
     /**
-     * The work: fn (Collection $models, Request $request): ?Feedback.
+     * The work: fn (Collection $models, Request $request, array $input): ?Feedback.
      */
     public function handle(Closure $fn): static
     {
@@ -165,8 +203,10 @@ class Action
      *
      * @param  Collection<int, Model>  $models
      */
-    public function execute(Collection $models, Request $request): ?Feedback
+    public function execute(Collection $models, Request $request, array $input = []): ?Feedback
     {
+        $this->validatedInput = $input;
+
         return $this->run($models, $request);
     }
 
@@ -178,6 +218,7 @@ class Action
     public function toSchema(): array
     {
         return ['key' => $this->key, 'label' => $this->label]
+            + ($this->inputForm !== null ? ['form' => ['fields' => array_map(fn ($field) => $field->toSchema(null), $this->inputForm->plainFields())] + ($this->formTitle !== null ? ['title' => $this->formTitle] : []) + ($this->submitLabel !== null ? ['submitLabel' => $this->submitLabel] : [])] : [])
             + ($this->icon !== null ? ['icon' => $this->icon] : [])
             + ($this->danger ? ['tone' => 'danger'] : [])
             + ($this->confirm !== null ? ['confirm' => $this->confirm] : [])
@@ -194,7 +235,7 @@ class Action
             throw new LogicException("Action「{$this->key}」沒有 handle()，請用 ->handle(fn (Collection \$models, Request \$request) => ...) 指定要做的事，或在子類別覆寫 run()。");
         }
 
-        $result = ($this->handler)($models, $request);
+        $result = ($this->handler)($models, $request, $this->validatedInput);
 
         if ($result !== null && ! $result instanceof Feedback) {
             throw new LogicException("Action「{$this->key}」的 handle() 必須回傳 Feedback 或 null，目前回傳 ".get_debug_type($result).'。');

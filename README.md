@@ -674,3 +674,25 @@ Laravel’s exception handler without changing a completed save outcome; operato
 and remove leftover files. Storage outages are not automatically recovered by this cleanup.
 `brume:uploads:clean` deletes expired temporary rows/files and old untracked `brume-tmp/` files;
 `uploads.schedule_cleanup` registers it hourly by default.
+
+### Quick create and action inputs
+
+`Grid::quickCreate(fn (Form $form) => $form->text('name')->required())` adds
+`POST {list}/_brume/quick-create` and the list's `quickCreate` metadata. Resource
+controllers can declare the same fields in `protected quickCreate(Form $form): void`.
+Standalone grids must configure `Grid::editUrl()` or set `Form::urls()` inside the
+quick-create closure with the real saved record's edit URL before persistence.
+Quick create uses the regular form validation, hooks and cancellation response.
+
+`Action::form(fn (Form $form) => $form->textarea('reason')->required())` collects
+input before execution. Its handler receives `(Collection $models, Request $request,
+array $input)`; the third argument contains only validated editable declarations,
+or `[]` when no form was declared. Validation happens before the action transaction.
+Quick-create and action fields must be flat and cannot contain uploads or layout
+containers. All writes retain the list route's middleware and CSRF protection.
+
+Inline editing also supports `Editor::date(withTime: true)`,
+`Editor::currency(symbol: 'NT$', decimals: 2)` and `Editor::tags(['a' => 'Suggestion'])`.
+Currency defaults to zero decimals; choose two explicitly for values such as
+`"1280.50"`. Decimal normalization uses strings. Tags options are suggestions and
+custom strings are accepted; the model attribute must have an array/JSON cast.

@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'quick_create' => 'Quick create',
     // Label of the applied-search chip.
     'search' => 'Search',
     'endpoint_unavailable' => 'This list does not offer that.',

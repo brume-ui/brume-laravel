@@ -2,6 +2,8 @@
 
 namespace Brume\Grid\Concerns;
 
+use Brume\Form\Fields\Date;
+use Brume\Form\Fields\Datetime;
 use Brume\Grid\Editor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -139,7 +141,7 @@ trait HasEditing
      */
     public function assertCheckboxCast(mixed $row): void
     {
-        if ($this->editor?->type() !== 'checkbox' || ! $row instanceof Model) {
+        if (! in_array($this->editor?->type(), ['checkbox', 'tags'], true) || ! $row instanceof Model) {
             return;
         }
 
@@ -167,6 +169,10 @@ trait HasEditing
                 array_combine(array_keys($this->switchKeys), array_keys($this->switchKeys)),
             ),
             'switch' => (bool) $value,
+            'date' => ($this->editor->toSchema()['withTime'] ?? false)
+                ? (new Datetime('value'))->default($value)->valueFor(null)
+                : (new Date('value'))->default($value)->valueFor(null),
+            'currency' => $this->editor->normalize($value),
             default => $value,
         };
     }

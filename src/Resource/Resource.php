@@ -42,6 +42,11 @@ abstract class Resource extends Controller
         $form = $this->buildForm($request);
         $grid->resource(['name' => $this->name, 'createUrl' => $this->url($request, 'create'), 'editUrl' => $this->url($request, 'edit', '__BRUME_ID__'), 'presentation' => $form->resolvedPresentation()]);
         $grid->editUrl(fn (Model $record) => $this->url($request, 'edit', $record->getKey()));
+        $quick = Form::make($this->query());
+        $this->quickCreate($quick);
+        if ($quick->fields() !== []) {
+            $grid->quickCreate(fn (Form $form) => $this->quickCreate($form->name($this->name)->urls(fn (Model $saved) => ['list' => $this->url($request, 'index'), 'edit' => $this->url($request, 'edit', $saved->getKey()), 'create' => $this->url($request, 'create')])));
+        }
         if ($this->deletable) {
             $grid->deletable()->deleteUsing(fn (Model $record) => $this->buildForm($request, $record));
         }
