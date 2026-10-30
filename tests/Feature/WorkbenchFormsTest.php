@@ -43,6 +43,32 @@ it('requires a cancellation reason and restricts the action to open orders', fun
     $this->postJson('/admin/orders/_brume/actions/cancel', $body + ['input' => ['reason' => '再次取消']])->assertForbidden();
 });
 
+it('offers cancellation in the reloaded quick-created row and persists its validated reason', function () {
+    $id = $this->postJson('/admin/orders/_brume/quick-create', ['values' => ['customer' => '選單驗收客戶', 'amount' => '80']])
+        ->assertOk()->json('id');
+    $page = $this->get('/admin/orders')->assertOk()->viewData('page')['props']['envelope']['page'];
+    $row = collect($page['rows'])->firstWhere('id', $id);
+    $cancel = collect($page['actions']['row'])->firstWhere('key', 'cancel');
+    expect($row['customer'])->toBe('選單驗收客戶')
+        ->and($row['status'])->toBe('pending')
+        ->and($row['_meta']['actions'])->toContain('cancel')
+        ->and($cancel['label'])->toBe('取消訂單')
+        ->and($cancel['exposed'] ?? false)->toBeFalse()
+        ->and($cancel['form']['fields'][0]['name'])->toBe('reason');
+
+    $body = ['target' => 'row', 'ids' => [$id]];
+    $this->postJson('/admin/orders/_brume/actions/cancel', $body + ['input' => ['reason' => '']])
+        ->assertUnprocessable()->assertJsonValidationErrors('reason');
+    expect(Order::findOrFail($id)->status)->toBe('pending');
+    $this->postJson('/admin/orders/_brume/actions/cancel', $body + ['input' => ['reason' => '客戶要求取消']])->assertOk();
+    expect(Order::findOrFail($id)->status)->toBe('cancelled')
+        ->and(Order::findOrFail($id)->note)->toBe('取消原因：客戶要求取消');
+    $reloaded = $this->get('/admin/orders')->assertOk()->viewData('page')['props']['envelope']['page'];
+    $cancelled = collect($reloaded['rows'])->firstWhere('id', $id);
+    expect($cancelled['status'])->toBe('cancelled')
+        ->and($cancelled['_meta']['actions'])->not->toContain('cancel');
+});
+
 it('serves the four showcase sections and protects featured names and hidden passwords', function () {
     $create = $this->getJson('/admin/grid-showcase/create', ['X-Brume-Form' => '1'])->assertOk()->assertJsonPath('page.presentation', 'page');
     expect(array_column($create->json('page.form.nodes'), 'title'))->toBe(['基本資料', '銷售', '媒體', '其他']);

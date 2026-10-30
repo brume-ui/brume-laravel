@@ -194,10 +194,16 @@ test('order edit keyboard navigation, dirty confirmation, cancel action and quic
   await quick.press('Enter');
   expect((await created).status()).toBe(200);
   await expect(page.locator('tbody tr').first()).toContainText('驗收快速客戶');
-  const row = page.locator('tbody tr').first();
+  const row = page.locator('tbody tr').filter({
+    has: page.getByRole('cell', { name: '驗收快速客戶', exact: true }),
+  });
+  await expect(row).toContainText('待付款');
   await row.getByRole('button', { name: /更多操作/ }).click();
-  await page.getByRole('menuitem', { name: '取消訂單', exact: true }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
   const action = page.getByRole('dialog', { name: '取消訂單', exact: true });
+  await expect(action).toHaveCount(0);
+  await menu.getByRole('menuitem', { name: '取消訂單', exact: true }).click();
   await action.getByRole('button', { name: '取消訂單', exact: true }).click();
   await expect(action.getByRole('textbox', { name: '取消原因', exact: true })).toHaveAttribute(
     'aria-invalid',
@@ -206,7 +212,7 @@ test('order edit keyboard navigation, dirty confirmation, cancel action and quic
   await action.getByRole('textbox', { name: '取消原因', exact: true }).fill('客戶要求取消');
   await action.getByRole('button', { name: '取消訂單', exact: true }).click();
   await expect(action).toHaveCount(0);
-  await expect(page.locator('tbody tr').first()).toContainText('已取消');
+  await expect(row).toContainText('已取消');
 });
 
 test('showcase page uploads, sorting, extras, unique errors and all new inline editors persist', async ({
@@ -315,7 +321,8 @@ for (const viewport of [
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
         await useScheme(page, scheme);
-        await page.goto('/admin/orders');
+        // Keep current-time/ULID rows from the persistence cases out of the screenshot backdrop.
+        await page.goto('/admin/orders?q=BR-202609');
         await page.getByRole('button', { name: '新增訂單', exact: true }).click();
         await page.keyboard.press('Meta+Enter');
         await assertErrorInsideDialog(
@@ -326,6 +333,7 @@ for (const viewport of [
         await expect(page).toHaveScreenshot(`order-modal-errors-${scheme}-${viewport.name}.png`);
         await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
         await page.goto('/admin/grid-showcase/create');
+        await expect(page.getByLabel('上市日', { exact: true })).toHaveValue('2026-10-31');
         await save(page);
         await expect(page.getByRole('textbox', { name: '品名', exact: true })).toBeFocused();
         await geometry(page, 'page');
