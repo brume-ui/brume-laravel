@@ -176,3 +176,21 @@ it('prioritizes field messages on range bounds and wildcard children over host c
             ->and($e->errors()['choices.0'][0])->toBe('Choice label field choice');
     }
 })->with(['bad', '', '   ']);
+
+it('treats tags options as suggestions while preserving tag constraints', function (?array $options) {
+    $form = Form::make(User::class);
+    $field = $form->tags('tags')->max(2)->maxLength(6);
+    if ($options !== null) {
+        $field->options($options);
+    }
+    expect(FormValidator::validate($form, ['tags' => ['custom']]))->toBe(['tags' => ['custom']]);
+    foreach ([['tags' => 'bad'], ['tags' => ['named' => 'value']], ['tags' => [1]], ['tags' => ['a', 'b', 'c']], ['tags' => ['toolong']]] as $values) {
+        expect(fn () => FormValidator::validate($form, $values))->toThrow(ValidationException::class);
+    }
+})->with(['populated' => [['a' => 'A']], 'empty' => [[]], 'omitted' => [null]]);
+
+it('keeps closed choices restricted even when options are explicitly empty', function (string $type) {
+    $form = Form::make(User::class);
+    $form->$type('choices')->options([]);
+    expect(fn () => FormValidator::validate($form, ['choices' => ['custom']]))->toThrow(ValidationException::class);
+})->with(['multipleSelect', 'checkbox']);

@@ -111,3 +111,16 @@ it('automatically exposes resource quick fields with mapped edit URLs', function
     $this->get($response->json('urls.edit'), ['X-Brume-Form' => '1'])->assertOk();
     expect(JsonSchema::errors($response->json(), 'FormSubmitResponse'))->toBe([]);
 });
+
+it('persists custom quick tags regardless of suggestion configuration', function (?array $options) {
+    quickGridRoutes(function (Form $form) use ($options) {
+        $form->text('customer');
+        $form->number('shop_id');
+        $field = $form->tags('tags');
+        if ($options !== null) {
+            $field->options($options);
+        }
+    });
+    $response = $this->postJson('/quick-items/_brume/quick-create', ['values' => ['customer' => 'Ada', 'shop_id' => 1, 'tags' => ['custom']]])->assertOk();
+    expect(CellItem::findOrFail($response->json('id'))->tags)->toBe(['custom']);
+})->with(['populated' => [['a' => 'A']], 'empty' => [[]], 'omitted' => [null]]);

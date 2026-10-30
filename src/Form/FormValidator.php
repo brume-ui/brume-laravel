@@ -44,7 +44,7 @@ class FormValidator
             if (in_array($field->type(), ['multipleSelect', 'checkbox', 'tags'], true)) {
                 $messagePaths[] = $path.'.*';
                 $rules[$path.'.*'] = ['string'];
-                if (isset($field->settings()['options'])) {
+                if (in_array($field->type(), ['multipleSelect', 'checkbox'], true) && isset($field->settings()['options'])) {
                     $rules[$path.'.*'][] = $field->choiceRule();
                     $choiceOptions[$path] = array_column($field->settings()['options'], 'value');
                 }

@@ -41,3 +41,24 @@ it('validates action inputs before transactions and passes only editable declare
     $this->postJson('/input-items/_brume/actions/reason', $body)->assertOk();
     expect($seen->input)->toBe(['reason' => 'Bob'])->and($item->fresh()->customer)->toBe('Bob');
 });
+
+it('accepts custom action tags regardless of suggestion configuration', function (?array $options) {
+    $this->actingAs(brumeUser(), 'brume');
+    $seen = (object) ['input' => null];
+    Route::middleware(['web', 'brume.auth', HandleBrumeRequests::class])->group(fn () => Route::brumeGrid('tag-actions', function () use ($options, $seen) {
+        $grid = Grid::make(CellItem::class);
+        $grid->column('customer');
+        $grid->tools(Action::make('tag', 'Tag')->form(function (Form $form) use ($options) {
+            $field = $form->tags('tags');
+            if ($options !== null) {
+                $field->options($options);
+            }
+        })->handle(function ($models, $request, array $input) use ($seen) {
+            $seen->input = $input;
+        }));
+
+        return $grid;
+    }));
+    $this->postJson('/tag-actions/_brume/actions/tag', ['target' => 'tool', 'ids' => [], 'input' => ['tags' => ['custom']]])->assertOk();
+    expect($seen->input)->toBe(['tags' => ['custom']]);
+})->with(['populated' => [['a' => 'A']], 'empty' => [[]], 'omitted' => [null]]);
