@@ -6,10 +6,8 @@ use Brume\Form\UploadArchiver;
 use Brume\Grid\Actions\Feedback;
 use Brume\Models\User;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Schema;
 
 class FormSaveRecord extends Model
 {
@@ -21,17 +19,6 @@ class FormSaveRecord extends Model
 
     protected $casts = ['meta' => 'array'];
 }
-
-beforeEach(function () {
-    Schema::create('form_save_records', function (Blueprint $table) {
-        $table->id();
-        $table->json('meta')->nullable();
-        $table->string('starts_at')->nullable();
-        $table->string('ends_at')->nullable();
-        $table->string('amount')->nullable();
-        $table->string('file')->nullable();
-    });
-});
 
 it('initializes editing once across repeated rendering and save', function () {
     $record = brumeUser();
@@ -58,7 +45,10 @@ it('preserves embedded siblings and fixed point strings and maps date ranges', f
     $form->decimal('amount')->decimals(2);
     (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['meta' => ['color' => 'red', 'locked' => 'forged', 'unknown' => 'forged'], 'period' => ['start' => '2026-10-31T12:30', 'end' => '2026-11-01T14:00'], 'amount' => '99999999999999.10']]));
     $fresh = $record->fresh();
-    expect($fresh->meta)->toBe(['color' => 'red', 'locked' => 'keep', 'unknown' => 'keep'])->and($fresh->starts_at)->toBe('2026-10-31 12:30:00')->and($fresh->ends_at)->toBe('2026-11-01 14:00:00')->and($fresh->amount)->toBe('99999999999999.10');
+    // JSON object member order is not preserved by every database.
+    $meta = $fresh->meta;
+    ksort($meta);
+    expect($meta)->toBe(['color' => 'red', 'locked' => 'keep', 'unknown' => 'keep'])->and($fresh->starts_at)->toBe('2026-10-31 12:30:00')->and($fresh->ends_at)->toBe('2026-11-01 14:00:00')->and($fresh->amount)->toBe('99999999999999.10');
 });
 
 it('archives rewritten values without invoking unchanged custom writers twice', function () {
@@ -130,12 +120,13 @@ it('uses the model transaction and leaves an outer rollback authoritative', func
     $form = Form::make(User::class)->urls(fn () => ['edit' => '/users/1']);
     $form->text('name');
     $connection = $record->getConnection();
+    expect($connection->getPdo()->inTransaction())->toBeTrue();
     $level = $connection->transactionLevel();
     $connection->beginTransaction();
     (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['name' => 'Changed']]));
-    expect($connection->transactionLevel())->toBe($level + 1)->and($record->fresh()->name)->toBe('Changed');
+    expect($connection->transactionLevel())->toBe($level + 1)->and($connection->getPdo()->inTransaction())->toBeTrue()->and($record->fresh()->name)->toBe('Changed');
     $connection->rollBack();
-    expect($record->fresh()->name)->toBe('管理員');
+    expect($record->fresh()->name)->toBe('管理員')->and($connection->getPdo()->inTransaction())->toBeTrue();
 });
 
 it('rolls back database side effects made by a cancelling saving hook', function () {
