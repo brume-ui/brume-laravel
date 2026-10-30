@@ -399,3 +399,52 @@ it('maps per-action names with Laravel group semantics while retaining form iden
     $edit = $this->get($saved->json('urls.edit'), ['X-Brume-Form' => '1'])->assertOk();
     expect($edit->json('page.formId'))->toBe('named.purchases')->and($edit->json('page.submit.url'))->toBe('/admin/named/orders/'.$saved->json('id'));
 });
+
+class Task20EditingUploadsResource extends Task20ScopedResource
+{
+    protected function form(Form $form): void
+    {
+        parent::form($form);
+        $form->editing(function ($record, Form $form) {
+            $form->file('attachment')->attribute('meta.attachment')->disk('editing');
+            $form->fields()['document']->disk('editing');
+        });
+    }
+}
+
+it('inventories editing-declared uploads and hook-adjusted disks after archival', function (string $outcome) {
+    task20ScopedRoutes(Task20EditingUploadsResource::class);
+    Storage::fake('local');
+    Storage::fake('public');
+    Storage::fake('editing');
+    task20CommitScope($this);
+    $record = Task20Record::create(['title' => 'effective uploads']);
+    $values = ['title' => 'effective uploads'];
+    foreach (['attachment', 'document'] as $field) {
+        $upload = $this->post('/admin/files/'.$record->id.'/_brume/upload', [
+            'field' => $field, 'file' => UploadedFile::fake()->image($field.'.png'),
+        ], ['Accept' => 'application/json'])->assertOk();
+        $values[$field] = ['token' => $upload->json('token')];
+    }
+    $this->putJson('/admin/files/'.$record->id, ['values' => $values])->assertOk();
+    $record = $record->fresh();
+    $paths = [$record->meta['attachment'], $record->meta['document']];
+    expect($paths[0])->toStartWith('brume/files/')->and($paths[1])->toStartWith('brume/files/');
+    Storage::disk('editing')->assertExists($paths);
+    expect(Storage::disk('public')->allFiles())->toBe([]);
+    $connection = $record->getConnection();
+    // Archive in its own committed operation, so deletion rollback must retain these files.
+    $connection->commit();
+    $connection->beginTransaction();
+    $this->postJson('/admin/files/_brume/actions/delete', ['target' => 'row', 'ids' => [$record->id]])->assertOk();
+    expect($record->fresh())->toBeNull();
+    Storage::disk('editing')->assertExists($paths);
+    if ($outcome === 'commit') {
+        $connection->commit();
+        Storage::disk('editing')->assertMissing($paths);
+    } else {
+        $connection->rollBack();
+        expect($record->fresh())->not->toBeNull();
+        Storage::disk('editing')->assertExists($paths);
+    }
+})->with(['commit', 'rollback']);

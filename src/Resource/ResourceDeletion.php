@@ -23,6 +23,8 @@ final class ResourceDeletion
             foreach ($models as $record) {
                 /** @var Form $form */
                 $form = $forms($record);
+                // Match edit/upload/save declarations before inventorying persisted paths.
+                $form->initialize();
                 $cleanup = app(StoredUploadCleanup::class);
                 $files = $cleanup->capture($form, $record);
                 $feedback = $form->fire('deleting', $record);
