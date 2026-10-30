@@ -49,8 +49,8 @@ beforeEach(function () {
         ->group(fn () => Route::brumeGrid('orders', fn () => protocolGrid())->name('brume.orders.index'));
 });
 
-it('emits schema 0.2', function () {
-    expect(BrumeManager::SCHEMA_VERSION)->toBe('0.2.0');
+it('emits schema 0.3', function () {
+    expect(BrumeManager::SCHEMA_VERSION)->toBe('0.3.0');
 });
 
 it('validates a brumeGrid page against PageEnvelope', function (array $query) {
@@ -59,7 +59,7 @@ it('validates a brumeGrid page against PageEnvelope', function (array $query) {
     $envelope = $this->get('/admin/orders?'.http_build_query($query))->assertOk()
         ->viewData('page')['props']['envelope'];
 
-    expect($envelope['schemaVersion'])->toBe('0.2.0')
+    expect($envelope['schemaVersion'])->toBe('0.3.0')
         ->and(JsonSchema::errors($envelope, 'PageEnvelope'))->toBe([]);
 })->with([
     'defaults' => [[]],

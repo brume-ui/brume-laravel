@@ -2,6 +2,7 @@
 
 use Brume\Dashboard\Dashboard;
 use Brume\Facades\Brume;
+use Brume\Form\Form;
 use Brume\Grid\Grid;
 use Brume\Models\User;
 use Brume\Tests\Support\JsonSchema;
@@ -11,7 +12,7 @@ use Illuminate\Http\Request;
  * The real payload: what Brume::render() hands to Inertia, read from an Inertia (X-Inertia) response.
  * Decoded to objects, so an empty JSON object stays an object rather than becoming a PHP [].
  */
-function envelope(Grid|Dashboard $page, array $query = []): object
+function envelope(Grid|Dashboard|Form $page, array $query = []): object
 {
     $request = Request::create('/', 'GET', $query);
     $request->headers->set('X-Inertia', 'true');
@@ -86,4 +87,33 @@ it('encodes empty component props as an omitted key, never as a list', function 
 
     $withProps = envelope(Dashboard::make('D')->component('clock', ['a' => 1]));
     expect(json_encode($withProps))->toContain('"props":{"a":1}');
+});
+
+it('validates complete create and edit forms against the emitted schema 0.3', function () {
+    $form = Form::make(User::class)->name('User')->description('All fields')->submitTo('post', '/users')->tabs();
+    $form->section('Basics', function ($f) {
+        foreach (['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'image', 'multipleImage', 'file', 'multipleFile'] as $type) {
+            $field = $f->$type($type);
+            if (in_array($type, ['select', 'multipleSelect', 'radio', 'checkbox'])) {
+                $field->options([1 => 'One']);
+            }
+        }
+        $f->dateRange('range', 'Range', 'start', 'end');
+        $f->datetimeRange('moments', 'Moments', 'starts_at', 'ends_at');
+    });
+    $form->section('Layouts', function ($f) {
+        $f->row(function ($r) {
+            $r->text('left')->width(6);
+            $r->text('right')->width(6);
+        });
+        $f->columns(function ($c) {
+            $c->column(12, fn ($col) => $col->block(null, fn ($b) => $b->divider()));
+        });
+        $f->embeds('meta', 'Meta', fn ($e) => $e->text('color')->default('blue'));
+        $f->multipleImage('gallery')->extra(fn ($e) => $e->text('caption'));
+    });
+    expect(JsonSchema::errors(envelope($form), 'PageEnvelope'))->toBe([]);
+    $form->forRecord((new User)->forceFill(['id' => 9, 'name' => 'Alice']));
+    expect(JsonSchema::errors(envelope($form), 'PageEnvelope'))->toBe([]);
+    expect(JsonSchema::errors(envelope(Form::make(User::class)->submitTo('post', '/')), 'PageEnvelope'))->toBe([]);
 });

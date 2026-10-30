@@ -27,7 +27,7 @@ it('shares app settings mapped to the frontend names', function () {
 
     $this->get('/admin')->assertInertia(fn (AssertableInertia $page) => $page
         ->component('brume/page')
-        ->where('brume.schemaVersion', '0.2.0')
+        ->where('brume.schemaVersion', '0.3.0')
         ->where('brume.app.locale', 'zh-TW')
         ->where('brume.app.locales', ['zh-TW', 'en', 'zh-CN'])
         ->where('brume.app.homeUrl', '/admin')
