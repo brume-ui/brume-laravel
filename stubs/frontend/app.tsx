@@ -1,4 +1,5 @@
 import '@brume-ui/brume-tokens/tokens.css';
+// Only react currently emits component styles; keep the other imports for compatibility.
 import '@brume-ui/brume-react/styles.css';
 import '@brume-ui/brume-renderer/styles.css';
 import '@brume-ui/brume-inertia/styles.css';

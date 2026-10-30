@@ -517,17 +517,9 @@ it runs as its own Playwright project after the other specs. `form.spec.ts` then
 counts. It covers real persistence, keyboard/dirty guards, uploads/extras/sort, action inputs,
 quick create, inline editors, axe and 1440×900 / 390×844 light/dark geometry and screenshots.
 
-During Phase 2 prepublication, CI's E2E job builds exactly the reviewed UI commit recorded in
-`.ci/ui-integration.json`, links its five package directories and verifies their origins. To use
-that same explicit mode with an already built clean checkout at the pinned SHA:
-
-    BRUME_UI_INTEGRATION=1 BRUME_UI_SOURCE=/absolute/path/to/brume-ui node e2e/ui-integration.mjs --prepare
-    BRUME_UI_INTEGRATION=1 BRUME_UI_SOURCE=/absolute/path/to/brume-ui composer e2e
-
-`serve.sh` verifies those exact package origins before skipping reinstall; ordinary mode retains the
-frozen published-package install. Published frontend dist and install smoke jobs remain unchanged.
-Task 23 must restore and run ordinary published-package E2E after alpha12; source integration is a
-prepublication acceptance path, not a release substitute. No publication is needed to test forms.
+CI and `composer e2e` install the published UI packages from `frontend/pnpm-lock.yaml` with a
+frozen lockfile before building the workbench. The frontend dist check and install smoke jobs use
+those published packages too.
 
 Linux screenshot generation requires explicit trusted push `[update-snapshots]` or the workflow's
 `update-snapshots` dispatch input. The full browser suite must pass before its bot commits only Linux

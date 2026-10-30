@@ -136,18 +136,18 @@ jobs:
 
       - run: pnpm --dir frontend install --frozen-lockfile
 
+      - run: node frontend/scripts/check-package-origins.mjs
+
       # Rebuilds the precompiled frontend and compares it byte for byte with the committed dist/.
       - run: node frontend/scripts/check-dist.mjs
 
   e2e:
-    name: e2e (reviewed UI source)
+    name: e2e (published UI packages)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
     env:
-      BRUME_UI_INTEGRATION: '1'
-      BRUME_UI_SOURCE: ${{ github.workspace }}/.ci/ui-source
       # PR text never opts into writes. The generated bot commit deliberately omits the marker.
       UPDATE_SNAPSHOTS: ${{ (github.event_name == 'workflow_dispatch' && inputs['update-snapshots'] == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[update-snapshots]')) }}
     steps:
@@ -179,23 +179,7 @@ jobs:
       # The workbench runs in vite (--frontend) mode; e2e/serve.sh builds it from frontend/.
       - run: pnpm --dir frontend install --frozen-lockfile
 
-      - name: Read immutable reviewed UI pin
-        id: ui-pin
-        run: |
-          node -e 'const p = require("./.ci/ui-integration.json"); if (p.repository !== "brume-ui/brume-ui" || !/^[0-9a-f]{40}$/.test(p.sha)) process.exit(1); require("node:fs").appendFileSync(process.env.GITHUB_OUTPUT, `sha=${p.sha}\n`);'
-
-      - uses: actions/checkout@v5
-        with:
-          repository: brume-ui/brume-ui
-          ref: ${{ steps.ui-pin.outputs.sha }}
-          path: .ci/ui-source
-          persist-credentials: false
-
-      - name: Build reviewed UI and link five package origins
-        run: |
-          pnpm --dir .ci/ui-source install --frozen-lockfile
-          pnpm --dir .ci/ui-source build
-          node e2e/ui-integration.mjs --prepare
+      - run: node frontend/scripts/check-package-origins.mjs
 
       - name: Install Playwright Chromium
         run: pnpm --dir e2e exec playwright install --with-deps chromium
