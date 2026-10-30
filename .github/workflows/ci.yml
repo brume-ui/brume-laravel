@@ -260,4 +260,15 @@ jobs:
         with:
           node-version: 24
 
-      - run: bin/smoke-install.sh ${{ matrix.laravel }} ${{ matrix.mode }}
+      - name: Install smoke with failure diagnostics
+        id: install-smoke
+        run: bash scripts/ci-smoke-install.sh ${{ matrix.laravel }} ${{ matrix.mode }}
+
+      - name: Preserve install smoke log
+        if: ${{ failure() && steps.install-smoke.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-smoke-laravel-${{ matrix.laravel }}-${{ matrix.mode }}
+          path: .ci-smoke-results/laravel-${{ matrix.laravel }}-${{ matrix.mode }}.log
+          include-hidden-files: true
+          retention-days: 14
