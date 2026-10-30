@@ -420,9 +420,8 @@ class Form implements Renderable
             data_set($values, $path, $field->valueFor($this->record));
         }
         foreach (array_keys($this->embeds) as $path) {
-            if (data_get($values, $path) === null) {
-                data_set($values, $path, (object) []);
-            }
+            // Only declared object containers are cast; list-valued fields keep their arrays.
+            data_set($values, $path, (object) (data_get($values, $path) ?? []));
         }
         $count = count($this->fields);
         $sections = count(array_filter($this->nodes, fn ($node) => $node instanceof FormNode && $node->type === 'section'));

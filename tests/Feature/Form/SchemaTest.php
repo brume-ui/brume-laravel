@@ -2,6 +2,7 @@
 
 use Brume\Form\Form;
 use Brume\Models\User;
+use Brume\Tests\Support\JsonSchema;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -18,7 +19,7 @@ it('outputs nested values, date ranges and password without exposing hidden attr
     $form->embeds('meta', 'Meta', fn ($f) => $f->text('color'));
     $form->dateRange('period', 'Period', 'starts_at', 'ends_at');
     $page = $form->toSchema(Request::create('/'));
-    expect($page['values'])->toBe(['name' => 'Alice', 'password' => null, 'new_password' => '', 'meta' => ['color' => 'red'], 'period' => ['start' => '2026-11-01', 'end' => '2026-11-11']]);
+    expect(json_decode(json_encode($page['values']), true))->toBe(['name' => 'Alice', 'password' => null, 'new_password' => '', 'meta' => ['color' => 'red'], 'period' => ['start' => '2026-11-01', 'end' => '2026-11-11']]);
 });
 
 it('serializes every field variant exactly', function (string $method, array $extra) {
@@ -133,7 +134,7 @@ it('serializes layout trees with relative field names and complete registered pa
         ]],
     ], 'sections' => 'tabs']);
     expect(array_keys($form->fields()))->toBe(['a', 'b', 'c', 'meta.design.color'])
-        ->and($schema['values']['meta']['design']['color'])->toBe('blue');
+        ->and($schema['values']['meta']->design->color)->toBe('blue');
 });
 
 it('preserves empty embedded objects and their long-field sizing', function () {
@@ -152,7 +153,7 @@ it('keeps hidden values null for typed fields and nested roots', function () {
     $form->switch('enabled');
     $form->multipleSelect('choices');
     $form->embeds('meta', 'Meta', fn ($e) => $e->text('color'));
-    expect($form->toSchema(Request::create('/'))['values'])->toBe(['enabled' => null, 'choices' => null, 'meta' => ['color' => null]]);
+    expect(json_decode(json_encode($form->toSchema(Request::create('/'))['values']), true))->toBe(['enabled' => null, 'choices' => null, 'meta' => ['color' => null]]);
 });
 
 it('normalizes select values, range defaults and decimal rounding', function () {
@@ -178,7 +179,7 @@ it('maps archived uploads through storage and exposes only declared extras', fun
     $f->multipleImage('photos')->disk('public')->directory('photos')->maxSize(1024)->max(4)->sortable()->extra(fn ($e) => $e->text('caption'));
     $f->image('avatar');
     $p = $f->toSchema(Request::create('/'));
-    expect($p['values']['photos'])->toBe([['path' => 'photos/one.jpg', 'url' => Storage::disk('public')->url('photos/one.jpg'), 'extra' => ['caption' => 'One']]])
+    expect(json_decode(json_encode($p['values']['photos']), true))->toBe([['path' => 'photos/one.jpg', 'url' => Storage::disk('public')->url('photos/one.jpg'), 'extra' => ['caption' => 'One']]])
         ->and($p['values']['avatar']['path'])->toBe('photos/two.jpg')
         ->and($p['form']['nodes'][0]['field'])->toMatchArray(['maxSize' => 1048576, 'maxFiles' => 4, 'sortable' => true, 'extra' => [['type' => 'text', 'name' => 'caption', 'label' => 'Caption']]]);
 });
@@ -245,4 +246,45 @@ it('encodes numerically named root keys as an object', function () {
     $form = Form::make(User::class)->submitTo('post', '/');
     $form->text('0')->default('zero');
     expect(json_encode($form->toSchema(Request::create('/'))['values']))->toBe('{"0":"zero"}');
+});
+
+it('preserves numeric-key embeds as objects while retaining list-valued fields', function () {
+    $form = Form::make(User::class)->submitTo('post', '/');
+    $form->embeds('meta', 'Meta', function ($meta) {
+        $meta->text('0')->default('zero');
+        $meta->tags('tags')->default(['one', 'two']);
+        $meta->embeds('nested', 'Nested', fn ($nested) => $nested->text('0')->default('nested zero'));
+    });
+    $form->embeds('numeric', 'Numeric', fn ($numeric) => $numeric->text('0')->default('only zero'));
+    $values = json_decode(json_encode($form->toSchema(Request::create('/'))['values']));
+    expect($values->meta)->toBeInstanceOf(stdClass::class)
+        ->and($values->meta->{'0'})->toBe('zero')
+        ->and($values->meta->tags)->toBe(['one', 'two'])
+        ->and($values->meta->nested)->toBeInstanceOf(stdClass::class)
+        ->and($values->meta->nested->{'0'})->toBe('nested zero')
+        ->and($values->numeric)->toBeInstanceOf(stdClass::class)
+        ->and($values->numeric->{'0'})->toBe('only zero');
+});
+
+it('emits numeric-key archived upload extras as UploadValue objects', function () {
+    Storage::fake('public');
+    $record = new User;
+    $record->mergeCasts(['photos' => 'array']);
+    $record->forceFill(['photos' => [['path' => 'photos/one.jpg', 'extra' => ['0' => 'zero', 'tags' => ['one', 'two']]], ['path' => 'photos/two.jpg', 'extra' => ['0' => 'only zero']]]]);
+    $form = Form::make(User::class)->forRecord($record)->submitTo('put', '/');
+    $form->multipleImage('photos')->extra(function ($extra) {
+        $extra->text('0');
+        $extra->tags('tags');
+    });
+    $form->image('single')->attribute('photos.1')->extra(fn ($extra) => $extra->text('0'));
+    $values = json_decode(json_encode($form->toSchema(Request::create('/'))['values']));
+    foreach ([...$values->photos, $values->single] as $upload) {
+        expect(JsonSchema::errors($upload, 'UploadValue'))->toBe([]);
+    }
+    expect($values->photos)->toBeArray()
+        ->and($values->photos[0]->extra)->toBeInstanceOf(stdClass::class)
+        ->and($values->photos[0]->extra->{'0'})->toBe('zero')
+        ->and($values->photos[0]->extra->tags)->toBe(['one', 'two'])
+        ->and($values->single->extra)->toBeInstanceOf(stdClass::class)
+        ->and($values->single->extra->{'0'})->toBe('only zero');
 });

@@ -130,11 +130,18 @@ class Upload extends Field
             $stored = is_array($value) ? ($value['extra'] ?? []) : [];
             foreach ($this->extraFields as $field) {
                 // Reuse field normalization and hidden/password rules without copying undeclared metadata.
-                $record = new class extends Model {};
+                $record = new class extends Model
+                {
+                    public function getAttribute($key)
+                    {
+                        // Eloquent treats '0' as an absent key; extra dictionaries allow it.
+                        return (string) $key === '0' ? $this->getAttributeValue($key) : parent::getAttribute($key);
+                    }
+                };
                 $record->forceFill($stored);
                 $extra[$field->name()] = $field->valueFor($record);
             }
-            $result['extra'] = $extra === [] ? (object) [] : $extra;
+            $result['extra'] = (object) $extra;
         }
 
         return $result;
