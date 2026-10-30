@@ -734,3 +734,29 @@ it('keeps files owned by A untouched when B sharing its manager finishes during 
         DB::purge('upload_other');
     }
 })->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class])->with([true, false])->with([true, false]);
+
+it('preserves a committed final upload when a native callback rolls back the next root transaction', function ($managerClass) {
+    Storage::fake('local');
+    Storage::fake('public');
+    $this->actingAs(brumeUser(), 'brume');
+    $record = physicalUploadRecord('old/a.png');
+    Storage::disk('public')->put('old/a.png', 'old');
+    $connection = $record->getConnection();
+    $connection->setTransactionManager(new $managerClass);
+    $form = Form::make($record->newQuery())->id('reentrant-files')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $field = $form->image('images');
+    $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $field);
+    $connection->beginTransaction();
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $upload['token']]]]));
+    $final = $record->images;
+    $connection->afterCommit(function () use ($connection) {
+        $connection->beginTransaction();
+        $connection->rollBack();
+    });
+    $connection->commit();
+    expect($record->fresh()->images)->toBe($final);
+    Storage::disk('public')->assertExists($final);
+    Storage::disk('public')->assertMissing('old/a.png');
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+    expect($connection->table('brume_uploads')->count())->toBe(0);
+})->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class]);

@@ -4,6 +4,7 @@ use Brume\Tests\Support\Laravel12TransactionsManager;
 use Brume\Uploads\Support\UploadTransactions;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\DatabaseTransactionsManager;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\SQLiteConnection;
@@ -111,7 +112,7 @@ it('fails registration without connection events before invoking any cleanup', f
     $connection->rollBack();
 });
 
-it('keeps one listener pair per actual dispatcher across repeated operations', function () {
+it('keeps one listener set per actual dispatcher across repeated operations', function () {
     $connection = uploadTransactionConnection(new DatabaseTransactionsManager);
     $dispatcher = $connection->getEventDispatcher();
     $calls = 0;
@@ -122,6 +123,7 @@ it('keeps one listener pair per actual dispatcher across repeated operations', f
         }, fn () => null);
         $connection->commit();
     }
+    expect($dispatcher->getListeners(TransactionBeginning::class))->toHaveCount(1);
     expect($dispatcher->getListeners(TransactionCommitted::class))->toHaveCount(1);
     expect($dispatcher->getListeners(TransactionRolledBack::class))->toHaveCount(1);
     $dispatcher->dispatch(new TransactionCommitted($connection));
@@ -239,3 +241,113 @@ it('uses the owning public outcome when another transaction finishes between phy
     $commit ? $a->commit() : $a->rollBack();
     expect($calls)->toBe([$commit ? 'commit' : 'rollback']);
 })->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class])->with([true, false]);
+
+it('keeps a committed root separate from transactions opened by its native callback', function ($managerClass, $nextOutcome) {
+    $connection = uploadTransactionConnection(new $managerClass);
+    $connection->statement('create table outcomes (id integer)');
+    $calls = [];
+    $registry = app(UploadTransactions::class);
+    $connection->beginTransaction();
+    $connection->insert('insert into outcomes values (1)');
+    $registry->register($connection, function () use (&$calls) {
+        $calls[] = 'original commit';
+    }, function () use (&$calls) {
+        $calls[] = 'original rollback';
+    });
+    $connection->afterCommit(function () use ($connection, $registry, &$calls, $nextOutcome) {
+        $connection->beginTransaction();
+        $connection->insert('insert into outcomes values (2)');
+        $registry->register($connection, function () use (&$calls) {
+            $calls[] = 'next commit';
+        }, function () use (&$calls) {
+            $calls[] = 'next rollback';
+        });
+        // These completion events belong to a savepoint in the new root.
+        $connection->beginTransaction();
+        $connection->commit();
+        $connection->beginTransaction();
+        $connection->rollBack();
+        if ($nextOutcome !== 'open') {
+            $connection->$nextOutcome();
+        }
+    });
+    $connection->commit();
+    expect($calls)->toBe(match ($nextOutcome) {
+        'commit' => ['next commit', 'original commit'],
+        'rollBack' => ['next rollback', 'original commit'],
+        'open' => ['original commit'],
+    });
+    if ($nextOutcome === 'open') {
+        expect($connection->transactionLevel())->toBe(1);
+        $connection->rollBack();
+        expect($calls)->toBe(['original commit', 'next rollback']);
+    }
+    expect(array_column($connection->select('select id from outcomes order by id'), 'id'))
+        ->toBe($nextOutcome === 'commit' ? [1, 2] : [1]);
+})->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class])->with(['commit', 'rollBack', 'open']);
+
+it('does not retain commit intent after physical commit fails and the owner rolls back', function ($managerClass) {
+    $connection = uploadTransactionConnection(new $managerClass);
+    $connection->statement('pragma foreign_keys = on');
+    $connection->statement('create table parents (id integer primary key)');
+    $connection->statement('create table children (parent integer references parents(id) deferrable initially deferred)');
+    $calls = [];
+    $registry = app(UploadTransactions::class);
+    $connection->beginTransaction();
+    $connection->insert('insert into children values (1)');
+    $registry->register($connection, function () use (&$calls) {
+        $calls[] = 'failed commit';
+    }, function () use (&$calls) {
+        $calls[] = 'failed rollback';
+    });
+    expect(fn () => $connection->commit())->toThrow(PDOException::class);
+    expect($calls)->toBe([]);
+    $connection->rollBack();
+    expect($connection->selectOne('select count(*) as count from children')->count)->toBe(0);
+    $connection->beginTransaction();
+    $registry->register($connection, function () use (&$calls) {
+        $calls[] = 'next commit';
+    }, function () use (&$calls) {
+        $calls[] = 'next rollback';
+    });
+    $connection->commit();
+    expect($calls)->toBe(['failed rollback', 'next commit']);
+})->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class]);
+
+it('keeps a new sibling separate from the delayed rollback of its predecessor', function ($managerClass, $nextOutcome) {
+    $connection = uploadTransactionConnection(new $managerClass);
+    $registry = app(UploadTransactions::class);
+    $calls = [];
+    $add = function ($name) use ($registry, $connection, &$calls) {
+        $registry->register($connection, function () use (&$calls, $name) {
+            $calls[] = $name.' commit';
+        }, function () use (&$calls, $name) {
+            $calls[] = $name.' rollback';
+        });
+    };
+    $connection->beginTransaction();
+    $add('outer');
+    $connection->beginTransaction();
+    $add('original');
+    $opened = false;
+    $connection->afterRollBack(function () use ($connection, $add, $nextOutcome, &$opened) {
+        if ($opened) {
+            return;
+        }
+        $opened = true;
+        $connection->beginTransaction();
+        $add('next');
+        if ($nextOutcome !== 'open') {
+            $connection->$nextOutcome();
+        }
+    });
+    $connection->rollBack();
+    expect($calls)->toBe($nextOutcome === 'rollBack' ? ['next rollback', 'original rollback'] : ['original rollback']);
+    if ($nextOutcome === 'open') {
+        $connection->commit();
+    }
+    $connection->commit();
+    expect($calls)->toBe($nextOutcome === 'rollBack'
+        ? ['next rollback', 'original rollback', 'outer commit']
+        : ['original rollback', 'outer commit', 'next commit']);
+})->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class])->with(['commit', 'rollBack', 'open']);
