@@ -513,3 +513,101 @@ it('accepts inert pdf text and zip files using server derived extensions', funct
     ['A plain text document', 'txt'],
     [base64_decode('UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA=='), 'zip'],
 ]);
+
+it('applies complete extra item rules at full prefixes before copying any file', function ($type, $value, $message) {
+    Storage::fake('local');
+    Storage::fake('public');
+    $this->actingAs(brumeUser(), 'brume');
+    $record = uploadRecord();
+    $form = Form::make(UploadRecord::class)->id('extra-rules')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $field = $form->multipleImage('images')->extra(function ($extra) use ($type) {
+        $definition = $extra->$type('roles', 'Roles label')->messages(['in' => ':attribute rejected choice', 'string' => ':attribute rejected type', 'max' => ':attribute rejected length']);
+        if ($type === 'tags') {
+            $definition->maxLength(3);
+        } else {
+            $definition->options(['a' => 'A']);
+        }
+    });
+    $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $field);
+    // The first item is valid; only the last item's metadata is invalid.
+    $other = app(TempUploads::class)->store(UploadedFile::fake()->image('b.png'), $form, 'images', $field);
+    try {
+        (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => [['token' => $upload['token'], 'extra' => ['roles' => ['a']]], ['token' => $other['token'], 'extra' => ['roles' => $value]]]]]));
+        test()->fail('Expected invalid extra list item');
+    } catch (ValidationException $e) {
+        expect($e->errors()['images.1.extra.roles.0'][0])->toBe('Roles label '.$message);
+    }
+    expect(Storage::disk('public')->allFiles())->toBe([]);
+})->with([
+    ['multipleSelect', ['bad'], 'rejected choice'],
+    ['checkbox', [''], 'rejected choice'],
+    ['tags', [123], 'rejected type'],
+    ['tags', ['long'], 'rejected length'],
+]);
+
+it('preserves declared protected extras from each original owned path during save and reorder', function ($multiple) {
+    Storage::fake('public');
+    $a = ['path' => 'old/a.png', 'extra' => ['caption' => 'approved A', 'locked' => 'locked A', 'editable' => 'old', 'unknown' => 'discard']];
+    $b = ['path' => 'old/b.png', 'extra' => ['caption' => 'approved B', 'locked' => 'locked B', 'editable' => 'old']];
+    $record = uploadRecord($multiple ? [$a, $b] : $a);
+    $form = Form::make(UploadRecord::class)->id('protected')->urls(fn () => ['edit' => '/images/1']);
+    $method = $multiple ? 'multipleImage' : 'image';
+    $form->$method('images')->extra(function ($extra) {
+        $extra->text('caption')->readOnly();
+        $extra->text('locked')->disabled();
+        $extra->text('editable');
+    });
+    $submitted = [];
+    foreach ($multiple ? [$b, $a] : [$a] as $item) {
+        $submitted[] = ['path' => $item['path'], 'extra' => ['caption' => 'forged', 'locked' => 'forged', 'editable' => 'changed', 'unknown' => 'forged']];
+    }
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => $multiple ? $submitted : $submitted[0]]]));
+    $stored = $record->fresh()->images;
+    foreach ($multiple ? $stored : [$stored] as $item) {
+        $suffix = $item['path'] === 'old/a.png' ? 'A' : 'B';
+        $expected = ['caption' => 'approved '.$suffix, 'locked' => 'locked '.$suffix, 'editable' => 'changed'];
+        if ($suffix === 'A') {
+            $expected['unknown'] = 'discard';
+        }
+        expect($item['extra'])->toEqual($expected);
+    }
+    if ($multiple) {
+        expect(array_column($stored, 'path'))->toBe(['old/b.png', 'old/a.png']);
+    }
+})->with([true, false]);
+
+it('applies extra range bound rules and field messages at their complete path', function ($type, $start, $end) {
+    Storage::fake('local');
+    Storage::fake('public');
+    $this->actingAs(brumeUser(), 'brume');
+    $record = uploadRecord();
+    $form = Form::make(UploadRecord::class)->id('extra-range')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $field = $form->image('images')->extra(fn ($extra) => $extra->$type('period', 'Period label', 'start', 'end')->messages(['after_or_equal' => ':attribute rejected order']));
+    $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $field);
+    try {
+        (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $upload['token'], 'extra' => ['period' => ['start' => $start, 'end' => $end]]]]]));
+        test()->fail('Expected invalid range');
+    } catch (ValidationException $e) {
+        expect($e->errors()['images.extra.period.end'][0])->toBe('Period label rejected order');
+    }
+    expect(Storage::disk('public')->allFiles())->toBe([]);
+})->with([
+    ['dateRange', '2026-11-02', '2026-11-01'],
+    ['datetimeRange', '2026-11-02T10:00', '2026-11-01T10:00'],
+]);
+
+it('accepts declared blank choices and never trusts protected metadata on a new token', function () {
+    Storage::fake('local');
+    Storage::fake('public');
+    $this->actingAs(brumeUser(), 'brume');
+    $record = uploadRecord();
+    $form = Form::make(UploadRecord::class)->id('extra-blank')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $field = $form->image('images')->extra(function ($extra) {
+        $extra->multipleSelect('roles')->options(['' => 'Blank', 'a' => 'A']);
+        $extra->text('protected')->readOnly();
+        $extra->text('disabled')->disabled();
+    });
+    $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $field);
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $upload['token'], 'extra' => ['roles' => [''], 'protected' => 'forged', 'disabled' => 'forged', 'unknown' => 'forged']]]]));
+    expect($record->fresh()->images['extra'])->toEqual(['roles' => ['']]);
+});

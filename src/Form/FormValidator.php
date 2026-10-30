@@ -29,11 +29,16 @@ class FormValidator
 
     public static function validate(Form $form, array $values, ?Model $record = null): array
     {
+        return self::validateFields(self::editableFields($form, $record), self::editableValues($form, $values, $record), $record, $form->query()->getModel());
+    }
+
+    /** Validate full-path declarations identically for root fields and upload metadata. */
+    public static function validateFields(array $fields, array $values, ?Model $record = null, ?Model $model = null): array
+    {
         self::translations();
-        $values = self::editableValues($form, $values, $record);
         $rules = $messages = $labels = $choiceOptions = [];
-        foreach (self::editableFields($form, $record) as $path => $field) {
-            $rules[$path] = $field->serverRules($record, $form->query()->getModel());
+        foreach ($fields as $path => $field) {
+            $rules[$path] = $field->serverRules($record, $model);
             $labels[$path] = $field->validationLabel();
             $messagePaths = [$path];
             if (in_array($field->type(), ['multipleSelect', 'checkbox', 'tags'], true)) {

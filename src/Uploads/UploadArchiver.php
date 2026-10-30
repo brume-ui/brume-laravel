@@ -8,7 +8,6 @@ use Brume\Form\FormValidator;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -30,10 +29,12 @@ class UploadArchiver
             $old = data_get($form->record(), $field->attributeName());
             $oldItems = $field->settings()['multiple'] ? (is_array($old) ? $old : []) : [$old];
             $owned = [];
+            $storedExtras = [];
             foreach ($oldItems as $item) {
                 $oldPath = is_string($item) ? $item : ($item['path'] ?? null);
                 if (is_string($oldPath) && $this->safePath($oldPath)) {
                     $owned[] = $oldPath;
+                    $storedExtras[$oldPath] = is_array($item) && is_array($item['extra'] ?? null) ? $item['extra'] : [];
                 }
             }
             $input = Arr::get($values, $path);
@@ -70,21 +71,29 @@ class UploadArchiver
                         $this->invalid($key);
                     }
                 }
-                $extra = [];
+                // Existing metadata is trusted only after matching an owned stored path.
+                $extra = isset($item['path']) ? ($storedExtras[$final] ?? []) : [];
                 if ($field->extraFields() !== []) {
                     if (isset($item['extra']) && ! is_array($item['extra'])) {
                         $this->invalid($key.'.extra');
                     }
+                    $extraFields = $extraInput = [];
                     foreach ($field->extraFields() as $extraField) {
                         if (! $extraField->isEditable($form->record())) {
                             continue;
                         }
                         $name = $extraField->name();
-                        $extraValue = $item['extra'][$name] ?? null;
-                        $extraInput = [];
-                        Arr::set($extraInput, $key.'.extra.'.$name, $extraValue);
-                        Validator::make($extraInput, [$key.'.extra.'.$name => $extraField->serverRules($form->record(), $record)])->validate();
-                        $extra[$name] = $extraValue;
+                        $extraPath = $key.'.extra.'.$name;
+                        $extraFields[$extraPath] = $extraField;
+                        if (array_key_exists($name, $item['extra'] ?? [])) {
+                            Arr::set($extraInput, $extraPath, $item['extra'][$name]);
+                        }
+                    }
+                    $validated = FormValidator::validateFields($extraFields, $extraInput, $form->record(), $record);
+                    foreach ($extraFields as $extraPath => $extraField) {
+                        if (Arr::has($validated, $extraPath)) {
+                            $extra[$extraField->name()] = Arr::get($validated, $extraPath);
+                        }
                     }
                 }
                 $result[] = $field->extraFields() === [] ? $final : ['path' => $final, 'extra' => (object) $extra];
