@@ -15,6 +15,7 @@ use Brume\Http\Middleware\RedirectIfAuthenticated;
 use Brume\Resource\ResourceRouteRegistrar;
 use Brume\Support\Assets;
 use Brume\Support\Color;
+use Brume\Uploads\Support\UploadTransactions;
 use Closure;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -36,6 +37,7 @@ class BrumeServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/brume.php', 'brume');
 
         $this->app->singleton(BrumeManager::class);
+        $this->app->singleton(UploadTransactions::class);
 
         // Brume cannot work without Inertia; register it even when package discovery is off.
         $this->app->register(InertiaServiceProvider::class);

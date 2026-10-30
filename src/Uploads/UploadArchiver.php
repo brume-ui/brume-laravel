@@ -5,6 +5,7 @@ namespace Brume\Uploads;
 use Brume\Form\Fields\Upload;
 use Brume\Form\Form;
 use Brume\Form\FormValidator;
+use Brume\Uploads\Support\UploadTransactions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
@@ -105,22 +106,17 @@ class UploadArchiver
             return;
         }
         $connection = $record->getConnection();
-        if (! method_exists($connection, 'afterRollBack') || $connection->transactionLevel() === 0) {
-            throw new \LogicException('Uploads require transaction rollback callbacks on the model connection.');
-        }
         $new = [];
         $temporary = [];
         $removed = [];
-        $connection->afterRollBack(function () use (&$new) {
-            foreach ($new as [$disk, $path]) {
-                Storage::disk($disk)->delete($path);
-            }
-        });
-        $connection->afterCommit(function () use (&$temporary, &$removed) {
-            foreach (array_merge($temporary, $removed) as [$disk, $path]) {
-                Storage::disk($disk)->delete($path);
-            }
-        });
+        app(UploadTransactions::class)->register($connection,
+            function () use (&$temporary, &$removed) {
+                $this->cleanup(array_merge($temporary, $removed));
+            },
+            function () use (&$new) {
+                $this->cleanup($new);
+            },
+        );
         foreach ($plans as [$path, $field, $result, $rows, $deleted]) {
             foreach ($rows as [$row, $final]) {
                 $disk = $field->diskName();
@@ -145,6 +141,20 @@ class UploadArchiver
                 $removed[] = [$field->diskName(), $deletedPath];
             }
             Arr::set($values, $path, $result);
+        }
+    }
+
+    protected function cleanup(array $files): void
+    {
+        foreach ($files as [$disk, $path]) {
+            try {
+                $filesystem = Storage::disk($disk);
+                if ($filesystem->exists($path) && ! $filesystem->delete($path) && $filesystem->exists($path)) {
+                    throw new \RuntimeException('Unable to clean upload file: '.$path);
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
     }
 

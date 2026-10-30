@@ -48,7 +48,16 @@ jobs:
 
       - run: composer lint
 
-      - run: composer test
+      - name: Test with failure annotations
+        run: bash scripts/ci-tests.sh
+
+      - name: Preserve PHP test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-${{ matrix.php }}-${{ strategy.job-index }}-tests
+          path: .ci-test-results/
+          include-hidden-files: true
 
   mysql:
     name: mysql 8.4 / php 8.5 / laravel 13.*
@@ -92,7 +101,16 @@ jobs:
           composer update --prefer-dist --with-all-dependencies --no-interaction --no-progress
           composer show laravel/framework | grep -E '^versions'
 
-      - run: composer test
+      - name: Test with failure annotations
+        run: bash scripts/ci-tests.sh
+
+      - name: Preserve MySQL test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-tests
+          path: .ci-test-results/
+          include-hidden-files: true
 
   frontend:
     name: frontend dist

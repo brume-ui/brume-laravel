@@ -667,7 +667,10 @@ cast, unless `saveUsing()` supplies their writer. Undeclared request metadata an
 
 Archival runs inside the model transaction before fill/save. It copies files and consumes token
 rows transactionally; outer rollback removes new copies and restores token eligibility. Actual
-outer commit deletes temporary files and removed old files. This requires Illuminate's
-`afterRollBack()` support; an unsupported connection fails before any file mutation.
+outer commit deletes temporary files and removed old files. Cleanup uses native transaction callbacks plus an operation-scoped connection-event fallback
+for Laravel12 committed-child rollbacks. Connection events must be enabled before archival;
+an unsupported connection fails before any file mutation. Cleanup failures are reported through
+Laravel’s exception handler without changing a completed save outcome; operators must investigate
+and remove leftover files. Storage outages are not automatically recovered by this cleanup.
 `brume:uploads:clean` deletes expired temporary rows/files and old untracked `brume-tmp/` files;
 `uploads.schedule_cleanup` registers it hourly by default.

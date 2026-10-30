@@ -4,9 +4,11 @@ use Brume\Form\Form;
 use Brume\Form\FormSaver;
 use Brume\Models\User;
 use Brume\Tests\Support\JsonSchema;
+use Brume\Tests\Support\Laravel12TransactionsManager;
 use Brume\Uploads\TempUpload;
 use Brume\Uploads\TempUploads;
 use Brume\Uploads\UploadController;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -610,4 +612,53 @@ it('accepts declared blank choices and never trusts protected metadata on a new 
     $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $field);
     (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $upload['token'], 'extra' => ['roles' => [''], 'protected' => 'forged', 'disabled' => 'forged', 'unknown' => 'forged']]]]));
     expect($record->fresh()->images['extra'])->toEqual(['roles' => ['']]);
+});
+
+it('preserves actual upload retry after outer rollback using pinned laravel12 manager semantics', function () {
+    Storage::fake('local');
+    Storage::fake('public');
+    $user = brumeUser();
+    $this->actingAs($user, 'brume');
+    $connection = $user->getConnection();
+    $manager = new Laravel12TransactionsManager;
+    foreach (range(1, $connection->transactionLevel()) as $level) {
+        $manager->begin($connection->getName(), $level);
+    }
+    $connection->setTransactionManager($manager);
+    try {
+        $form = uploadForm()->forRecord($user);
+        $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'name', $form->fields()['name']);
+        $request = Request::create('/', 'PUT', ['values' => ['name' => ['token' => $upload['token']]]]);
+        $connection->beginTransaction();
+        (new FormSaver)->save($form, $user, $request);
+        $connection->rollBack();
+        expect(Storage::disk('public')->allFiles())->toBe([])->and(Storage::disk('local')->allFiles())->toHaveCount(1);
+        expect(app(TempUploads::class)->claim($upload['token'], $form, 'name'))->not->toBeNull();
+        (new FormSaver)->save(uploadForm(), $user->fresh(), $request);
+        expect(Storage::disk('public')->allFiles())->toHaveCount(1);
+    } finally {
+        $connection->setTransactionManager(app('db.transactions'));
+    }
+});
+
+it('reports failed cleanup returns and continues deleting other paths after persistence completes', function () {
+    Storage::fake('public');
+    $real = Storage::disk('public');
+    $real->put('old/a.png', 'a');
+    $real->put('old/b.png', 'b');
+    $record = uploadRecord(['old/a.png', 'old/b.png', 'old/absent.png']);
+    $filesystem = Mockery::mock($real);
+    $filesystem->shouldReceive('delete')->once()->with('old/a.png')->andReturn(false);
+    $filesystem->shouldReceive('delete')->once()->with('old/b.png')->andReturnUsing(fn () => $real->delete('old/b.png'));
+    $filesystem->shouldReceive('delete')->never()->with('old/absent.png');
+    Storage::shouldReceive('disk')->with('public')->andReturn($filesystem);
+    $reporter = Mockery::mock(ExceptionHandler::class);
+    $reporter->shouldReceive('report')->once()->withArgs(fn ($error) => $error instanceof RuntimeException && str_contains($error->getMessage(), 'old/a.png'));
+    app()->instance(ExceptionHandler::class, $reporter);
+    $form = Form::make(UploadRecord::class)->id('cleanup-failure')->urls(fn () => ['edit' => '/images/1']);
+    $form->multipleImage('images');
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => []]]));
+    expect($record->fresh()->images)->toBe([]);
+    $real->assertExists('old/a.png');
+    $real->assertMissing('old/b.png');
 });
