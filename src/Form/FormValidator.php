@@ -31,17 +31,17 @@ class FormValidator
     {
         self::translations();
         $values = self::editableValues($form, $values, $record);
-        $rules = $messages = $labels = [];
+        $rules = $messages = $labels = $choiceOptions = [];
         foreach (self::editableFields($form, $record) as $path => $field) {
             $rules[$path] = $field->serverRules($record, $form->query()->getModel());
             $labels[$path] = $field->validationLabel();
-            foreach ($field->validationMessages() as $rule => $message) {
-                $messages[$path.'.'.$rule] = $message;
-            }
+            $messagePaths = [$path];
             if (in_array($field->type(), ['multipleSelect', 'checkbox', 'tags'], true)) {
+                $messagePaths[] = $path.'.*';
                 $rules[$path.'.*'] = ['string'];
                 if (isset($field->settings()['options'])) {
                     $rules[$path.'.*'][] = $field->choiceRule();
+                    $choiceOptions[$path] = array_column($field->settings()['options'], 'value');
                 }
                 if (isset($field->settings()['maxLength'])) {
                     $rules[$path.'.*'][] = 'max:'.$field->settings()['maxLength'];
@@ -51,6 +51,7 @@ class FormValidator
             if (in_array($field->type(), ['dateRange', 'datetimeRange'], true)) {
                 $format = $field->type() === 'dateRange' ? 'Y-m-d' : 'Y-m-d\\TH:i';
                 foreach (['start', 'end'] as $bound) {
+                    $messagePaths[] = $path.'.'.$bound;
                     $rules[$path.'.'.$bound] = ['nullable', 'date_format:'.$format];
                     $labels[$path.'.'.$bound] = $field->validationLabel();
                 }
@@ -58,8 +59,30 @@ class FormValidator
                     $rules[$path.'.end'][] = 'after_or_equal:'.$path.'.start';
                 }
             }
+            foreach ($messagePaths as $messagePath) {
+                foreach ($field->validationMessages() as $rule => $message) {
+                    $messages[$messagePath.'.'.$rule] = $message;
+                }
+            }
         }
-        Validator::make($values, $rules, $messages, $labels)->validate();
+        $validator = Validator::make($values, $rules, $messages, $labels);
+        $validator->after(function ($validator) use ($values, $choiceOptions) {
+            // Laravel skips non-implicit rules for blank strings. Membership still applies
+            // to every supplied item, including an explicitly declared blank option.
+            foreach ($choiceOptions as $path => $options) {
+                $items = Arr::get($values, $path);
+                if (! is_array($items)) {
+                    continue;
+                }
+                foreach ($items as $index => $item) {
+                    $childPath = $path.'.'.$index;
+                    if (! $validator->errors()->has($childPath) && (! is_string($item) || ! in_array($item, $options, true))) {
+                        $validator->addFailure($childPath, 'In', $options);
+                    }
+                }
+            }
+        });
+        $validator->validate();
 
         return $values;
     }

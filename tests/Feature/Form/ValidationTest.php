@@ -140,3 +140,39 @@ it('resolves rule closures with the editing record and custom pattern messages',
         expect($e->errors()['code'][0])->toBe('Invalid code');
     }
 });
+
+it('rejects undeclared blank choice items through the direct validator contract', function ($method, $blank) {
+    $form = Form::make(User::class);
+    $form->$method('choices', 'Choices')->options(['a' => 'A']);
+    try {
+        FormValidator::validate($form, ['choices' => [$blank]]);
+        test()->fail('Expected invalid choice');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('choices.0');
+    }
+})->with(['multipleSelect', 'checkbox'])->with(['', '   ']);
+
+it('preserves optional empty lists and explicitly declared blank choice values', function () {
+    $form = Form::make(User::class);
+    $form->multipleSelect('choices')->options(['' => 'Empty', '   ' => 'Spaces', 'a' => 'A']);
+    expect(FormValidator::validate($form, ['choices' => []]))->toBe(['choices' => []])
+        ->and(FormValidator::validate($form, ['choices' => ['', '   ', 'a']]))->toBe(['choices' => ['', '   ', 'a']]);
+});
+
+it('prioritizes field messages on range bounds and wildcard children over host custom lines', function ($choice) {
+    app()->setLocale('en');
+    app('translator')->addLines([
+        'validation.custom.period.end.after_or_equal' => 'HOST RANGE',
+        'validation.custom.choices.*.in' => 'HOST CHOICE',
+    ], 'en');
+    $form = Form::make(User::class);
+    $form->dateRange('period', 'Period label', 'start', 'end')->messages(['after_or_equal' => ':attribute field order']);
+    $form->multipleSelect('choices', 'Choice label')->options(['a' => 'A'])->messages(['in' => ':attribute field choice']);
+    try {
+        FormValidator::validate($form, ['period' => ['start' => '2026-02-02', 'end' => '2026-02-01'], 'choices' => [$choice]]);
+        test()->fail('Expected validation failure');
+    } catch (ValidationException $e) {
+        expect($e->errors()['period.end'][0])->toBe('Period label field order')
+            ->and($e->errors()['choices.0'][0])->toBe('Choice label field choice');
+    }
+})->with(['bad', '', '   ']);
