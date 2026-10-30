@@ -23,6 +23,8 @@ class FormSaver
         }
         $form->assertSaveUrls();
         $values = FormValidator::validate($form, $raw, $record);
+        // Retain the nullable create/edit context used by validation.
+        $fields = FormValidator::editableFields($form, $record);
         $creating = $record === null;
         $record ??= $form->query()->getModel()->newInstance();
         $connection = $record->getConnection();
@@ -37,7 +39,7 @@ class FormSaver
             // Archive transforms upload values before any model writer sees them.
             // A new record is intentionally unsaved here; Task 19 binds create context.
             app(UploadArchiver::class)->archive($form, $record, $values);
-            $this->fill($form, $record, $values);
+            $this->fill($fields, $record, $values);
             if (! $record->save()) {
                 throw new \LogicException('The model refused form persistence.');
             }
@@ -55,9 +57,9 @@ class FormSaver
         }
     }
 
-    protected function fill(Form $form, Model $record, array $values): void
+    protected function fill(array $fields, Model $record, array $values): void
     {
-        foreach (FormValidator::editableFields($form, $record) as $path => $field) {
+        foreach ($fields as $path => $field) {
             if (Arr::has($values, $path)) {
                 $field->fill($record, Arr::get($values, $path));
             }

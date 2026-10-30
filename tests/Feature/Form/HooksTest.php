@@ -179,3 +179,16 @@ it('does not report success when a model event refuses persistence', function ()
         FormSaveRecord::flushEventListeners();
     }
 });
+
+it('retains null-context create editability and ignores locked edit and disabled inputs', function () {
+    $form = Form::make(FormSaveRecord::class)->urls(fn ($r) => ['edit' => '/records/'.$r->getKey()]);
+    $form->text('amount')->readOnly(fn ($record) => $record !== null);
+    $form->text('file')->disabled();
+    $response = (new FormSaver)->save($form, null, Request::create('/', 'POST', ['values' => ['amount' => 'accepted create', 'file' => 'forged create']]));
+    $record = FormSaveRecord::findOrFail($response['id']);
+    expect($record->amount)->toBe('accepted create')->and($record->file)->toBeNull();
+    $record->file = 'original';
+    $record->save();
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['amount' => 'forged edit', 'file' => 'forged edit']]));
+    expect($record->fresh()->amount)->toBe('accepted create')->and($record->fresh()->file)->toBe('original');
+});
