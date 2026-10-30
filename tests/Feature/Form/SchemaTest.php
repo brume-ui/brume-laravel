@@ -5,6 +5,7 @@ use Brume\Models\User;
 use Brume\Tests\Support\JsonSchema;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 
 it('outputs nested values, date ranges and password without exposing hidden attributes', function () {
@@ -25,7 +26,7 @@ it('outputs nested values, date ranges and password without exposing hidden attr
 it('serializes every field variant exactly', function (string $method, array $extra) {
     $form = Form::make(User::class);
     $field = in_array($method, ['dateRange', 'datetimeRange']) ? $form->$method('value', 'Value', 'starts_at', 'ends_at') : $form->$method('value', 'Value');
-    expect($field->toSchema(null))->toBe(['type' => match ($method) {
+    expect(Arr::except($field->toSchema(null), ['rules']))->toBe(['type' => match ($method) {
         'image', 'multipleImage', 'file', 'multipleFile' => 'upload', 'switch' => 'switch', default => $method
     }, 'name' => 'value', 'label' => 'Value'] + $extra);
 })->with([

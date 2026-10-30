@@ -3,16 +3,159 @@
 namespace Brume\Form\Fields;
 
 use BackedEnum;
+use Brume\Form\ClientRules;
 use Closure;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\In;
 use InvalidArgumentException;
 
 /** A declared value and its public field definition. Model paths stay on the server. */
 class Field
 {
     protected array $schema = [];
+
+    protected array|string|Closure $validationRules = [];
+
+    protected array $validationMessages = [];
+
+    protected ?array $uniqueConstraint = null;
+
+    protected ?string $patternSource = null;
+
+    public function rules(array|string|Closure $rules): static
+    {
+        $this->validationRules = $rules;
+
+        return $this;
+    }
+
+    public function messages(array $messages): static
+    {
+        $this->validationMessages = $messages;
+
+        return $this;
+    }
+
+    public function unique(?string $table = null, ?string $column = null): static
+    {
+        $this->uniqueConstraint = [$table, $column];
+
+        return $this;
+    }
+
+    public function pattern(string $regex, ?string $message = null): static
+    {
+        $this->patternSource = $regex;
+        if ($message !== null) {
+            $this->validationMessages['regex'] = $message;
+        }
+
+        return $this;
+    }
+
+    public function minLength(int $length): static
+    {
+        if ($length < 0) {
+            throw new InvalidArgumentException('Min length must be non-negative.');
+        }
+        $this->schema['minLength'] = $length;
+
+        return $this;
+    }
+
+    public function maxLength(int $length): static
+    {
+        if ($length < 0) {
+            throw new InvalidArgumentException('Max length must be non-negative.');
+        }
+        $this->schema['maxLength'] = $length;
+
+        return $this;
+    }
+
+    public function settings(): array
+    {
+        return $this->schema;
+    }
+
+    public function validationLabel(): string
+    {
+        return $this->label;
+    }
+
+    public function validationMessages(): array
+    {
+        return $this->validationMessages;
+    }
+
+    public function validationPattern(): ?string
+    {
+        return $this->patternSource ?? ($this->type() === 'mobile' ? '^09\\d{8}$' : null);
+    }
+
+    public function isEditable(?Model $record): bool
+    {
+        return $this->type() !== 'display' && ! $this->isReadOnly($record) && ! ($this->schema['disabled'] ?? false);
+    }
+
+    public function impliedRules(): array
+    {
+        $rules = match ($this->type()) {
+            'email' => ['email'], 'url' => ['url:http,https'], 'number' => ['integer'],
+            'decimal', 'currency' => ['numeric', 'decimal:0,'.$this->schema['decimals']],
+            'select', 'radio' => ['string', $this->choiceRule()],
+            'multipleSelect', 'checkbox', 'tags' => ['array', 'list'],
+            'upload' => ($this->schema['multiple'] ?? false) ? ['array', 'list'] : [],
+            'date' => ['date_format:Y-m-d'], 'datetime' => ['date_format:Y-m-d\\TH:i'],
+            'dateRange', 'datetimeRange' => ['array:start,end'], 'switch' => ['boolean'], default => [],
+        };
+        if ($this->schema['required'] ?? false) {
+            $rules[] = 'required';
+        }
+        foreach (['minLength' => 'min', 'maxLength' => 'max', 'min' => 'min', 'max' => 'max', 'maxFiles' => 'max'] as $key => $rule) {
+            if (in_array($this->type(), ['tags', 'checkbox', 'multipleSelect'], true) && in_array($key, ['minLength', 'maxLength'], true)) {
+                continue;
+            }
+            if (isset($this->schema[$key])) {
+                $rules[] = $rule.':'.$this->schema[$key];
+            }
+        }
+        if ($this->validationPattern() !== null) {
+            $rules[] = 'regex:~'.str_replace('~', '\\~', $this->validationPattern()).'~u';
+        }
+
+        return $rules;
+    }
+
+    public function choiceRule(): In
+    {
+        $choices = array_column($this->schema['options'] ?? [], 'value');
+
+        return Rule::in($choices);
+    }
+
+    public function serverRules(?Model $record = null, ?Model $model = null, bool $includeUnique = true): array
+    {
+        $extra = $this->validationRules instanceof Closure ? ($this->validationRules)($record) : $this->validationRules;
+        $rules = array_merge(['nullable'], $this->impliedRules(), is_string($extra) ? explode('|', $extra) : $extra);
+        if ($includeUnique && $this->uniqueConstraint !== null) {
+            [$table, $column] = $this->uniqueConstraint;
+            $model ??= $record;
+            if ($table === null && $model === null) {
+                throw new InvalidArgumentException('unique() needs a form model or explicit table.');
+            }
+            $unique = Rule::unique($table ?? (($model->getConnectionName() ? $model->getConnectionName().'.' : '').$model->getTable()), $column ?? $this->attributeName());
+            if ($record?->exists) {
+                $unique->ignore($record);
+            }
+            $rules[] = $unique;
+        }
+
+        return $rules;
+    }
 
     protected mixed $defaultValue = null;
 
@@ -176,7 +319,9 @@ class Field
 
     public function toSchema(?Model $record = null): array
     {
-        return ['type' => $this->type(), 'name' => $this->name, 'label' => $this->label] + $this->schema + ($this->isReadOnly($record) ? ['readOnly' => true] : []);
+        $rules = $this->isEditable($record) ? ClientRules::for($this, $this->path(), $record) : [];
+
+        return ($rules !== [] ? ['rules' => $rules] : []) + ['type' => $this->type(), 'name' => $this->name, 'label' => $this->label] + $this->schema + ($this->isReadOnly($record) ? ['readOnly' => true] : []);
     }
 
     /** Hidden attributes are checked at every model boundary, including hidden JSON roots. */
