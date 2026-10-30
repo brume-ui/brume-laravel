@@ -17,6 +17,23 @@ class Form implements Renderable
 {
     protected string $name = '';
 
+    protected ?string $id = null;
+
+    public function id(string $id): static
+    {
+        if (trim($id) === '') {
+            throw new LogicException('Form identity must not be empty.');
+        }
+        $this->id = $id;
+
+        return $this;
+    }
+
+    public function formId(): string
+    {
+        return $this->id ?? throw new LogicException('Configure Form::id() with a stable identity before using uploads.');
+    }
+
     protected ?string $title = null;
 
     protected ?string $description = null;
@@ -568,7 +585,7 @@ class Form implements Renderable
         $size = $this->size === 'auto' ? ($this->layout === 'horizontal' || $count > 8 ? 'lg' : ($count <= 3 && ! $long ? 'sm' : 'md')) : $this->size;
         $page = [
             'type' => 'form', 'title' => $this->title ?? __($this->record === null ? 'brume::form.create_title' : 'brume::form.edit_title', ['name' => $this->name]),
-            'formId' => $request->route()?->getName() ?? $request->path(), 'name' => $this->name, 'mode' => $this->record === null ? 'create' : 'edit',
+            'formId' => $this->id ?? (count(array_filter($this->fields, fn ($field) => $field instanceof Upload)) > 0 ? $this->formId() : ($request->route()?->getName() ?? $request->path())), 'name' => $this->name, 'mode' => $this->record === null ? 'create' : 'edit',
             'form' => ['layout' => $this->layout, 'nodes' => array_map(fn ($node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->toSchema($this->record)] : $node->toSchema($this->record), $this->nodes)] + ($this->tabs ? ['sections' => 'tabs'] : []),
             'values' => array_is_list($values) ? (object) $values : $values,
             'submit' => $this->submit, 'after' => $this->afterSchema(), 'presentation' => $presentation, 'size' => $size,

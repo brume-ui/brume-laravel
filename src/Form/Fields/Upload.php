@@ -11,16 +11,32 @@ use InvalidArgumentException;
 
 class Upload extends Field
 {
-    protected string $diskName = 'public';
+    protected ?string $diskName = null;
 
-    protected string $directoryName = 'uploads';
+    protected ?string $directoryName = null;
 
     protected array $extraFields = [];
 
     public function __construct(string $name, ?string $label = null, string $kind = 'image', bool $multiple = false)
     {
         parent::__construct($name, $label);
-        $this->schema = ['kind' => $kind, 'multiple' => $multiple, 'accept' => $kind === 'image' ? ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] : [], 'maxSize' => 10 * 1024 * 1024];
+        $this->schema = ['kind' => $kind, 'multiple' => $multiple, 'accept' => $kind === 'image' ? ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] : [], 'maxSize' => config('brume.uploads.max_size', 10240) * 1024];
+    }
+
+    public function impliedRules(): array
+    {
+        return array_merge(parent::impliedRules(), $this->schema['multiple'] ? [] : ['array']);
+    }
+
+    public function assertStorage(Model $record): void
+    {
+        if ($this->writer !== null) {
+            return;
+        }
+        $root = explode('.', $this->attributeName(), 2)[0];
+        if (($this->schema['multiple'] || $this->extraFields !== [] || str_contains($this->attributeName(), '.')) && ! $record->hasCast($root, ['array', 'json'])) {
+            throw new \LogicException('Structured uploads require an array or json cast: '.$root);
+        }
     }
 
     public function type(): string
@@ -78,10 +94,10 @@ class Upload extends Field
 
     public function diskName(): string
     {
-        return $this->diskName;
+        return $this->diskName ?? config('brume.uploads.disk', 'public');
     }
 
-    public function directoryName(): string
+    public function directoryName(): ?string
     {
         return $this->directoryName;
     }
@@ -120,7 +136,7 @@ class Upload extends Field
         if (! is_string($path) || $path === '') {
             return null;
         }
-        $url = Href::safe(Storage::disk($this->diskName)->url($path));
+        $url = Href::safe(Storage::disk($this->diskName())->url($path));
         if ($url === null) {
             return null;
         }

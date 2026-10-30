@@ -30,6 +30,17 @@ return [
         'breadcrumbs' => true,
     ],
 
+    'uploads' => [
+        // null inspects the default connection; add and migrate every other upload model connection.
+        'connections' => null,
+        'disk' => env('BRUME_UPLOAD_DISK', 'public'),
+        'temp_disk' => 'local',
+        'temp_ttl' => 1440,
+        'max_size' => 10240,
+        'schedule_cleanup' => true,
+        'safe_extensions' => ['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf', 'txt', 'csv', 'zip', 'gz', 'tar', '7z', 'rar', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'mp3', 'mp4', 'wav', 'ogg', 'webm'],
+    ],
+
     'locale' => 'zh_TW',
     'locales' => ['zh_TW', 'en', 'zh_CN'],
 

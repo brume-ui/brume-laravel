@@ -90,7 +90,7 @@ it('encodes empty component props as an omitted key, never as a list', function 
 });
 
 it('validates complete create and edit forms against the emitted schema 0.3', function () {
-    $form = Form::make(User::class)->name('User')->description('All fields')->submitTo('post', '/users')->tabs();
+    $form = Form::make(User::class)->id('users')->name('User')->description('All fields')->submitTo('post', '/users')->tabs();
     $form->section('Basics', function ($f) {
         foreach (['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'image', 'multipleImage', 'file', 'multipleFile'] as $type) {
             $field = $f->$type($type);

@@ -77,7 +77,7 @@ it('archives rewritten values without invoking unchanged custom writers twice', 
             $values['file'] = 'final/file.pdf';
         }
     });
-    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['amount' => '10.00', 'file' => 'temporary']]));
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['amount' => '10.00', 'file' => ['token' => str_repeat('a', 40)]]]));
     expect($record->fresh()->file)->toBe('final/file.pdf')->and($count)->toBe(1);
 });
 

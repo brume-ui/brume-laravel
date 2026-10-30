@@ -538,3 +538,36 @@ When developing brume-ui at the same time, link the local packages instead of th
     pnpm link ../../brume-ui/packages/react
     pnpm link ../../brume-ui/packages/renderer
     pnpm link ../../brume-ui/packages/inertia
+
+## Temporary form uploads
+
+Forms containing uploads require a stable, explicit `Form::id('resource-name')`. Use the same
+identity when rendering the form, accepting temporary uploads, and saving; separate forms must
+use separate identities. Temporary tokens also bind the configured Brume auth guard, user, full
+field path, and root edit record (or create context).
+
+`Brume\Uploads\UploadController::store(Form $form, Request $request)` accepts `field` and `file`.
+Host routes must resolve the scoped record first and apply the resource's middleware, `web`,
+`brume.auth`, and `throttle:60,1`. Resource upload endpoints are added by the resource registrar.
+The built-in owner-only image preview is `brume.uploads.preview`.
+
+Configure disks, the temporary TTL in minutes, and maximum size in KB under `brume.uploads`.
+`uploads.safe_extensions` is a positive allowlist of server-detected extensions; general file fields
+also enforce it, even with an explicit MIME allowlist. Unknown and active executable formats are
+rejected by default. Hosts may extend this list only for reviewed formats, and must configure
+public storage so uploaded files can never execute.
+`uploads.connections` defaults to the application's default database connection. For models on
+other connections, explicitly list every allowed connection and migrate `brume_uploads` on each;
+preview and cleanup inspect only that list. No connection name comes from request input.
+
+A single upload without extras stores a path string or null. Multiple uploads store ordered path
+arrays; declared extras produce `{path, extra}` entries. A single upload with extras also stores
+`{path, extra}`. Multiple uploads, extras, and embedded attributes need an `array` or `json` model
+cast, unless `saveUsing()` supplies their writer. Undeclared metadata and client URLs are ignored.
+
+Archival runs inside the model transaction before fill/save. It copies files and consumes token
+rows transactionally; outer rollback removes new copies and restores token eligibility. Actual
+outer commit deletes temporary files and removed old files. This requires Illuminate's
+`afterRollBack()` support; an unsupported connection fails before any file mutation.
+`brume:uploads:clean` deletes expired temporary rows/files and old untracked `brume-tmp/` files;
+`uploads.schedule_cleanup` registers it hourly by default.

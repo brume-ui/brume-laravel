@@ -2,6 +2,7 @@
 
 namespace Brume;
 
+use Brume\Console\CleanUploadsCommand;
 use Brume\Console\InstallCommand;
 use Brume\Console\PasswordCommand;
 use Brume\Console\UserCommand;
@@ -14,6 +15,7 @@ use Brume\Http\Middleware\RedirectIfAuthenticated;
 use Brume\Support\Assets;
 use Brume\Support\Color;
 use Closure;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Routing\Events\RouteMatched;
 use Illuminate\Routing\Router;
@@ -57,7 +59,14 @@ class BrumeServiceProvider extends ServiceProvider
                 InstallCommand::class,
                 UserCommand::class,
                 PasswordCommand::class,
+                CleanUploadsCommand::class,
             ]);
+        }
+
+        if (config('brume.uploads.schedule_cleanup', true)) {
+            $this->callAfterResolving(Schedule::class, function ($schedule) {
+                $schedule->command('brume:uploads:clean')->hourly();
+            });
         }
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');

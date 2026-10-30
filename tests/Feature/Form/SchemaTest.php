@@ -177,6 +177,7 @@ it('maps archived uploads through storage and exposes only declared extras', fun
     $r->mergeCasts(['photos' => 'array']);
     $r->forceFill(['photos' => [['path' => 'photos/one.jpg', 'url' => 'javascript:bad', 'extra' => ['caption' => 'One', 'secret' => 'private']]], 'avatar' => 'photos/two.jpg']);
     $f = Form::make(User::class)->forRecord($r)->submitTo('put', '/');
+    $f->id('photos');
     $f->multipleImage('photos')->disk('public')->directory('photos')->maxSize(1024)->max(4)->sortable()->extra(fn ($e) => $e->text('caption'));
     $f->image('avatar');
     $p = $f->toSchema(Request::create('/'));
@@ -213,7 +214,7 @@ it('drops archived uploads whose storage URL has an unsafe scheme', function () 
     Storage::shouldReceive('disk')->with('unsafe')->once()->andReturn($disk);
     $r = (new User)->forceFill(['avatar' => 'one.jpg']);
     $f = Form::make(User::class)->forRecord($r)->submitTo('put', '/');
-    $f->image('avatar')->disk('unsafe');
+    $f->id('unsafe')->image('avatar')->disk('unsafe');
     expect($f->toSchema(Request::create('/'))['values']['avatar'])->toBeNull();
 });
 
@@ -273,6 +274,7 @@ it('emits numeric-key archived upload extras as UploadValue objects', function (
     $record->mergeCasts(['photos' => 'array']);
     $record->forceFill(['photos' => [['path' => 'photos/one.jpg', 'extra' => ['0' => 'zero', 'tags' => ['one', 'two']]], ['path' => 'photos/two.jpg', 'extra' => ['0' => 'only zero']]]]);
     $form = Form::make(User::class)->forRecord($record)->submitTo('put', '/');
+    $form->id('photos');
     $form->multipleImage('photos')->extra(function ($extra) {
         $extra->text('0');
         $extra->tags('tags');
