@@ -139,7 +139,19 @@ jobs:
       - run: node frontend/scripts/check-package-origins.mjs
 
       # Rebuilds the precompiled frontend and compares it byte for byte with the committed dist/.
-      - run: node frontend/scripts/check-dist.mjs
+      - id: check-dist
+        run: node frontend/scripts/check-dist.mjs
+        env:
+          BRUME_DIST_DIAGNOSTIC_DIR: ${{ runner.temp }}/brume-dist-diagnostic
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() && steps.check-dist.outcome == 'failure' }}
+        with:
+          name: frontend-dist-fresh-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/brume-dist-diagnostic/fresh-dist/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
 
   e2e:
     name: e2e (published UI packages)
