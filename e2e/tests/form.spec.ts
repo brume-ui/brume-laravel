@@ -144,13 +144,16 @@ test('order edit keyboard navigation, dirty confirmation, cancel action and quic
 }) => {
   await page.goto('/admin/orders');
   const numbers = await page.locator('tbody tr td').filter({ hasText: /^BR-/ }).allTextContents();
+  const mount = await page.locator('[data-shell-mount]').getAttribute('data-shell-mount');
   await page
     .locator('tbody tr')
     .first()
-    .getByRole('button', { name: numbers[0]!.trim(), exact: true })
+    .getByRole('link', { name: numbers[0]!.trim(), exact: true })
     .click();
   const dialog = page.getByRole('dialog', { name: /編輯訂單/ });
   await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/orders$/);
+  await expect(page.locator('[data-shell-mount]')).toHaveAttribute('data-shell-mount', mount!);
   const nextResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith('/edit') && response.request().headers()['x-brume-form'] === '1',
@@ -228,7 +231,7 @@ test('showcase page uploads, sorting, extras, unique errors and all new inline e
   await save(page);
   await expect(page).toHaveURL(/\/admin\/grid-showcase$/);
   let row = page.locator('tbody tr').first();
-  await row.getByRole('button', { name: '表單驗收新品', exact: true }).click();
+  await row.getByRole('link', { name: '表單驗收新品', exact: true }).click();
   await expect(page).toHaveURL(/\/edit$/);
   const uploads = page.locator('li[data-upload-key]');
   await expect(uploads).toHaveCount(4);

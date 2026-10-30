@@ -123,3 +123,15 @@ it('saves an optional empty showcase color and serializes the actual grid reload
         ->and($page['rows'][0]['meta.color'])->toBeNull()
         ->and($page['rows'][0]['_meta']['content']['specs']['rows'][2])->toBe(['label' => '顏色', 'value' => '—']);
 })->with(['create', 'edit']);
+
+it('supplies real row edit URLs and modal forms for order primary-cell links', function () {
+    $order = Order::factory()->create(['number' => 'TASK22-LINK-CONTRACT']);
+    $page = $this->get('/admin/orders?q=TASK22-LINK-CONTRACT')->assertOk()->viewData('page')['props']['envelope']['page'];
+    expect($page['rows'])->toHaveCount(1)
+        ->and($page['rows'][0]['number'])->toBe($order->number)
+        ->and($page['rows'][0]['_meta']['editUrl'])->toBe("/admin/orders/{$order->id}/edit")
+        ->and($page['resource']['presentation'])->toBe('modal');
+    $this->getJson($page['rows'][0]['_meta']['editUrl'], ['X-Brume-Form' => '1'])->assertOk()
+        ->assertJsonPath('page.presentation', 'modal')->assertJsonPath('page.record.id', $order->id)
+        ->assertJsonPath('page.record.label', $order->number);
+});

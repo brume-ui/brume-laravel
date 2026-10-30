@@ -53,7 +53,17 @@ test('訂單 lists 60 seeded orders, newest first (the default sort), 15 per pag
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(15);
   await expect(rows.first()).toContainText('BR-20261027-060');
-  await expect(rows.first().getByRole('button', { name: 'BR-20261027-060', exact: true })).toBeVisible();
+  // Resource rows carry an editUrl, so PrimaryCell renders an anchor with modal plain-click behavior.
+  const edit = rows.first().getByRole('link', { name: 'BR-20261027-060', exact: true });
+  await expect(edit).toHaveAttribute('href', '/admin/orders/60/edit');
+  const mount = await page.locator('[data-shell-mount]').getAttribute('data-shell-mount');
+  await edit.click();
+  const dialog = page.getByRole('dialog', { name: '編輯訂單', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/orders$/);
+  await expect(page.locator('[data-shell-mount]')).toHaveAttribute('data-shell-mount', mount!);
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
   await expect(rows.first()).toContainText('2026-10-27');
   await expect(page.getByRole('link', { name: '第 4 頁' })).toBeVisible();
 
