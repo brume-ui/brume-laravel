@@ -12,6 +12,7 @@ use Brume\Http\Middleware\Authenticate;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Http\Middleware\HandleGridEndpoint;
 use Brume\Http\Middleware\RedirectIfAuthenticated;
+use Brume\Resource\ResourceRouteRegistrar;
 use Brume\Support\Assets;
 use Brume\Support\Color;
 use Closure;
@@ -84,7 +85,10 @@ class BrumeServiceProvider extends ServiceProvider
         // disables middleware (withoutMiddleware()).
         $this->app['events']->listen(
             RouteMatched::class,
-            fn (RouteMatched $event) => HandleGridEndpoint::takeArgument($event->route, $event->request),
+            function (RouteMatched $event) {
+                HandleGridEndpoint::takeArgument($event->route, $event->request);
+                ResourceRouteRegistrar::takeArgument($event->route, $event->request);
+            },
         );
 
         $this->registerRoutes();
@@ -118,6 +122,9 @@ class BrumeServiceProvider extends ServiceProvider
      */
     protected function registerGridRoutes(): void
     {
+        Router::macro('brumeResource', function (string $uri, string $controller): ResourceRouteRegistrar {
+            return (new ResourceRouteRegistrar($this))->register($uri, $controller);
+        });
         Router::macro('brumeGrid', function (string $uri, string|array|Closure $action): GridRouteRegistrar {
             /** @var Router $this */
             return (new GridRouteRegistrar($this))->register($uri, $action);

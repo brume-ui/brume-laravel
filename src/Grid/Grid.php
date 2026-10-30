@@ -56,6 +56,24 @@ class Grid implements Renderable, Responsable
     /** @var array{row: list<Action>, batch: list<Action>, tool: list<Action>} */
     protected array $actions = ['row' => [], 'batch' => [], 'tool' => []];
 
+    protected ?array $resource = null;
+
+    protected ?Closure $deleteForm = null;
+
+    public function resource(array $resource): static
+    {
+        $this->resource = $resource;
+
+        return $this;
+    }
+
+    public function deleteUsing(Closure $form): static
+    {
+        $this->deleteForm = $form;
+
+        return $this;
+    }
+
     protected bool $deletable = false;
 
     protected ?Closure $editUrl = null;
@@ -455,7 +473,8 @@ class Grid implements Renderable, Responsable
             ]
             + ($endpoints !== null ? ['endpoints' => $endpoints] : [])
             + ($endpoints !== null && $this->exportable ? ['export' => ['url' => $this->endpointBase($request).'/export']] : [])
-            + ($this->empty !== null ? ['empty' => $this->empty] : []);
+            + ($this->empty !== null ? ['empty' => $this->empty] : [])
+            + ($this->resource !== null ? ['resource' => $this->resource] : []);
     }
 
     /**
@@ -729,8 +748,8 @@ class Grid implements Renderable, Responsable
     {
         $delete = match (true) {
             ! $this->deletable => [],
-            $target === 'row' => [DeleteAction::forRow()],
-            $target === 'batch' => [DeleteAction::forBatch()],
+            $target === 'row' => [DeleteAction::forRow()->form($this->deleteForm)],
+            $target === 'batch' => [DeleteAction::forBatch()->form($this->deleteForm)],
             default => [],
         };
 

@@ -4,6 +4,7 @@ namespace Brume\Http\Middleware;
 
 use Brume\BrumeManager;
 use Brume\Facades\Brume;
+use Brume\Resource\ResourceRouteRegistrar;
 use Brume\Support\Assets;
 use Brume\Support\Color;
 use Brume\Support\LocaleMap;
@@ -28,7 +29,20 @@ class HandleBrumeRequests extends Middleware
 
         app()->setLocale(LocaleMap::resolve(is_string($cookie) ? $cookie : null));
 
-        return parent::handle($request, $next);
+        $vary = [];
+        $response = parent::handle($request, function ($request) use ($next, &$vary) {
+            $response = $next($request);
+            $vary = $response->getVary();
+
+            return $response;
+        });
+        $response->setVary($vary, false);
+        if ($request->route()?->getAction(ResourceRouteRegistrar::ACTION_KEY) !== null) {
+            $response->setVary('X-Brume-Form', false);
+        }
+        $response->headers->set('Vary', implode(', ', array_unique($response->getVary())));
+
+        return $response;
     }
 
     public function version(Request $request): ?string

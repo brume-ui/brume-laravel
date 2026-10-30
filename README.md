@@ -436,6 +436,11 @@ These are planned for later sub-plans and phases:
   the remote-search `select` / `multipleSelect` filters, which do the same job.
 - **Inline editors for dates, money, tags and custom fields**: they need the field registry of
   sub-plan 2 and the custom registry of sub-plan 3.
+- **Relation pickers, Repeater/Nested forms, declarative dependent fields, dependent/remote form
+  options, generic one-value/multiple-column fields (addresses), and custom React field/display
+  registration**: sub-plan 3.
+- **Rich text, color picker and Show pages**: phase 3; use `textarea` until then.
+- **Custom calendars**: native `date` / `datetime-local` inputs are retained; revisit after user trials.
 - **Orderable, Tree and DialogTree**: phase 3.
 
 ## Development
@@ -539,6 +544,101 @@ When developing brume-ui at the same time, link the local packages instead of th
     pnpm link ../../brume-ui/packages/renderer
     pnpm link ../../brume-ui/packages/inertia
 
+## Forms and resources
+
+Extend `Brume\Resource\Resource` and register it in your `routes/brume.php`. Its `query()` is the
+shared scope for the grid, edits, updates, uploads and deletion; override it for tenant isolation.
+All routes include `web` and `brume.auth`, and every chained shared modifier (middleware, `can`,
+domain, constraints, scoped bindings and trashed binding) also reaches the Grid and upload routes.
+
+```php
+use Brume\Form\Form;
+use Brume\Grid\Grid;
+use Brume\Resource\Resource;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Route;
+
+class OrderResource extends Resource
+{
+    protected string $model = Order::class;
+    protected string $name = '訂單';
+    protected bool $deletable = true;
+
+    protected function query(): Builder
+    {
+        return parent::query()->where('shop_id', auth()->user()->shop_id);
+    }
+
+    protected function grid(Grid $grid): void
+    {
+        $grid->column('number', '訂單編號')->primary()->sortable();
+        $grid->column('customer', '客戶');
+    }
+
+    protected function form(Form $form): void
+    {
+        $form->text('number', '訂單編號')->required()->rules('max:40')
+            ->messages(['required' => '請填寫訂單編號']);
+        $form->text('customer', '客戶')->required();
+        $form->currency('amount', '金額')->decimals(2);
+        $form->image('receipt', '收據')->disk('public')->directory('receipts');
+        $form->saving(function ($record, &$values) {
+            if (! $record->exists) {
+                $record->shop_id = auth()->user()->shop_id;
+            }
+        });
+        $form->viewUrl(fn ($record) => '/orders/'.$record->getKey());
+    }
+}
+
+Route::brumeResource('orders', OrderResource::class)
+    ->middleware('can:manage-orders');
+```
+
+The example model needs columns for the declared fields and a decimal cast for `amount`.
+The default name prefix is the route group's name plus the dotted URI, e.g. `brume.orders`;
+`->names('orders')` chooses another prefix within the group, and
+`->name('edit', 'orders.modify')` overrides one action's route name within that group. Names end in `.index`, `.create`,
+`.store`, `.edit`, `.update`, `.upload` and `.record-upload`. The form identity is the same prefix
+for every action and record. Upload routes execute `store` (create) or `update` (edit); all Grid
+endpoints execute `index`. A controller's `middleware()->only()` / `except()` must use those action
+names. `create` and `edit` render the generic `brume/page` Inertia component.
+
+Fields: `text`, `textarea`, `email`, `url`, `mobile`, `password`, `hidden`, `display`, `number`,
+`decimal`, `currency`, `date`, `datetime`, `dateRange`, `datetimeRange`, `select`, `multipleSelect`,
+`radio`, `checkbox`, `switch`, `tags`, `image`, `multipleImage`, `file`, `multipleFile`.
+Use `section`, `row`, `columns`/`column`, `block`, `divider`, `embeds` and `tabs` to arrange them.
+`layout('stacked'|'horizontal')`, `presentation('auto'|'modal'|'page')` and `size('auto'|'sm'|'md'|'lg')`
+control presentation; auto uses page mode with three sections or more than sixteen fields.
+
+`rules()` and `messages()` use Laravel validation. The server returns 422 `{message, errors}`
+with dotted field paths relative to `values`; client rules use the same translated messages.
+Only declared editable fields are written; `readOnly`, `disabled` and `display` inputs are ignored.
+Model hidden attributes stay private unless the field explicitly declares `value()`; password
+fields always load blank and a blank submitted password preserves the stored password.
+
+Hooks: `creating($form)`, `editing($record, $form)`, `submitted($values)`,
+`saving($record, &$values)`, `saved($record)`, `deleting($record)`, `deleted($record)`.
+`submitted` or `saving` can return `Feedback` to cancel saving; `saved` can return success feedback.
+For resource deletion, `deleting` returning Feedback cancels and rolls back the **whole batch**,
+including earlier rows. `deleted` is a void hook and exceptions roll back the batch. A model's
+own `deleting` event returning false instead vetoes only that row, retaining partial-success
+feedback. Hard-delete file cleanup captures all declared stored uploads before hooks (including
+hidden-backed, disabled and readonly fields) and waits for the actual outer transaction commit;
+soft deletion, veto, cancellation and rollback preserve files.
+
+Submit `{values: {...}}` to the schema's `submit.url` with its `submit.method`. Success includes
+`id`, `feedback` and safe `urls` for list, edit, create and optional view. `after()` selects the
+allowed post-save destinations. Request create/edit with `X-Brume-Form: 1` to receive a JSON
+`PageEnvelope` instead of Inertia; both representations vary on `X-Brume-Form`, preserving other
+Vary values. Missing scoped records return 404, as an ErrorPage for pages or ErrorResponse for
+JSON/Form-header requests. Every POST/PUT uses CSRF protection; send the encrypted `X-XSRF-TOKEN`.
+
+Uploads accept `field` and `file` at the schema's `uploadUrl`. Use `accept`, `maxSize`, `max`,
+`sortable` and `extra` to configure them. Configure `brume.uploads.disk`, `temp_disk`, TTL,
+connection allowlist and cleanup scheduling as described below; run Laravel's scheduler so the
+hourly `brume:uploads:clean` can execute. Resource forms set their stable identity automatically.
+
 ## Temporary form uploads
 
 Forms containing uploads require a stable, explicit `Form::id('resource-name')`. Use the same
@@ -563,7 +663,7 @@ preview and cleanup inspect only that list. No connection name comes from reques
 A single upload without extras stores a path string or null. Multiple uploads store ordered path
 arrays; declared extras produce `{path, extra}` entries. A single upload with extras also stores
 `{path, extra}`. Multiple uploads, extras, and embedded attributes need an `array` or `json` model
-cast, unless `saveUsing()` supplies their writer. Undeclared metadata and client URLs are ignored.
+cast, unless `saveUsing()` supplies their writer. Undeclared request metadata and client URLs are ignored; existing protected/server metadata is preserved.
 
 Archival runs inside the model transaction before fill/save. It copies files and consumes token
 rows transactionally; outer rollback removes new copies and restores token eligibility. Actual

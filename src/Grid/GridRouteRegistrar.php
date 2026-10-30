@@ -34,7 +34,7 @@ final class GridRouteRegistrar
     ];
 
     /** Modifiers that must reach the endpoints too, or they would bypass the page's rules. */
-    protected const SHARED_MODIFIERS = [
+    public const SHARED_MODIFIERS = [
         'domain', 'middleware', 'withoutMiddleware', 'can', 'scopeBindings', 'withoutScopedBindings', 'withTrashed',
         'missing', 'where', 'whereNumber', 'whereAlpha', 'whereAlphaNumeric', 'whereUuid', 'whereUlid', 'whereIn',
     ];

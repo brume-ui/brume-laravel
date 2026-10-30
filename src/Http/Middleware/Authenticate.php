@@ -4,6 +4,7 @@ namespace Brume\Http\Middleware;
 
 use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\ErrorResponse;
+use Brume\Resource\ResourceRouteRegistrar;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -25,8 +26,8 @@ class Authenticate
 
         if (! Auth::guard($guard)->check()) {
             // A JSON call (the grid's `_brume` endpoints) gets a 401 ErrorResponse, not a login page.
-            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
-                return ErrorResponse::make(__('brume::auth.unauthenticated'), 401);
+            if ($request->hasHeader('X-Brume-Form') || ($request->expectsJson() && ! $request->header('X-Inertia'))) {
+                return $this->vary($request, ErrorResponse::make(__('brume::auth.unauthenticated'), 401));
             }
 
             // Not a `_brume` endpoint (an expired session clicking 匯出): after login the user should
@@ -35,12 +36,21 @@ class Authenticate
                 $request->session()->put(self::INTENDED_KEY, $request->fullUrl());
             }
 
-            return redirect()->route('brume.login');
+            return $this->vary($request, redirect()->route('brume.login'));
         }
 
         Auth::shouldUse($guard);
 
         return $next($request);
+    }
+
+    protected function vary(Request $request, Response $response): Response
+    {
+        if ($request->hasHeader('X-Brume-Form') || $request->route()?->getAction(ResourceRouteRegistrar::ACTION_KEY) !== null) {
+            $response->setVary('X-Brume-Form', false);
+        }
+
+        return $response;
     }
 
     protected function isGridEndpoint(Request $request): bool

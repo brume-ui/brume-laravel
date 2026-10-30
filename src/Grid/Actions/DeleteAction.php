@@ -2,6 +2,7 @@
 
 namespace Brume\Grid\Actions;
 
+use Brume\Resource\ResourceDeletion;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -13,6 +14,15 @@ use Illuminate\Support\Collection;
 class DeleteAction extends Action
 {
     public const KEY = 'delete';
+
+    protected ?\Closure $form = null;
+
+    public function form(?\Closure $form): static
+    {
+        $this->form = $form;
+
+        return $this;
+    }
 
     public static function forRow(): static
     {
@@ -40,7 +50,12 @@ class DeleteAction extends Action
     protected function run(Collection $models, Request $request): ?Feedback
     {
         // A deleting listener that returns false keeps its row, which is then not counted.
-        $deleted = $models->filter(fn (Model $model) => $model->delete() !== false)->count();
+        $deleted = $this->form === null
+            ? $models->filter(fn (Model $model) => $model->delete() !== false)->count()
+            : app(ResourceDeletion::class)->run($models, $this->form);
+        if ($deleted instanceof Feedback) {
+            return $deleted;
+        }
         $kept = $models->count() - $deleted;
 
         $feedback = match (true) {

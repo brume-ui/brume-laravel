@@ -2,18 +2,21 @@
 
 namespace Brume\Form;
 
+use Brume\BrumeManager;
 use Brume\Contracts\Renderable;
+use Brume\Facades\Brume;
 use Brume\Form\Fields\Field;
 use Brume\Form\Fields\Upload;
 use Brume\Support\Href;
 use Closure;
+use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
 use LogicException;
 
-class Form implements Renderable
+class Form implements Renderable, Responsable
 {
     protected string $name = '';
 
@@ -32,6 +35,34 @@ class Form implements Renderable
     public function formId(): string
     {
         return $this->id ?? throw new LogicException('Configure Form::id() with a stable identity before using uploads.');
+    }
+
+    protected ?string $uploadUrl = null;
+
+    protected ?string $listUrl = null;
+
+    public function uploadUrl(string $url): static
+    {
+        $this->uploadUrl = Href::checked($url, 'Form::uploadUrl');
+
+        return $this;
+    }
+
+    public function listUrl(string $url): static
+    {
+        $this->listUrl = Href::checked($url, 'Form::listUrl');
+
+        return $this;
+    }
+
+    public function toResponse($request)
+    {
+        $response = $request->hasHeader('X-Brume-Form')
+            ? response()->json(['schemaVersion' => BrumeManager::SCHEMA_VERSION, 'page' => $this->toSchema($request)])
+            : Brume::render($this)->toResponse($request);
+        $response->setVary('X-Brume-Form', false);
+
+        return $response;
     }
 
     protected ?string $title = null;
@@ -579,9 +610,8 @@ class Form implements Renderable
             data_set($values, $path, (object) (data_get($values, $path) ?? []));
         }
         $count = count($this->fields);
-        $sections = count(array_filter($this->nodes, fn ($node) => $node instanceof FormNode && $node->type === 'section'));
         $long = count(array_filter($this->fields, fn ($field) => $field->isLong())) > 0 || $this->hasEmbeds();
-        $presentation = $this->presentation === 'auto' ? ($sections >= 3 || $count > 16 ? 'page' : 'modal') : $this->presentation;
+        $presentation = $this->resolvedPresentation();
         $size = $this->size === 'auto' ? ($this->layout === 'horizontal' || $count > 8 ? 'lg' : ($count <= 3 && ! $long ? 'sm' : 'md')) : $this->size;
         $page = [
             'type' => 'form', 'title' => $this->title ?? __($this->record === null ? 'brume::form.create_title' : 'brume::form.edit_title', ['name' => $this->name]),
@@ -600,7 +630,22 @@ class Form implements Renderable
             }
         }
 
+        if ($this->uploadUrl !== null) {
+            $page['uploadUrl'] = $this->uploadUrl;
+        }
+        if ($this->listUrl !== null) {
+            $page['listUrl'] = $this->listUrl;
+        }
+
         return $page;
+    }
+
+    /** Structural list metadata; does not initialize the form lifecycle or read model values. */
+    public function resolvedPresentation(): string
+    {
+        $sections = count(array_filter($this->nodes, fn ($node) => $node instanceof FormNode && $node->type === 'section'));
+
+        return $this->presentation === 'auto' ? ($sections >= 3 || count($this->fields) > 16 ? 'page' : 'modal') : $this->presentation;
     }
 
     protected function hasEmbeds(): bool
