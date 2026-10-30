@@ -234,10 +234,10 @@ function uploadRecord(array $values = []): UploadRecord
 
 it('keeps declared extra dictionaries and reordered owned paths and deletes removals only at commit', function () {
     Storage::fake('public');
-    $record = uploadRecord([['path' => 'old/a.png', 'extra' => ['0' => 'old']], ['path' => 'old/b.png', 'extra' => ['0' => 'old']]]);
+    $record = physicalUploadRecord([['path' => 'old/a.png', 'extra' => ['0' => 'old']], ['path' => 'old/b.png', 'extra' => ['0' => 'old']]]);
     Storage::disk('public')->put('old/a.png', 'a');
     Storage::disk('public')->put('old/b.png', 'b');
-    $form = Form::make(UploadRecord::class)->id('images')->urls(fn () => ['edit' => '/images/1']);
+    $form = Form::make($record->newQuery())->id('images')->urls(fn () => ['edit' => '/images/1']);
     $form->multipleImage('images')->extra(fn ($extra) => $extra->text('0')->required());
     $connection = $record->getConnection();
     $connection->beginTransaction();
@@ -283,18 +283,19 @@ it('does not trust a saving hook mutation as database path ownership', function 
 it('keeps each upload callback independent across two saves in one outer transaction', function ($commit) {
     Storage::fake('local');
     Storage::fake('public');
-    $user = brumeUser(['name' => 'old/owned.png']);
-    $this->actingAs($user, 'brume');
+    $this->actingAs(brumeUser(), 'brume');
+    $user = physicalUploadRecord('old/owned.png');
     Storage::disk('public')->put('old/owned.png', 'old');
-    $form = uploadForm()->forRecord($user);
-    $a = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'name', $form->fields()['name']);
-    $b = app(TempUploads::class)->store(UploadedFile::fake()->image('b.png'), $form, 'name', $form->fields()['name']);
+    $form = Form::make($user->newQuery())->id('users')->forRecord($user)->urls(fn () => ['edit' => '/images/1']);
+    $form->image('images');
+    $a = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $form->fields()['images']);
+    $b = app(TempUploads::class)->store(UploadedFile::fake()->image('b.png'), $form, 'images', $form->fields()['images']);
     $connection = $user->getConnection();
     $connection->beginTransaction();
     foreach ([$a, $b] as $upload) {
-        (new FormSaver)->save(uploadForm(), $user, Request::create('/', 'PUT', ['values' => ['name' => ['token' => $upload['token']]]]));
+        (new FormSaver)->save($form, $user, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $upload['token']]]]));
     }
-    $final = $user->name;
+    $final = $user->images;
     expect(Storage::disk('public')->allFiles())->toHaveCount(3)->and(Storage::disk('local')->allFiles())->toHaveCount(2);
     $commit ? $connection->commit() : $connection->rollBack();
     expect(Storage::disk('public')->allFiles())->toBe([$commit ? $final : 'old/owned.png']);
@@ -452,8 +453,8 @@ it('saves reloads edits and clears a single upload with declared extras', functi
     Storage::fake('local');
     Storage::fake('public');
     $this->actingAs(brumeUser(), 'brume');
-    $record = uploadRecord();
-    $form = Form::make(UploadRecord::class)->id('single-extra')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $record = physicalUploadRecord();
+    $form = Form::make($record->newQuery())->id('single-extra')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
     $field = $form->image('images')->extra(fn ($extra) => $extra->text('caption')->required());
     $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $field);
     (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $upload['token'], 'extra' => ['caption' => 'First', 'unknown' => 'bad']]]]));
@@ -646,7 +647,7 @@ it('reports failed cleanup returns and continues deleting other paths after pers
     $real = Storage::disk('public');
     $real->put('old/a.png', 'a');
     $real->put('old/b.png', 'b');
-    $record = uploadRecord(['old/a.png', 'old/b.png', 'old/absent.png']);
+    $record = physicalUploadRecord(['old/a.png', 'old/b.png', 'old/absent.png']);
     $filesystem = Mockery::mock($real);
     $filesystem->shouldReceive('delete')->once()->with('old/a.png')->andReturn(false);
     $filesystem->shouldReceive('delete')->once()->with('old/b.png')->andReturnUsing(fn () => $real->delete('old/b.png'));
@@ -655,10 +656,81 @@ it('reports failed cleanup returns and continues deleting other paths after pers
     $reporter = Mockery::mock(ExceptionHandler::class);
     $reporter->shouldReceive('report')->once()->withArgs(fn ($error) => $error instanceof RuntimeException && str_contains($error->getMessage(), 'old/a.png'));
     app()->instance(ExceptionHandler::class, $reporter);
-    $form = Form::make(UploadRecord::class)->id('cleanup-failure')->urls(fn () => ['edit' => '/images/1']);
+    $form = Form::make($record->newQuery())->id('cleanup-failure')->urls(fn () => ['edit' => '/images/1']);
     $form->multipleImage('images');
     (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => []]]));
     expect($record->fresh()->images)->toBe([]);
     $real->assertExists('old/a.png');
     $real->assertMissing('old/b.png');
 });
+
+/** A separate connection has real level-zero commits, unlike RefreshDatabase's testing wrapper. */
+function physicalUploadRecord(mixed $values = []): UploadRecord
+{
+    $name = 'upload_physical';
+    config(['database.connections.'.$name => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
+    config(['brume.uploads.connections' => array_unique([config('database.default'), $name])]);
+    $connection = DB::connection($name);
+    $connection->setTransactionManager(new DatabaseTransactionsManager);
+    Schema::connection($name)->create('upload_records', function (Blueprint $table) {
+        $table->id();
+        $table->json('images')->nullable();
+    });
+    DB::usingConnection($name, function () {
+        (require __DIR__.'/../../../database/migrations/2026_10_29_000000_create_brume_uploads_table.php')->up();
+    });
+    $record = (new UploadRecord)->setConnection($name);
+    $record->images = $values;
+    $record->save();
+
+    return $record;
+}
+
+afterEach(function () {
+    if (config('database.connections.upload_physical') !== null) {
+        $connection = DB::connection('upload_physical');
+        if ($connection->transactionLevel() > 0) {
+            $connection->rollBack(0);
+        }
+        $connection->table('brume_uploads')->delete();
+        $connection->table('upload_records')->delete();
+        DB::purge('upload_physical');
+    }
+});
+
+it('keeps files owned by A untouched when B sharing its manager finishes during an A save', function ($managerClass, $otherCommit, $ownCommit) {
+    Storage::fake('local');
+    Storage::fake('public');
+    $this->actingAs(brumeUser(), 'brume');
+    $record = physicalUploadRecord('old/a.png');
+    Storage::disk('public')->put('old/a.png', 'old');
+    config(['database.connections.upload_other' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
+    $manager = new $managerClass;
+    $a = $record->getConnection();
+    $b = DB::connection('upload_other');
+    $a->setTransactionManager($manager);
+    $b->setTransactionManager($manager);
+    $form = Form::make($record->newQuery())->id('shared-files')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $field = $form->image('images');
+    $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $field);
+    $form->saving(fn () => $b->beginTransaction());
+    try {
+        $a->beginTransaction();
+        (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $upload['token']]]]));
+        $final = $record->images;
+        $otherCommit ? $b->commit() : $b->rollBack();
+        expect($a->transactionLevel())->toBe(1);
+        Storage::disk('public')->assertExists('old/a.png');
+        Storage::disk('public')->assertExists($final);
+        expect(Storage::disk('local')->allFiles())->toHaveCount(1);
+        $ownCommit ? $a->commit() : $a->rollBack();
+        expect(Storage::disk('public')->allFiles())->toBe([$ownCommit ? $final : 'old/a.png']);
+        expect(Storage::disk('local')->allFiles())->toHaveCount($ownCommit ? 0 : 1);
+        expect($record->fresh()->images)->toBe($ownCommit ? $final : 'old/a.png');
+    } finally {
+        if ($b->transactionLevel() > 0) {
+            $b->rollBack(0);
+        }
+        DB::purge('upload_other');
+    }
+})->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class])->with([true, false])->with([true, false]);

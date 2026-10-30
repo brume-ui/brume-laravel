@@ -129,21 +129,21 @@ it('keeps one listener pair per actual dispatcher across repeated operations', f
     expect($calls)->toBe(20);
 });
 
-it('disposes a partially registered operation if native callbacks are unavailable', function () {
+it('uses physical connection events when no native transaction manager is installed', function () {
     $connection = new SQLiteConnection(new PDO('sqlite::memory:'), '', '', ['name' => 'no-manager']);
     $connection->setEventDispatcher(new Dispatcher);
     $connection->beginTransaction();
     $calls = 0;
-    expect(fn () => app(UploadTransactions::class)->register($connection, function () use (&$calls) {
+    app(UploadTransactions::class)->register($connection, function () use (&$calls) {
         $calls++;
     }, function () use (&$calls) {
         $calls++;
-    }))->toThrow(RuntimeException::class);
+    });
     $connection->rollBack();
-    expect($calls)->toBe(0);
+    expect($calls)->toBe(1);
 });
 
-it('rejects registration outside a transaction before an immediate native callback can run', function () {
+it('rejects registration outside a transaction', function () {
     $connection = uploadTransactionConnection(new DatabaseTransactionsManager);
     $calls = 0;
     expect(fn () => app(UploadTransactions::class)->register($connection, function () use (&$calls) {
@@ -180,3 +180,62 @@ it('does not reclassify committed operations when the cleanup reporter rolls bac
     $connection->commit();
     expect($calls)->toBe(['first commit', 'later commit']);
 })->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class]);
+
+it('waits for the owning outcome when another connection sharing the manager finishes first', function ($managerClass, $otherCommit, $ownCommit) {
+    $manager = new $managerClass;
+    $a = uploadTransactionConnection($manager, 'a');
+    $b = uploadTransactionConnection($manager, 'b');
+    $calls = [];
+    $a->beginTransaction();
+    $b->beginTransaction();
+    app(UploadTransactions::class)->register($a, function () use (&$calls) {
+        $calls[] = 'a commit';
+    }, function () use (&$calls) {
+        $calls[] = 'a rollback';
+    });
+    $otherCommit ? $b->commit() : $b->rollBack();
+    expect($calls)->toBe([]);
+    $ownCommit ? $a->commit() : $a->rollBack();
+    expect($calls)->toBe([$ownCommit ? 'a commit' : 'a rollback']);
+})->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class])->with([true, false])->with([true, false]);
+
+it('uses owning events after a connection manager is silently replaced during a transaction', function () {
+    $old = new DatabaseTransactionsManager;
+    $a = uploadTransactionConnection($old, 'a');
+    $a->beginTransaction();
+    $a->setTransactionManager(new Laravel12TransactionsManager);
+    $b = uploadTransactionConnection($old, 'b');
+    $b->beginTransaction();
+    $calls = [];
+    app(UploadTransactions::class)->register($a, function () use (&$calls) {
+        $calls[] = 'commit';
+    }, function () use (&$calls) {
+        $calls[] = 'rollback';
+    });
+    $b->commit();
+    expect($calls)->toBe([]);
+    $a->rollBack();
+    expect($calls)->toBe(['rollback']);
+});
+
+it('uses the owning public outcome when another transaction finishes between physical outcome and its event', function ($managerClass, $commit) {
+    $manager = new $managerClass;
+    $a = uploadTransactionConnection($manager, 'a');
+    $b = uploadTransactionConnection($manager, 'b');
+    $calls = [];
+    $a->beginTransaction();
+    $aRecord = $manager->getPendingTransactions()->last();
+    $b->beginTransaction();
+    app(UploadTransactions::class)->register($a, function () use (&$calls) {
+        $calls[] = 'commit';
+    }, function () use (&$calls) {
+        $calls[] = 'rollback';
+    });
+    $between = function () use ($b, $commit, &$calls) {
+        $commit ? $b->rollBack() : $b->commit();
+        expect($calls)->toBe([]);
+    };
+    $commit ? $aRecord->addCallback($between) : $aRecord->addCallbackForRollback($between);
+    $commit ? $a->commit() : $a->rollBack();
+    expect($calls)->toBe([$commit ? 'commit' : 'rollback']);
+})->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class])->with([true, false]);

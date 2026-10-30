@@ -667,8 +667,8 @@ cast, unless `saveUsing()` supplies their writer. Undeclared request metadata an
 
 Archival runs inside the model transaction before fill/save. It copies files and consumes token
 rows transactionally; outer rollback removes new copies and restores token eligibility. Actual
-outer commit deletes temporary files and removed old files. Cleanup uses native transaction callbacks plus an operation-scoped connection-event fallback
-for Laravel12 committed-child rollbacks. Connection events must be enabled before archival;
+outer commit deletes temporary files and removed old files. Cleanup uses exact-connection lifecycle events for physical outer commit and rollback, including
+Laravel12 committed-child rollbacks; shared-manager native callbacks do not establish ownership. Connection events must be enabled before archival;
 an unsupported connection fails before any file mutation. Cleanup failures are reported through
 Laravel’s exception handler without changing a completed save outcome; operators must investigate
 and remove leftover files. Storage outages are not automatically recovered by this cleanup.

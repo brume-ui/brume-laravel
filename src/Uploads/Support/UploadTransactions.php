@@ -10,7 +10,7 @@ use Illuminate\Database\Events\TransactionRolledBack;
 use LogicException;
 use WeakMap;
 
-/** Operation-owned cleanup also covers Laravel12's discarded committed-child rollback callbacks. */
+/** Exact-connection lifecycle events are authoritative; manager callbacks have no receiver affinity. */
 class UploadTransactions
 {
     protected WeakMap $dispatchers;
@@ -37,15 +37,7 @@ class UploadTransactions
         }
         $id = ++$this->sequence;
         $this->operations[$id] = ['connection' => $connection, 'level' => $connection->transactionLevel(), 'commit' => $commit, 'rollback' => $rollback];
-        try {
-            $connection->afterCommit(fn () => $this->finish($id, 'commit'));
-            if (method_exists($connection, 'afterRollBack')) {
-                $connection->afterRollBack(fn () => $this->finish($id, 'rollback'));
-            }
-        } catch (\Throwable $e) {
-            unset($this->operations[$id]);
-            throw $e;
-        }
+
     }
 
     protected function committed(Connection $connection): void
@@ -69,20 +61,6 @@ class UploadTransactions
     protected function matching(Connection $connection, ?int $aboveLevel = null): array
     {
         return array_keys(array_filter($this->operations, fn ($operation) => $operation['connection'] === $connection && ($aboveLevel === null || $operation['level'] > $aboveLevel)));
-    }
-
-    protected function finish(int $id, string $outcome): void
-    {
-        if (! isset($this->operations[$id])) {
-            return;
-        }
-        $connection = $this->operations[$id]['connection'];
-        $ids = match (true) {
-            $outcome === 'commit' && $connection->transactionLevel() === 0 => $this->matching($connection),
-            $outcome === 'rollback' => $this->matching($connection, $connection->transactionLevel()),
-            default => [$id],
-        };
-        $this->complete($ids, $outcome);
     }
 
     protected function complete(array $ids, string $outcome): void
