@@ -471,3 +471,16 @@ it('recomputes date display and canonical datetime raw values', function () {
     expect($item->fresh()->tags)->toBe(['custom']);
     expect(JsonSchema::errors($datetime->json(), 'CellUpdateResponse'))->toBe([]);
 });
+
+it('validates currency limits as amounts and stores exact configured scales', function ($scale) {
+    [$item] = cellItems();
+    cellRoutes(fn (Grid $grid) => $grid->column('note')->editable(Editor::currency(decimals: $scale), 'required|min:0|max:99999'));
+    foreach (['-1', '100000', '1e3', 'abc'] as $invalid) {
+        patchCell($item->id, ['column' => 'note', 'value' => $invalid])->assertUnprocessable()->assertJsonValidationErrors('note');
+    }
+    foreach (['0', '99999', '1280.5'] as $value) {
+        patchCell($item->id, ['column' => 'note', 'value' => $value])->assertOk();
+        $expected = $scale === 0 ? ($value === '1280.5' ? '1281' : $value) : ($value === '1280.5' ? '1280.50' : $value.'.00');
+        expect($item->fresh()->note)->toBe($expected);
+    }
+})->with([0, 2]);

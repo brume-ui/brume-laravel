@@ -351,3 +351,62 @@ it('keeps a new sibling separate from the delayed rollback of its predecessor', 
         ? ['next rollback', 'original rollback', 'outer commit']
         : ['original rollback', 'outer commit', 'next commit']);
 })->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class])->with(['commit', 'rollBack', 'open']);
+
+it('separates rolled back descendants when their native callback commits an ancestor', function ($depth, $listenerOutcome, $managerClass) {
+    $connection = uploadTransactionConnection(new $managerClass);
+    $connection->statement('create table outcomes (id integer)');
+    $calls = [];
+    if ($listenerOutcome !== 'none') {
+        // A host listener installed before Brume completes A while B's committed event is dispatching.
+        $connection->getEventDispatcher()->listen(TransactionCommitted::class, function () use ($connection) {
+            if ($connection->transactionLevel() === 1) {
+                $connection->commit();
+            }
+        });
+    }
+    foreach (range(1, $depth) as $id) {
+        $connection->beginTransaction();
+        $connection->insert('insert into outcomes values (?)', [$id]);
+        app(UploadTransactions::class)->register($connection,
+            function () use (&$calls, $id) {
+                $calls[] = $id.' commit';
+            },
+            function () use (&$calls, $id) {
+                $calls[] = $id.' rollback';
+            });
+    }
+    $connection->afterRollBack(fn () => $connection->commit());
+    $connection->rollBack();
+    while ($connection->transactionLevel() > 0) {
+        $connection->commit();
+    }
+    sort($calls);
+    $expected = array_map(fn ($id) => $id.($id === $depth ? ' rollback' : ' commit'), range(1, $depth));
+    expect($calls)->toBe($expected)
+        ->and(array_column($connection->select('select id from outcomes order by id'), 'id'))->toBe(range(1, $depth - 1));
+})->with([2, 3])->with(['none', 'commit'])->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class]);
+
+it('uses the durable ancestor outcome for a child commit delayed by a host event listener', function ($commit, $managerClass) {
+    $connection = uploadTransactionConnection(new $managerClass);
+    $connection->statement('create table outcomes (id integer)');
+    $calls = [];
+    $connection->getEventDispatcher()->listen(TransactionCommitted::class, function () use ($connection, $commit) {
+        if ($connection->transactionLevel() === 1) {
+            $commit ? $connection->commit() : $connection->rollBack();
+        }
+    });
+    foreach ([1, 2] as $id) {
+        $connection->beginTransaction();
+        $connection->insert('insert into outcomes values (?)', [$id]);
+        app(UploadTransactions::class)->register($connection,
+            function () use (&$calls, $id) {
+                $calls[] = $id.' commit';
+            },
+            function () use (&$calls, $id) {
+                $calls[] = $id.' rollback';
+            });
+    }
+    $connection->commit();
+    expect($calls)->toBe($commit ? ['1 commit', '2 commit'] : ['1 rollback', '2 rollback'])
+        ->and(array_column($connection->select('select id from outcomes order by id'), 'id'))->toBe($commit ? [1, 2] : []);
+})->with([true, false])->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class]);

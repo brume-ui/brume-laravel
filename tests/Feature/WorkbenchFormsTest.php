@@ -25,7 +25,12 @@ it('serves real order modal fields and persists normal and quick creates', funct
     $order = Order::query()->where('customer', '表單客戶')->firstOrFail();
     expect($order->number)->not->toBeEmpty();
     expect($order->note)->toBe('電話確認');
+    $before = Order::count();
+    $this->postJson('/admin/orders/_brume/quick-create', ['values' => ['customer' => '快速客戶']])
+        ->assertUnprocessable()->assertJsonValidationErrors('amount');
+    expect(Order::count())->toBe($before);
     $this->postJson('/admin/orders/_brume/quick-create', ['values' => ['customer' => '快速客戶', 'amount' => '80']])->assertOk();
+    expect(Order::query()->where('customer', '快速客戶')->firstOrFail()->amount)->toBe(80);
     expect(Order::query()->where('customer', '快速客戶')->firstOrFail()->status)->toBe('pending');
 });
 

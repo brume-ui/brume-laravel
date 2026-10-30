@@ -46,15 +46,20 @@ async function assertErrorInsideDialog(input: Locator) {
     expect(region.bottom).toBeLessThanOrEqual(metrics.body.bottom);
   }
 }
-async function geometry(page: Page) {
+async function geometry(page: Page, presentation: 'modal' | 'page') {
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     ),
   ).toBeLessThanOrEqual(0);
-  for (const name of ['取消', '儲存']) {
-    const button = page.getByRole('button', { name, exact: true });
-    const bounds = await button.evaluate((el) => {
+  const cancel = presentation === 'modal'
+    ? page.getByRole('dialog').getByRole('button', { name: '取消', exact: true })
+    : page.getByRole('link', { name: '回到列表', exact: true });
+  if (presentation === 'page')
+    await expect(cancel).toHaveAttribute('href', '/admin/grid-showcase');
+  for (const control of [cancel, page.getByRole('button', { name: '儲存', exact: true })]) {
+    await expect(control).toBeVisible();
+    const bounds = await control.evaluate((el) => {
       const text = el.querySelector('span') ?? el;
       const a = el.getBoundingClientRect(),
         b = text.getBoundingClientRect();
@@ -176,7 +181,18 @@ test('order edit keyboard navigation, dirty confirmation, cancel action and quic
   await page.getByRole('button', { name: '快速新增', exact: true }).click();
   const quick = page.getByRole('textbox', { name: '客戶', exact: true });
   await quick.fill('驗收快速客戶');
+  // Quick-create fields carry no initial-values object: both required inputs must be supplied.
+  const amount = page.getByRole('textbox', { name: '金額', exact: true });
   await quick.press('Enter');
+  await expect(amount).toHaveAttribute('aria-invalid', 'true');
+  await expect(amount).toBeFocused();
+  await amount.fill('80');
+  const created = page.waitForResponse((response) =>
+    response.request().method() === 'POST' &&
+    new URL(response.url()).pathname === '/admin/orders/_brume/quick-create',
+  );
+  await quick.press('Enter');
+  expect((await created).status()).toBe(200);
   await expect(page.locator('tbody tr').first()).toContainText('驗收快速客戶');
   const row = page.locator('tbody tr').first();
   await row.getByRole('button', { name: /更多操作/ }).click();
@@ -258,7 +274,8 @@ test('showcase page uploads, sorting, extras, unique errors and all new inline e
   await page.goto('/admin/grid-showcase?q=TASK22-E2E');
   row = page.locator('tbody tr').first();
   await row.getByRole('button', { name: /^編輯售價（NT\$）：/ }).click();
-  const price = row.getByRole('textbox', { name: '售價（NT$）', exact: true });
+  // Text editors stay in the row; NumberInput announces its visible currency prefix.
+  const price = row.getByRole('textbox', { name: '售價（NT$） NT$', exact: true });
   await price.fill('1280.5');
   await price.press('Enter');
   await expect(row).toContainText('1,280.50');
@@ -304,14 +321,14 @@ for (const viewport of [
         await assertErrorInsideDialog(
           page.getByRole('dialog').getByRole('textbox', { name: '客戶', exact: true }),
         );
-        await geometry(page);
+        await geometry(page, 'modal');
         expect(await axeViolations(page)).toEqual([]);
         await expect(page).toHaveScreenshot(`order-modal-errors-${scheme}-${viewport.name}.png`);
         await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
         await page.goto('/admin/grid-showcase/create');
         await save(page);
         await expect(page.getByRole('textbox', { name: '品名', exact: true })).toBeFocused();
-        await geometry(page);
+        await geometry(page, 'page');
         for (const name of ['上市日', '期間（起）', '期間（迄）']) {
           const native = page.getByLabel(name, { exact: true });
           const bounds = await native.evaluate((el) => ({
@@ -328,7 +345,7 @@ for (const viewport of [
         });
         await gallery(page);
         await page.getByRole('heading', { name: '媒體', exact: true }).scrollIntoViewIfNeeded();
-        await geometry(page);
+        await geometry(page, 'page');
         expect(await axeViolations(page)).toEqual([]);
         await expect(page).toHaveScreenshot(`showcase-uploads-${scheme}-${viewport.name}.png`, {
           fullPage: true,

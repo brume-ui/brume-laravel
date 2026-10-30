@@ -430,12 +430,9 @@ to the login page; paths outside the prefix are left to Laravel.
 
 These are planned for later sub-plans and phases:
 
-- **Quick create** from the list: needs the forms of sub-plan 2.
-- **Actions with input fields** (a refund reason, ...): sub-plan 2.
 - **The SelectTable / MultipleSelectTable picker dialog** for filters: sub-plan 3. Until then, use
   the remote-search `select` / `multipleSelect` filters, which do the same job.
-- **Inline editors for dates, money, tags and custom fields**: they need the field registry of
-  sub-plan 2 and the custom registry of sub-plan 3.
+- **Custom inline editors**: need the custom registry of sub-plan 3.
 - **Relation pickers, Repeater/Nested forms, declarative dependent fields, dependent/remote form
   options, generic one-value/multiple-column fields (addresses), and custom React field/display
   registration**: sub-plan 3.

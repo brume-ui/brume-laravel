@@ -24,14 +24,24 @@ class DateRange extends Date
             $value = ['start' => null, 'end' => null];
         }
         foreach (['start' => $this->startColumn, 'end' => $this->endColumn] as $bound => $column) {
-            if (is_array($value) && array_key_exists($bound, $value)) {
-                $item = $value[$bound];
+            if (is_array($value)) {
+                $item = $value[$bound] ?? null;
                 if ($this->type() === 'datetimeRange' && is_string($item)) {
                     $item = str_replace('T', ' ', $item).':00';
                 }
                 (new Field($column))->fill($record, $item);
             }
         }
+    }
+
+    protected function extraAttributes(mixed $stored): array
+    {
+        return [$this->startColumn => $stored['start'] ?? null, $this->endColumn => $stored['end'] ?? null];
+    }
+
+    protected function extraStoredValue(Model $record): mixed
+    {
+        return ['start' => data_get($record, $this->startColumn), 'end' => data_get($record, $this->endColumn)];
     }
 
     public function type(): string

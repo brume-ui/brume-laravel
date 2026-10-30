@@ -1,5 +1,5 @@
 {
   "repository": "brume-ui/brume-ui",
-  "sha": "fbb019bb67bf2a7bc556ed0a2b917aafee0606f5",
+  "sha": "c164379163e6e93cf9278d35e84364b322e303fc",
   "purpose": "Phase 2 prepublication workbench acceptance; restore published-package E2E after alpha12."
 }

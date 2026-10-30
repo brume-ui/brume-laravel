@@ -112,7 +112,7 @@ final class Editor
                 ...(isset($editor['max']) ? ['max:'.$editor['max']] : []),
             ]],
             'date' => [$key => ['date_format:'.(($editor['withTime'] ?? false) ? 'Y-m-d\\TH:i' : 'Y-m-d')]],
-            'currency' => [$key => ['regex:/^[+-]?[0-9]+(?:\.[0-9]*)?$/D']],
+            'currency' => [$key => ['numeric', 'regex:/^[+-]?[0-9]+(?:\.[0-9]*)?$/D']],
             'tags' => [$key => ['array', 'list'], $key.'.*' => ['string']],
             default => [$key => [
                 $this->textRule(),

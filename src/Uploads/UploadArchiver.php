@@ -93,7 +93,8 @@ class UploadArchiver
                     $validated = FormValidator::validateFields($extraFields, $extraInput, $form->record(), $record);
                     foreach ($extraFields as $extraPath => $extraField) {
                         if (Arr::has($validated, $extraPath)) {
-                            $extra[$extraField->name()] = Arr::get($validated, $extraPath);
+                            $name = $extraField->name();
+                            $extra[$name] = $extraField->storeExtraValue(Arr::get($validated, $extraPath), $extra[$name] ?? null);
                         }
                     }
                 }
@@ -146,16 +147,7 @@ class UploadArchiver
 
     protected function cleanup(array $files): void
     {
-        foreach ($files as [$disk, $path]) {
-            try {
-                $filesystem = Storage::disk($disk);
-                if ($filesystem->exists($path) && ! $filesystem->delete($path) && $filesystem->exists($path)) {
-                    throw new \RuntimeException('Unable to clean upload file: '.$path);
-                }
-            } catch (\Throwable $e) {
-                report($e);
-            }
-        }
+        app(StoredUploadCleanup::class)->deleteFiles($files);
     }
 
     protected function safePath(string $path): bool

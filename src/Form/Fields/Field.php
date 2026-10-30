@@ -342,6 +342,50 @@ class Field
         $record->forceFill([$path => $value]);
     }
 
+    /** Convert one declared extra value using the same writer as a root field. */
+    public function storeExtraValue(mixed $value, mixed $stored): mixed
+    {
+        $record = $this->extraRecord($stored);
+        $this->fill($record, $value);
+
+        return $this->extraStoredValue($record);
+    }
+
+    public function extraValueFor(mixed $stored): mixed
+    {
+        return $this->valueFor($this->extraRecord($stored));
+    }
+
+    protected function extraAttributes(mixed $stored): array
+    {
+        return [$this->attributeName() => $stored];
+    }
+
+    protected function extraStoredValue(Model $record): mixed
+    {
+        return data_get($record, $this->attributeName());
+    }
+
+    /** Storage context only: editability always uses the real nullable root record. */
+    protected function extraRecord(mixed $stored): Model
+    {
+        $record = new class extends Model
+        {
+            public function getAttribute($key)
+            {
+                return (string) $key === '0' ? $this->getAttributeValue($key) : parent::getAttribute($key);
+            }
+        };
+        foreach ($this->extraAttributes($stored) as $column => $value) {
+            if (str_contains((string) $column, '.')) {
+                $record->mergeCasts([explode('.', $column, 2)[0] => 'array']);
+            }
+            (new Field((string) $column))->fill($record, $value);
+        }
+
+        return $record;
+    }
+
     public function toSchema(?Model $record = null): array
     {
         $rules = $this->isEditable($record) ? ClientRules::for($this, $this->path(), $record) : [];

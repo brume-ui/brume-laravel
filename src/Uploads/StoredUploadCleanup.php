@@ -4,6 +4,7 @@ namespace Brume\Uploads;
 
 use Brume\Form\Fields\Upload;
 use Brume\Form\Form;
+use Brume\Uploads\Support\UploadTransactions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
@@ -34,13 +35,27 @@ final class StoredUploadCleanup
 
     public function afterHardDelete(Model $record, array $files): void
     {
-        if (method_exists($record, 'isForceDeleting') && ! $record->isForceDeleting()) {
+        if ($files === [] || method_exists($record, 'isForceDeleting') && ! $record->isForceDeleting()) {
             return;
         }
-        $record->getConnection()->afterCommit(function () use ($files) {
-            foreach ($files as [$disk, $path]) {
-                Storage::disk($disk)->delete($path);
+        app(UploadTransactions::class)->register($record->getConnection(),
+            fn () => $this->deleteFiles($files),
+            fn () => null,
+        );
+    }
+
+    /** A completed database operation must not become a failed request on storage errors. */
+    public function deleteFiles(array $files): void
+    {
+        foreach ($files as [$disk, $path]) {
+            try {
+                $filesystem = Storage::disk($disk);
+                if ($filesystem->exists($path) && ! $filesystem->delete($path) && $filesystem->exists($path)) {
+                    throw new \RuntimeException('Unable to clean upload file: '.$path);
+                }
+            } catch (\Throwable $e) {
+                report($e);
             }
-        });
+        }
     }
 }

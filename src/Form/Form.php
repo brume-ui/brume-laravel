@@ -160,6 +160,12 @@ class Form implements Renderable, Responsable
         return $this;
     }
 
+    /** Only saving promises mutable values; other hooks retain their value-only contract. */
+    public function fireSaving(Model $record, array &$values): mixed
+    {
+        return isset($this->hooks['saving']) ? ($this->hooks['saving'])($record, $values) : null;
+    }
+
     public function fire(string $event, mixed ...$arguments): mixed
     {
         return isset($this->hooks[$event]) ? ($this->hooks[$event])(...$arguments) : null;

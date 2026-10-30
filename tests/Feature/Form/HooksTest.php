@@ -4,10 +4,13 @@ use Brume\Form\Form;
 use Brume\Form\FormSaver;
 use Brume\Form\UploadArchiver;
 use Brume\Grid\Actions\Feedback;
+use Brume\Grid\Grid;
 use Brume\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\ValidationException;
 
 class FormSaveRecord extends Model
 {
@@ -182,4 +185,67 @@ it('retains null-context create editability and ignores locked edit and disabled
     $record->save();
     (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['amount' => 'forged edit', 'file' => 'forged edit']]));
     expect($record->fresh()->amount)->toBe('accepted create')->and($record->fresh()->file)->toBe('original');
+});
+
+class RangeRoundTripResource extends Brume\Resource\Resource
+{
+    protected string $model = FormSaveRecord::class;
+
+    public static string $rangeType = 'dateRange';
+
+    protected function grid(Grid $grid): void
+    {
+        $grid->column('id');
+    }
+
+    protected function form(Form $form): void
+    {
+        $form->{self::$rangeType}('period', 'Period', 'starts_at', 'ends_at');
+    }
+}
+
+it('replaces submitted range bounds through HTTP while retaining an omitted whole field', function ($type, $clear) {
+    $this->actingAs(brumeUser(), 'brume');
+    RangeRoundTripResource::$rangeType = $type;
+    Route::middleware('web')->group(fn () => Route::brumeResource('range-records', RangeRoundTripResource::class));
+    Route::getRoutes()->refreshNameLookups();
+    $start = $type === 'dateRange' ? '2026-01-01' : '2026-01-01T10:00';
+    $end = $type === 'dateRange' ? '2026-01-02' : '2026-01-02T11:00';
+    $record = FormSaveRecord::create(['starts_at' => str_replace('T', ' ', $start), 'ends_at' => str_replace('T', ' ', $end)]);
+    $bounds = array_diff_key(['start' => $start, 'end' => $end], array_flip($clear));
+    $this->putJson('/range-records/'.$record->id, ['values' => ['period' => (object) $bounds]])->assertOk();
+    $expected = ['start' => $bounds['start'] ?? null, 'end' => $bounds['end'] ?? null];
+    $this->get('/range-records/'.$record->id.'/edit', ['X-Brume-Form' => '1'])->assertOk()->assertJsonPath('page.values.period', $expected);
+    $this->putJson('/range-records/'.$record->id, ['values' => []])->assertOk();
+    $this->get('/range-records/'.$record->id.'/edit', ['X-Brume-Form' => '1'])->assertOk()->assertJsonPath('page.values.period', $expected);
+})->with(['dateRange', 'datetimeRange'])->with([[['start']], [['end']], [['start', 'end']]]);
+
+it('passes reference saving transformations through archive and field writers after validation', function () {
+    $record = FormSaveRecord::create();
+    $form = Form::make(FormSaveRecord::class)->urls(fn () => ['edit' => '/records/1']);
+    $form->text('amount')->required();
+    $form->file('file');
+    $events = [];
+    $form->submitted(function ($values) use (&$events) {
+        $events[] = 'submitted';
+    });
+    $form->saving(function ($record, &$values) use (&$events) {
+        $events[] = 'saving';
+        $values['amount'] = 'normalized';
+        $values['file'] = ['token' => str_repeat('b', 40)];
+    });
+    app()->instance(UploadArchiver::class, new class extends UploadArchiver
+    {
+        public function archive(Form $form, Model $record, array &$values): void
+        {
+            expect($values['amount'])->toBe('normalized')->and($values['file']['token'])->toBe(str_repeat('b', 40));
+            $values['file'] = 'final/transformed.pdf';
+        }
+    });
+
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['amount' => 'original']]));
+    expect($record->fresh()->amount)->toBe('normalized')->and($record->fresh()->file)->toBe('final/transformed.pdf')->and($events)->toBe(['submitted', 'saving']);
+    $events = [];
+    expect(fn () => (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => []])))->toThrow(ValidationException::class);
+    expect($events)->toBe(['submitted']);
 });

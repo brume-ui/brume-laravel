@@ -36,7 +36,7 @@ class FormSaver
         $connection = $record->getConnection();
         $connection->beginTransaction();
         try {
-            $feedback = $form->fire('saving', $record, $values);
+            $feedback = $form->fireSaving($record, $values);
             if ($feedback instanceof Feedback) {
                 $connection->rollBack();
 

@@ -2,7 +2,9 @@
 
 use Brume\Form\Form;
 use Brume\Form\FormSaver;
+use Brume\Grid\Actions\Feedback;
 use Brume\Models\User;
+use Brume\Resource\ResourceDeletion;
 use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\Laravel12TransactionsManager;
 use Brume\Uploads\TempUpload;
@@ -16,6 +18,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -760,3 +763,175 @@ it('preserves a committed final upload when a native callback rolls back the nex
     expect(Storage::disk('local')->allFiles())->toBe([]);
     expect($connection->table('brume_uploads')->count())->toBe(0);
 })->with([DatabaseTransactionsManager::class, Laravel12TransactionsManager::class]);
+
+it('restores old and temporary upload inventory when inner rollback callback commits its ancestor', function () {
+    Storage::fake('local');
+    Storage::fake('public');
+    $this->actingAs(brumeUser(), 'brume');
+    $record = physicalUploadRecord('old/a.png');
+    Storage::disk('public')->put('old/a.png', 'old');
+    $connection = $record->getConnection();
+    $form = Form::make($record->newQuery())->id('ancestor-files')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $field = $form->image('images');
+    $upload = app(TempUploads::class)->store(UploadedFile::fake()->image('a.png'), $form, 'images', $field);
+    $temporary = $connection->table('brume_uploads')->value('path');
+    $connection->beginTransaction();
+    $connection->beginTransaction();
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $upload['token']]]]));
+    $new = $record->images;
+    $connection->afterRollBack(fn () => $connection->commit());
+    $connection->rollBack();
+    expect($connection->transactionLevel())->toBe(0)->and($record->fresh()->images)->toBe('old/a.png');
+    Storage::disk('public')->assertExists('old/a.png');
+    Storage::disk('public')->assertMissing($new);
+    Storage::disk('local')->assertExists($temporary);
+    expect(app(TempUploads::class)->claim($upload['token'], $form, 'images'))->not->toBeNull();
+});
+
+it('round trips range and password extras through field storage for new and reordered retained uploads', function ($multiple) {
+    Storage::fake('local');
+    Storage::fake('public');
+    $this->actingAs(brumeUser(), 'brume');
+    $record = uploadRecord();
+    $form = Form::make(UploadRecord::class)->id('extra-storage')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $field = $form->{$multiple ? 'multipleImage' : 'image'}('images')->extra(function ($extra) {
+        $extra->dateRange('period', 'Period', 'starts_at', 'ends_at');
+        $extra->datetimeRange('window', 'Window', 'opened_at', 'closed_at');
+        $extra->password('password')->attribute('secret');
+        $extra->text('caption')->attribute('label')->saveUsing(fn ($r, $value) => $r->label = strtoupper($value));
+    });
+    $extra = ['period' => ['start' => '2026-01-01', 'end' => '2026-01-02'], 'window' => ['start' => '2026-01-01T10:00', 'end' => '2026-01-02T11:00'], 'password' => 'first-secret', 'caption' => 'caption'];
+    $newItem = function ($suffix, $metadata) use ($form, $field) {
+        $upload = app(TempUploads::class)->store(UploadedFile::fake()->image($suffix.'.png'), $form, 'images', $field);
+
+        return ['token' => $upload['token'], 'extra' => $metadata];
+    };
+    $items = [$newItem('first', $extra)];
+    if ($multiple) {
+        $items[] = $newItem('second', array_replace($extra, ['password' => 'second-secret']));
+    }
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => $multiple ? $items : $items[0]]]));
+    $stored = $multiple ? $record->fresh()->images : [$record->fresh()->images];
+    $hash = $stored[0]['extra']['password'];
+    expect(Hash::check('first-secret', $hash))->toBeTrue()->and($stored[0]['extra']['caption'])->toBe('CAPTION');
+    $read = $field->valueFor($record->fresh());
+    $read = $multiple ? $read : [$read];
+    expect((array) $read[0]['extra'])->toBe(array_replace($extra, ['password' => '', 'caption' => 'CAPTION']));
+    $retained = ['path' => $stored[0]['path'], 'extra' => ['password' => '', 'period' => ['end' => '2026-01-03'], 'window' => []]];
+    $items = [$retained];
+    if ($multiple) {
+        $items = [['path' => $stored[1]['path'], 'extra' => ['password' => '']], $retained, $newItem('third', $extra)];
+    }
+    (new FormSaver)->save($form, $record->fresh(), Request::create('/', 'PUT', ['values' => ['images' => $multiple ? $items : $items[0]]]));
+    $stored = $multiple ? $record->fresh()->images : [$record->fresh()->images];
+    $index = $multiple ? 1 : 0;
+    expect($stored[$index]['extra']['password'])->toBe($hash);
+    $read = $field->valueFor($record->fresh());
+    $read = $multiple ? $read : [$read];
+    expect((array) $read[$index]['extra'])->toMatchArray(['period' => ['start' => null, 'end' => '2026-01-03'], 'window' => ['start' => null, 'end' => null], 'password' => '']);
+    if ($multiple) {
+        expect(Hash::check('second-secret', $stored[0]['extra']['password']))->toBeTrue()
+            ->and(Hash::check('first-secret', $stored[2]['extra']['password']))->toBeTrue();
+    }
+})->with([false, true]);
+
+it('binds resource hard delete cleanup to its owning connection despite a hook opening another shared transaction', function ($cancel) {
+    Storage::fake('public');
+    $first = physicalUploadRecord('old/a.png');
+    $second = $first->newQuery()->create(['images' => 'old/b.png']);
+    foreach (['old/a.png', 'old/b.png'] as $path) {
+        Storage::disk('public')->put($path, 'old');
+    }
+    config(['database.connections.delete_other' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
+    $manager = new DatabaseTransactionsManager;
+    $a = $first->getConnection();
+    $b = DB::connection('delete_other');
+    $a->setTransactionManager($manager);
+    $b->setTransactionManager($manager);
+    try {
+        $result = app(ResourceDeletion::class)->run(collect([$first, $second]), function ($record) use ($first, $b, $cancel) {
+            $form = Form::make($record->newQuery())->forRecord($record);
+            $form->file('images')->readOnly();
+            $form->deleting(function ($record) use ($first, $b, $cancel) {
+                $record->images = 'forged/path.png';
+                if ($record->id === $first->id) {
+                    $b->beginTransaction();
+                } elseif ($cancel) {
+                    return Feedback::toast('warning', 'cancel');
+                }
+            });
+
+            return $form;
+        });
+        expect($a->table('upload_records')->count())->toBe($cancel ? 2 : 0)
+            ->and(Storage::disk('public')->allFiles())->toBe($cancel ? ['old/a.png', 'old/b.png'] : []);
+        $b->commit();
+        expect(Storage::disk('public')->allFiles())->toBe($cancel ? ['old/a.png', 'old/b.png'] : []);
+    } finally {
+        if ($b->transactionLevel() > 0) {
+            $b->rollBack(0);
+        }
+        DB::purge('delete_other');
+    }
+})->with([true, false]);
+
+it('reports each failed hard delete cleanup and continues after durable resource deletion', function () {
+    $record = physicalUploadRecord(['old/throw.png', 'old/false.png', 'old/ok.png']);
+    $disk = new class
+    {
+        public array $deleted = [];
+
+        public function exists($path)
+        {
+            return true;
+        }
+
+        public function delete($path)
+        {
+            $this->deleted[] = $path;
+            if ($path === 'old/throw.png') {
+                throw new RuntimeException('storage failure');
+            }
+
+            return $path !== 'old/false.png';
+        }
+    };
+    Storage::shouldReceive('disk')->with('public')->andReturn($disk);
+    $reporter = Mockery::mock(ExceptionHandler::class);
+    $reporter->shouldReceive('report')->twice()->with(Mockery::type(RuntimeException::class));
+    app()->instance(ExceptionHandler::class, $reporter);
+    $result = app(ResourceDeletion::class)->run(collect([$record]), function ($record) {
+        $form = Form::make($record->newQuery())->forRecord($record);
+        $form->multipleFile('images')->disabled();
+
+        return $form;
+    });
+    expect($result)->toBe(1)->and($record->fresh())->toBeNull()
+        ->and($disk->deleted)->toBe(['old/throw.png', 'old/false.png', 'old/ok.png']);
+});
+
+it('archives a saving hook transformed token and preserves it when saving cancels', function ($cancel) {
+    Storage::fake('local');
+    Storage::fake('public');
+    $this->actingAs(brumeUser(), 'brume');
+    $record = physicalUploadRecord('old/file.txt');
+    Storage::disk('public')->put('old/file.txt', 'old');
+    $form = Form::make($record->newQuery())->id('hook-files')->forRecord($record)->urls(fn () => ['edit' => '/images/1']);
+    $field = $form->file('images')->accept(['text/plain']);
+    $first = app(TempUploads::class)->store(UploadedFile::fake()->createWithContent('first.txt', 'first content'), $form, 'images', $field);
+    $second = app(TempUploads::class)->store(UploadedFile::fake()->createWithContent('second.txt', 'second content'), $form, 'images', $field);
+    $form->saving(function ($record, &$values) use ($second, $cancel) {
+        $values['images'] = ['token' => $second['token']];
+
+        return $cancel ? Feedback::toast('warning', 'cancel') : null;
+    });
+    $result = (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['images' => ['token' => $first['token']]]]));
+    expect(Storage::disk('public')->get($record->fresh()->images))->toBe($cancel ? 'old' : 'second content')
+        ->and(app(TempUploads::class)->claim($first['token'], $form, 'images'))->not->toBeNull();
+    if ($cancel) {
+        expect($result['cancelled'])->toBeTrue()->and(app(TempUploads::class)->claim($second['token'], $form, 'images'))->not->toBeNull();
+    } else {
+        expect(app(TempUploads::class)->claim($second['token'], $form, 'images'))->toBeNull();
+        Storage::disk('public')->assertMissing('old/file.txt');
+    }
+})->with([false, true]);

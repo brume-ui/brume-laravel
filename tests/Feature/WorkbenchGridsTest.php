@@ -67,15 +67,27 @@ it('ships paid orders and leaves the others', function () {
 
 it('validates Grid 示範 against PageEnvelope, plain and with every filter applied', function (array $query) {
     $owner = brumeUser(['username' => 'owner', 'name' => '林負責']);
-    ShowcaseItem::factory()->count(25)->create(['owner_id' => $owner->id]);
-
+    $values = ['owner_id' => $owner->id, 'tags' => ['gift'], 'channels' => ['web'], 'meta' => ['color' => 'teal'],
+        'stock' => 10, 'released_at' => '2026-06-01', 'note' => '週末補貨', 'description' => '手工製作',
+        'category' => 'kitchen', 'status' => 'paid', 'warehouse' => 'taipei', 'price' => '200.00',
+        'progress' => 50, 'rating' => 4, 'views' => 100];
+    $matching = ShowcaseItem::factory()->create($values);
+    $excluded = ShowcaseItem::factory()->create(array_replace($values, ['tags' => ['eco'], 'category' => 'stationery']));
+    if (isset($query['filter']['owner'])) {
+        $query['filter']['owner'] = $query['filter']['owner_id'] = (string) $owner->id;
+    }
     $envelope = workbenchEnvelope('/admin/grid-showcase?'.http_build_query($query));
 
     expect(JsonSchema::errors($envelope, 'PageEnvelope'))->toBe([]);
+    $ids = array_column($envelope['page']['rows'], 'id');
+    expect($ids)->toContain($matching->id);
+    if ($query !== []) {
+        expect($ids)->not->toContain($excluded->id);
+    }
 })->with([
     'defaults' => [[]],
     'panel filters' => [['filter' => [
-        'tags' => ['gift'], 'channels' => ['web'], 'color' => 'teal', 'stock_rule' => ['op' => 'gt', 'value' => '5'],
+        'tags' => 'gift', 'channels' => ['web'], 'color' => 'teal', 'stock_rule' => ['op' => 'gt', 'value' => '5'],
         'owner' => '2', 'released' => ['start' => '2026-01-01', 'end' => '2026-12-31'], 'owner_id' => '2',
     ]]],
     'header filters' => [['filter' => [

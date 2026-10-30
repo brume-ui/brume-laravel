@@ -41,7 +41,7 @@ class UploadTransactions
             $this->dispatchers[$dispatcher] = true;
         }
         if (! isset($this->connections[$connection])) {
-            $this->connections[$connection] = ['frames' => [], 'pending' => []];
+            $this->connections[$connection] = ['frames' => [], 'pending' => [], 'outcomes' => []];
             for ($level = 0; $level < $connection->transactionLevel(); $level++) {
                 $this->connections[$connection]['frames'][] = ++$this->sequence;
             }
@@ -76,31 +76,64 @@ class UploadTransactions
         }
         $state = $this->connections[$connection];
         $level = $connection->transactionLevel();
+        if ($outcome === 'commit' && count($state['frames']) > $level + 1) {
+            // A commit decrements exactly one level. Higher vanished frames belong
+            // to delayed descendant events, never to this ancestor's commit.
+            $state['pending'][] = [
+                'frames' => array_splice($state['frames'], $level + 1),
+                'parent' => $state['frames'][$level] ?? null,
+            ];
+        }
         if ($level < count($state['frames'])) {
             $batch = [
                 'frames' => array_splice($state['frames'], $level),
                 'parent' => $state['frames'][$level - 1] ?? null,
             ];
         } else {
-            // Reentrant completions unwind in reverse order. An unchanged level
-            // means this event belongs to the detached predecessor, not its successor.
             $batch = array_pop($state['pending']);
+            if ($outcome === 'commit' && $batch !== null && count($batch['frames']) > 1) {
+                // Reentrant ancestor events unwind before their descendants. Only
+                // the outermost detached frame belongs to this commit event.
+                $frame = array_shift($batch['frames']);
+                $state['pending'][] = ['frames' => $batch['frames'], 'parent' => $frame];
+                $batch['frames'] = [$frame];
+            }
         }
+        if ($batch === null) {
+            return;
+        }
+        $parent = $batch['parent'];
+        while ($parent !== null && isset($state['outcomes'][$parent]) && is_int($state['outcomes'][$parent])) {
+            $parent = $state['outcomes'][$parent];
+        }
+        $terminal = $outcome === 'rollback' ? 'rollback' : ($state['outcomes'][$parent] ?? ($parent === null ? 'commit' : null));
+        foreach ($batch['frames'] as $frame) {
+            $state['outcomes'][$frame] = $terminal ?? $parent;
+        }
+        $ids = array_keys(array_filter($this->operations, fn ($operation) => in_array($operation['frame'], $batch['frames'], true)));
+        if ($terminal === null) {
+            foreach ($ids as $id) {
+                $this->operations[$id]['frame'] = $parent;
+            }
+        }
+        // Retain only ancestor outcomes referenced by delayed batches. Ordinary
+        // sibling savepoints cannot grow an unbounded history inside a long root.
+        $needed = [];
+        foreach ($state['pending'] as $pending) {
+            $ancestor = $pending['parent'];
+            while ($ancestor !== null && isset($state['outcomes'][$ancestor]) && ! isset($needed[$ancestor])) {
+                $needed[$ancestor] = $state['outcomes'][$ancestor];
+                $ancestor = is_int($needed[$ancestor]) ? $needed[$ancestor] : null;
+            }
+        }
+        $state['outcomes'] = $needed;
         if ($state['frames'] === [] && $state['pending'] === []) {
             unset($this->connections[$connection]);
         } else {
             $this->connections[$connection] = $state;
         }
-        if ($batch === null) {
-            return;
-        }
-        $ids = array_keys(array_filter($this->operations, fn ($operation) => in_array($operation['frame'], $batch['frames'], true)));
-        if ($outcome === 'commit' && $batch['parent'] !== null) {
-            foreach ($ids as $id) {
-                $this->operations[$id]['frame'] = $batch['parent'];
-            }
-        } else {
-            $this->complete($ids, $outcome);
+        if ($terminal !== null) {
+            $this->complete($ids, $terminal);
         }
     }
 
