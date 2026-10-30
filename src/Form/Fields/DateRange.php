@@ -13,6 +13,27 @@ class DateRange extends Date
         self::assertPath($endColumn);
     }
 
+    public function fill(Model $record, mixed $value): void
+    {
+        if ($this->writer !== null) {
+            parent::fill($record, $value);
+
+            return;
+        }
+        if ($value === null) {
+            $value = ['start' => null, 'end' => null];
+        }
+        foreach (['start' => $this->startColumn, 'end' => $this->endColumn] as $bound => $column) {
+            if (is_array($value) && array_key_exists($bound, $value)) {
+                $item = $value[$bound];
+                if ($this->type() === 'datetimeRange' && is_string($item)) {
+                    $item = str_replace('T', ' ', $item).':00';
+                }
+                (new Field($column))->fill($record, $item);
+            }
+        }
+    }
+
     public function type(): string
     {
         return 'dateRange';

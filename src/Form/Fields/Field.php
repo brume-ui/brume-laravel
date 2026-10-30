@@ -317,6 +317,31 @@ class Field
         return $this;
     }
 
+    public function fill(Model $record, mixed $value): void
+    {
+        if ($this->writer !== null) {
+            ($this->writer)($record, $value);
+
+            return;
+        }
+        $path = $this->attributeName();
+        if (str_contains($path, '.')) {
+            [$root, $rest] = explode('.', $path, 2);
+            if (! $record->hasCast($root, ['array', 'json'])) {
+                throw new \LogicException('Embedded attribute requires an array or json cast: '.$root);
+            }
+            $object = $record->getAttribute($root) ?? [];
+            data_set($object, $rest, $value);
+            $record->forceFill([$root => $object]);
+
+            return;
+        }
+        if ($this->type() === 'datetime' && is_string($value)) {
+            $value = str_replace('T', ' ', $value).':00';
+        }
+        $record->forceFill([$path => $value]);
+    }
+
     public function toSchema(?Model $record = null): array
     {
         $rules = $this->isEditable($record) ? ClientRules::for($this, $this->path(), $record) : [];

@@ -51,6 +51,140 @@ class Form implements Renderable
 
     protected array $embeds = [];
 
+    protected array $hooks = [];
+
+    protected bool $initialized = false;
+
+    protected ?Closure $urlResolver = null;
+
+    protected ?Closure $viewResolver = null;
+
+    protected array $afterOptions = ['list', 'edit', 'create'];
+
+    protected string $afterDefault = 'list';
+
+    public function creating(Closure $fn): static
+    {
+        $this->hooks['creating'] = $fn;
+
+        return $this;
+    }
+
+    public function editing(Closure $fn): static
+    {
+        $this->hooks['editing'] = $fn;
+
+        return $this;
+    }
+
+    public function submitted(Closure $fn): static
+    {
+        $this->hooks['submitted'] = $fn;
+
+        return $this;
+    }
+
+    public function saving(Closure $fn): static
+    {
+        $this->hooks['saving'] = $fn;
+
+        return $this;
+    }
+
+    public function saved(Closure $fn): static
+    {
+        $this->hooks['saved'] = $fn;
+
+        return $this;
+    }
+
+    public function deleting(Closure $fn): static
+    {
+        $this->hooks['deleting'] = $fn;
+
+        return $this;
+    }
+
+    public function deleted(Closure $fn): static
+    {
+        $this->hooks['deleted'] = $fn;
+
+        return $this;
+    }
+
+    public function fire(string $event, mixed ...$arguments): mixed
+    {
+        return isset($this->hooks[$event]) ? ($this->hooks[$event])(...$arguments) : null;
+    }
+
+    public function urls(Closure $fn): static
+    {
+        $this->urlResolver = $fn;
+
+        return $this;
+    }
+
+    public function viewUrl(Closure $fn): static
+    {
+        $this->viewResolver = $fn;
+
+        return $this;
+    }
+
+    public function after(array $options = ['list', 'edit', 'create'], string $default = 'list'): static
+    {
+        foreach ($options as $option) {
+            $this->choice($option, ['list', 'edit', 'create', 'view']);
+        }
+        if ($options === [] || ! in_array($default, $options, true)) {
+            throw new InvalidArgumentException('After-save default must be an available option.');
+        }
+        $this->afterOptions = array_values(array_unique($options));
+        $this->afterDefault = $default;
+
+        return $this;
+    }
+
+    public function afterSchema(): array
+    {
+        $options = array_values(array_filter($this->afterOptions, fn ($option) => $option !== 'view' || $this->viewResolver !== null));
+        if ($options === []) {
+            throw new LogicException('After-save options require a view URL.');
+        }
+
+        return ['options' => $options, 'default' => in_array($this->afterDefault, $options, true) ? $this->afterDefault : $options[0]];
+    }
+
+    public function saveUrls(Model $record): array
+    {
+        return AfterSave::urls($this->urlResolver ? ($this->urlResolver)($record) : [], $this->viewResolver ? ($this->viewResolver)($record) : null);
+    }
+
+    public function assertSaveUrls(): void
+    {
+        if ($this->urlResolver === null) {
+            throw new LogicException('Configure Form::urls() with an edit URL before saving.');
+        }
+    }
+
+    public function initialize(): void
+    {
+        if ($this->initialized) {
+            return;
+        }
+        $this->initialized = true;
+        if ($this->record === null) {
+            $this->fire('creating', $this);
+        } else {
+            $this->fire('editing', $this->record, $this);
+        }
+    }
+
+    public function formName(): string
+    {
+        return $this->name;
+    }
+
     final public function __construct(protected Builder $query) {}
 
     public static function make(string|Builder $modelOrQuery): static
@@ -95,6 +229,9 @@ class Form implements Renderable
 
     public function forRecord(?Model $record): static
     {
+        if ($this->record !== $record) {
+            $this->initialized = false;
+        }
         $this->record = $record;
 
         return $this;
@@ -415,6 +552,7 @@ class Form implements Renderable
         if ($this->submit === null) {
             throw new LogicException('Configure Form::submitTo() before rendering.');
         }
+        $this->initialize();
         $values = [];
         foreach ($this->fields as $path => $field) {
             data_set($values, $path, $field->valueFor($this->record));
@@ -433,7 +571,7 @@ class Form implements Renderable
             'formId' => $request->route()?->getName() ?? $request->path(), 'name' => $this->name, 'mode' => $this->record === null ? 'create' : 'edit',
             'form' => ['layout' => $this->layout, 'nodes' => array_map(fn ($node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->toSchema($this->record)] : $node->toSchema($this->record), $this->nodes)] + ($this->tabs ? ['sections' => 'tabs'] : []),
             'values' => array_is_list($values) ? (object) $values : $values,
-            'submit' => $this->submit, 'after' => ['options' => ['list', 'edit', 'create'], 'default' => 'list'], 'presentation' => $presentation, 'size' => $size,
+            'submit' => $this->submit, 'after' => $this->afterSchema(), 'presentation' => $presentation, 'size' => $size,
         ];
         if ($this->description !== null) {
             $page['description'] = $this->description;
