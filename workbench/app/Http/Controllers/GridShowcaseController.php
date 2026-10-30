@@ -55,7 +55,7 @@ class GridShowcaseController extends Resource
         $form->section('銷售', function (Form $form) {
             $form->currency('price', '售價（NT$）')->decimals(2)->min(0)->required()->default('0.00');
             $form->number('stock', '庫存')->min(0)->required()->default(0);
-            $form->decimal('rating', '評分')->decimals(1)->min(0)->max(5)->default('0.0');
+            $form->decimal('rating', '評分')->decimals(1)->min(0)->max(5)->required()->default('0.0');
             $form->switch('is_active', '上架')->default(true);
             $form->tags('tags', '標籤')->options(ShowcaseItem::TAGS)->default([]);
             $form->date('released_at', '上市日')->required()->default('2026-10-31');
@@ -122,7 +122,7 @@ class GridShowcaseController extends Resource
             [
                 ['label' => '分類', 'value' => ShowcaseItem::CATEGORIES[$item->category]],
                 ['label' => '倉庫', 'value' => ShowcaseItem::WAREHOUSES[$item->warehouse]],
-                ['label' => '顏色', 'value' => ShowcaseItem::COLORS[$item->meta['color']][0]],
+                ['label' => '顏色', 'value' => ShowcaseItem::COLORS[$item->meta['color'] ?? ''][0] ?? '—'],
             ],
         ), '展開規格');
         $grid->column('story', '介紹')->display(fn () => '介紹')

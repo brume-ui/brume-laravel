@@ -88,3 +88,38 @@ it('archives demo cover gallery and documents and reloads exact gallery order an
     expect(array_column(array_column($loaded['gallery'], 'extra'), 'link'))->toBe(['https://example.test/second', 'https://example.test/first']);
     expect($loaded['cover']['url'])->toBeString();
 });
+
+it('returns a field error for a cleared showcase rating on a complete submission', function (string $mode) {
+    $item = $mode === 'edit' ? ShowcaseItem::factory()->create(['is_featured' => false, 'rating' => '3.5']) : null;
+    $url = $item === null ? '/admin/grid-showcase/create' : "/admin/grid-showcase/{$item->id}/edit";
+    $values = $this->getJson($url, ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
+    $values = array_replace($values, ['name' => '評分驗收商品', 'sku' => 'TASK22-NULL-RATING', 'slogan' => '完整表單', 'rating' => null]);
+    $before = ShowcaseItem::query()->count();
+    $response = $item === null
+        ? $this->postJson('/admin/grid-showcase', ['values' => $values])
+        : $this->putJson("/admin/grid-showcase/{$item->id}", ['values' => $values]);
+    $response->assertUnprocessable()->assertJsonValidationErrors('rating');
+    expect(array_keys($response->json('errors')))->toBe(['rating'])
+        ->and(ShowcaseItem::query()->count())->toBe($before);
+    if ($item !== null) {
+        expect($item->fresh()->rating)->toBe('3.5')->and($item->fresh()->sku)->toBe($item->sku);
+    }
+})->with(['create', 'edit']);
+
+it('saves an optional empty showcase color and serializes the actual grid reload', function (string $mode) {
+    $item = $mode === 'edit' ? ShowcaseItem::factory()->create(['is_featured' => false]) : null;
+    $url = $item === null ? '/admin/grid-showcase/create' : "/admin/grid-showcase/{$item->id}/edit";
+    $values = $this->getJson($url, ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
+    $values = array_replace($values, ['name' => '無顏色驗收商品', 'sku' => 'TASK22-NULL-COLOR', 'slogan' => '完整表單']);
+    $values['meta']['color'] = null;
+    $response = $item === null
+        ? $this->postJson('/admin/grid-showcase', ['values' => $values])
+        : $this->putJson("/admin/grid-showcase/{$item->id}", ['values' => $values]);
+    $id = $response->assertOk()->json('id');
+    expect(ShowcaseItem::findOrFail($id)->meta['color'])->toBeNull();
+    $page = $this->get('/admin/grid-showcase?q=TASK22-NULL-COLOR')->assertOk()->viewData('page')['props']['envelope']['page'];
+    expect($page['rows'])->toHaveCount(1)
+        ->and($page['rows'][0]['id'])->toBe($id)
+        ->and($page['rows'][0]['meta.color'])->toBeNull()
+        ->and($page['rows'][0]['_meta']['content']['specs']['rows'][2])->toBe(['label' => '顏色', 'value' => '—']);
+})->with(['create', 'edit']);
