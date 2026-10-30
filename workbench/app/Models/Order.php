@@ -4,6 +4,7 @@ namespace Workbench\App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use Workbench\Database\Factories\OrderFactory;
 
 /**
@@ -33,6 +34,15 @@ class Order extends Model
 
     /** Product categories, for the dashboard's 分類營收 chart. */
     public const CATEGORIES = ['服飾', '家居', '3C 周邊', '美妝', '食品', '運動'];
+
+    protected $attributes = ['amount' => 0, 'status' => 'pending', 'category' => '家居'];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Order $order) {
+            $order->number ??= 'BR-'.now()->format('Ymd').'-'.Str::upper((string) Str::ulid());
+        });
+    }
 
     protected function casts(): array
     {

@@ -467,20 +467,26 @@ What's in it:
 - **儀表板**: brume-react's chart components (`StatCard`, `LineChart`, `DonutChart`,
   `BarChart`) fed from the seeded orders: `DashboardController` computes the figures and passes
   them as props to the registered `KpiRow` and `ChartCard` components (`components/`).
-- **訂單**: the phase-2 Grid set up like an everyday list (`OrderController`, `Route::brumeGrid`)
+- **訂單**: the phase-2 Grid set up like an everyday list (`OrderController`, `Route::brumeResource`)
   over 60 seeded orders: newest first (`defaultSort`), quick search on number and customer,
   sortable 金額 and 建立時間, filters (狀態 select, 分類 multipleSelect, 金額 and 建立時間 ranges,
   a remote 客戶 select), the 本月 scope and a 狀態 selector, the status as a `label()` edited
   inline with a select, 「標記出貨」 shown on paid rows, 「顯示訂單編號」 and 刪除 in the ⋯ menu,
-  batch 標記出貨 and 刪除, and the Excel export. The order number links to a `#edit-{id}` stub
-  until the forms of sub-plan 2.
+  batch 標記出貨 and 刪除, and the Excel export. Create/edit open real modal forms; 客戶 is required
+  (50 characters), with currency 金額, 狀態, 分類 and 備註. After saving choose list, edit or create.
+  Open orders also have a 取消訂單 action requiring a reason; 快速新增 needs only 客戶 and 金額.
 - **Grid 示範** (`/admin/grid-showcase`, `GridShowcaseController`): 60 seeded `showcase_items`
   with every display, every inline editor (`switch` and `switchGroup` included), all 11
-  column-header filters, and panel filters for `findInSet` (tags), a JSON array (channels), a
+  column-header filters, and panel filters for JSON arrays (tags and channels), a
   JSON path (`meta->color`), `group`, a remote select, `whereBetween`, `newline()` and
   `columns(2)`, plus a `hidden` filter (`?filter[owner_id]=2`). 負責人 is a relation column
   (`owner.name`), eager loaded with `with('owner')`. Its images and downloads come from
-  `/admin/_demo/swatch/{color}.svg`, so it needs no network.
+  `/admin/_demo/swatch/{color}.svg`, so it needs no network. Its real product form uses four sections
+  (基本資料, 銷售, 媒體, 其他), so auto presentation opens a page with a contents navigation. It includes
+  sortable gallery uploads with per-image links, a cover and documents, date range, nested meta,
+  contacts and a hidden password. Featured name/SKU fields are readonly. Price uses two decimal
+  places; date, currency and tags are also inline editors. Uploaded demo files use `brume_demo`
+  (`public/uploads`, URL `/uploads`) and need no `storage:link`.
 - **元件展示**: every public brume-react component (buttons, inputs, Field, Card, EmptyState,
   Skeleton, DataTable + Pagination, Dialog, confirm, toasts, PageHeader, the charts; breadcrumbs
   come from the shell) in the real shell, as one registered component
@@ -509,7 +515,26 @@ database, `display_errors=1` so PHP warnings printed into a response fail the su
 reuses a running server: stop `composer serve` first, or run the suite on another port with
 `E2E_PORT=8103 composer e2e`. Both use the same SQLite file, so the suite reseeds the database a
 running `composer serve` reads. `e2e/tests/grid.spec.ts` ships and deletes seeded orders, so
-it runs as its own Playwright project after the other specs.
+it runs as its own Playwright project after the other specs. `form.spec.ts` then runs in a separate
+`forms` project depending on `grid`, with retries disabled, so its mutations cannot race the seeded
+counts. It covers real persistence, keyboard/dirty guards, uploads/extras/sort, action inputs,
+quick create, inline editors, axe and 1440×900 / 390×844 light/dark geometry and screenshots.
+
+During Phase 2 prepublication, CI's E2E job builds exactly the reviewed UI commit recorded in
+`.ci/ui-integration.json`, links its five package directories and verifies their origins. To use
+that same explicit mode with an already built clean checkout at the pinned SHA:
+
+    BRUME_UI_INTEGRATION=1 BRUME_UI_SOURCE=/absolute/path/to/brume-ui node e2e/ui-integration.mjs --prepare
+    BRUME_UI_INTEGRATION=1 BRUME_UI_SOURCE=/absolute/path/to/brume-ui composer e2e
+
+`serve.sh` verifies those exact package origins before skipping reinstall; ordinary mode retains the
+frozen published-package install. Published frontend dist and install smoke jobs remain unchanged.
+Task 23 must restore and run ordinary published-package E2E after alpha12; source integration is a
+prepublication acceptance path, not a release substitute. No publication is needed to test forms.
+
+Linux screenshot generation requires explicit trusted push `[update-snapshots]` or the workflow's
+`update-snapshots` dispatch input. The full browser suite must pass before its bot commits only Linux
+PNGs. Review every generated image, then run normal non-update CI; generation itself is not acceptance.
 
     composer smoke -- 12 precompiled                # or: 12 vite, 13 precompiled, 13 vite
 

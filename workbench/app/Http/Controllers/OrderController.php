@@ -2,22 +2,29 @@
 
 namespace Workbench\App\Http\Controllers;
 
+use Brume\Form\Form;
 use Brume\Grid\Actions\Action;
 use Brume\Grid\Actions\Feedback;
 use Brume\Grid\Editor;
 use Brume\Grid\Grid;
+use Brume\Resource\Resource;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Workbench\App\Models\Order;
 
 /**
- * 訂單: a list set up the way an everyday admin page would be (Route::brumeGrid in
+ * 訂單: a list set up the way an everyday admin page would be (Route::brumeResource in
  * workbench/routes/brume.php).
  */
-class OrderController
+class OrderController extends Resource
 {
+    protected string $model = Order::class;
+
+    protected string $name = '訂單';
+
     /** Status label tones; the codes are Order::STATUSES. */
     private const STATUS_TONES = [
         'pending' => 'warning',
@@ -27,9 +34,9 @@ class OrderController
         'cancelled' => 'danger',
     ];
 
-    public function __invoke(): Grid
+    protected function grid(Grid $grid): void
     {
-        $grid = Grid::make(Order::query())
+        $grid
             ->title('訂單')
             ->description('最近半年的訂單，最新的在最上面。')
             ->defaultSort('created_at', 'desc')
@@ -37,9 +44,6 @@ class OrderController
             ->quickSearchPlaceholder('搜尋訂單編號或客戶')
             ->perPage(15)
             ->perPageOptions([15, 50, 100])
-            // Sub-plan 2 replaces the stub with the edit form.
-            ->editUrl(fn (Order $order) => '#edit-'.$order->getKey())
-            ->deletable()
             ->exportable();
 
         $statuses = array_map(
@@ -78,6 +82,14 @@ class OrderController
                 ->exposed()
                 ->visible(fn (Order $order) => $order->status === 'paid')
                 ->handle(fn (Collection $orders) => $this->ship($orders)),
+            Action::make('cancel', '取消訂單')
+                ->visible(fn (Order $order) => in_array($order->status, ['pending', 'paid'], true))
+                ->form(fn (Form $form) => $form->textarea('reason', '取消原因')->required()->maxLength(200), '取消訂單', '取消訂單')
+                ->handle(function (Collection $orders, Request $request, array $input) {
+                    $orders->each(fn (Order $order) => $order->forceFill(['status' => 'cancelled', 'note' => trim(($order->note ?? '')."\n取消原因：".$input['reason'])])->save());
+
+                    return Feedback::toast('success', '已取消訂單')->refresh();
+                }),
             Action::make('show_number', '顯示訂單編號')
                 ->icon('hash')
                 ->handle(fn (Collection $orders) => Feedback::toast('info', '訂單編號：'.$orders->first()->number)),
@@ -88,7 +100,22 @@ class OrderController
                 ->handle(fn (Collection $orders) => $this->ship($orders)),
         );
 
-        return $grid;
+    }
+
+    protected function form(Form $form): void
+    {
+        $form->presentation('modal')->recordLabel(fn (Order $order) => $order->number);
+        $form->text('customer', '客戶')->required()->maxLength(50);
+        $form->currency('amount', '金額')->required()->min(0)->default('0');
+        $form->select('status', '狀態')->options(Order::STATUS_LABELS)->required()->default('pending');
+        $form->select('category', '分類')->options(array_combine(Order::CATEGORIES, Order::CATEGORIES))->required()->default('家居');
+        $form->textarea('note', '備註')->maxLength(1000);
+    }
+
+    protected function quickCreate(Form $form): void
+    {
+        $form->text('customer', '客戶')->required()->maxLength(50);
+        $form->currency('amount', '金額')->required()->min(0)->default('0');
     }
 
     private function filters(Grid $grid): void

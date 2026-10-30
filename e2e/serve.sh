@@ -9,7 +9,12 @@ testbench=(php vendor/bin/testbench)
 
 # The workbench runs in vite (--frontend) mode: build workbench/resources/js/brume into the
 # testbench skeleton's public/build-brume (composer build-frontend).
-pnpm --dir frontend install --frozen-lockfile >/dev/null
+if [[ "${BRUME_UI_INTEGRATION:-0}" == "1" ]]; then
+  # Never reinstall over prepared links: first prove all five origins and their immutable SHA.
+  node e2e/ui-integration.mjs
+else
+  pnpm --dir frontend install --frozen-lockfile >/dev/null
+fi
 pnpm --dir frontend build:workbench >/dev/null
 # create-sqlite-db + migrate:fresh with the workbench seeder (testbench.yaml workbench.build).
 "${testbench[@]}" workbench:build --no-interaction

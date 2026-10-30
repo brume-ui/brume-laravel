@@ -79,6 +79,11 @@ class DatabaseSeeder extends Seeder
 
                 return [
                     'owner_id' => $sequence->index % 6 + 1,
+                    'is_featured' => $sequence->index % 5 === 0,
+                    'secret_note' => '內部採購備註',
+                    'contact_email' => 'shop@example.test',
+                    'starts_at' => '2026-11-01',
+                    'ends_at' => '2026-11-30',
                     'created_at' => $createdAt,
                     'updated_at' => $createdAt,
                 ];

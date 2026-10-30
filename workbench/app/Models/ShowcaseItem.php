@@ -13,7 +13,7 @@ use Workbench\Database\Factories\ShowcaseItemFactory;
  *
  * @property string $name
  * @property string $sku
- * @property string $tags comma-separated TAGS keys
+ * @property list<string> $tags TAGS keys
  * @property list<string> $channels CHANNELS keys
  * @property array{color: string} $meta
  */
@@ -43,15 +43,29 @@ class ShowcaseItem extends Model
         'rose' => ['玫瑰', '#be4b62'],
     ];
 
+    protected $hidden = ['secret_note'];
+
+    // Values for Grid-only columns that are intentionally absent from the product form.
+    protected $attributes = [
+        'description' => '', 'warehouse' => 'taipei', 'progress' => 0, 'views' => 0,
+        'channels' => '[]', 'images' => '[]', 'attachments' => '[]', 'variants' => '[]',
+        'meta' => '{"color":"teal"}', 'tags' => '[]', 'is_featured' => false, 'is_new' => true,
+    ];
+
     protected function casts(): array
     {
         return [
-            'price' => 'integer',
+            'price' => 'decimal:2',
             'stock' => 'integer',
             'progress' => 'integer',
-            'rating' => 'integer',
+            'rating' => 'decimal:1',
             'views' => 'integer',
             'channels' => 'array',
+            'tags' => 'array',
+            'gallery' => 'array',
+            'documents' => 'array',
+            'starts_at' => 'date',
+            'ends_at' => 'date',
             'meta' => 'array',
             'images' => 'array',
             'attachments' => 'array',

@@ -24,6 +24,8 @@ class WorkbenchServiceProvider extends ServiceProvider
             config(["brume.{$key}" => $value]);
         }
 
+        config(['filesystems.disks.brume_demo' => require workbench_path('config', 'filesystems.php')]);
+
         // `serve` only hands an allow-list of env vars to the PHP server it starts.
         ServeCommand::$passthroughVariables[] = 'WORKBENCH_EMPTY_LIST';
     }

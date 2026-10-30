@@ -39,7 +39,7 @@ class ShowcaseItemFactory extends Factory
             'progress' => $this->faker->numberBetween(0, 20) * 5,
             'rating' => $this->faker->numberBetween(1, 5),
             'views' => $this->faker->numberBetween(0, 5000),
-            'tags' => implode(',', $this->faker->randomElements(array_keys(ShowcaseItem::TAGS), $this->faker->numberBetween(1, 3))),
+            'tags' => $this->faker->randomElements(array_keys(ShowcaseItem::TAGS), $this->faker->numberBetween(1, 3)),
             'channels' => $this->faker->randomElements(array_keys(ShowcaseItem::CHANNELS), $this->faker->numberBetween(1, 3)),
             'meta' => ['color' => $color],
             'images' => array_map($swatch, array_values(array_unique([$color, $this->faker->randomElement(array_keys(ShowcaseItem::COLORS))]))),

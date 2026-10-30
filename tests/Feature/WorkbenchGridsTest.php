@@ -20,8 +20,8 @@ beforeEach(function () {
     Route::prefix('admin')
         ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class])
         ->group(function () {
-            Route::brumeGrid('orders', OrderController::class)->name('brume.orders.index');
-            Route::brumeGrid('grid-showcase', GridShowcaseController::class)->name('brume.grid-showcase.index');
+            Route::brumeResource('orders', OrderController::class)->names('brume.orders');
+            Route::brumeResource('grid-showcase', GridShowcaseController::class)->names('brume.grid-showcase');
         });
 });
 
@@ -75,7 +75,7 @@ it('validates Grid 示範 against PageEnvelope, plain and with every filter appl
 })->with([
     'defaults' => [[]],
     'panel filters' => [['filter' => [
-        'tags' => 'gift', 'channels' => ['web'], 'color' => 'teal', 'stock_rule' => ['op' => 'gt', 'value' => '5'],
+        'tags' => ['gift'], 'channels' => ['web'], 'color' => 'teal', 'stock_rule' => ['op' => 'gt', 'value' => '5'],
         'owner' => '2', 'released' => ['start' => '2026-01-01', 'end' => '2026-12-31'], 'owner_id' => '2',
     ]]],
     'header filters' => [['filter' => [

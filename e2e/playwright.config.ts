@@ -17,10 +17,26 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: 'grid.spec.ts' },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: ['grid.spec.ts', 'form.spec.ts'],
+    },
     // grid.spec.ts ships and deletes seeded orders, which the dashboard and 訂單 checks above
     // count on, so it runs once they are done.
-    { name: 'grid', use: { ...devices['Desktop Chrome'] }, testMatch: 'grid.spec.ts', dependencies: ['chromium'] },
+    {
+      name: 'grid',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: 'grid.spec.ts',
+      dependencies: ['chromium'],
+    },
+    {
+      name: 'forms',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: 'form.spec.ts',
+      dependencies: ['grid'],
+      retries: 0,
+    },
   ],
   webServer: {
     // Builds the workbench frontend, migrates and seeds a fresh database, then serves the workbench.

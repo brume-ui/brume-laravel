@@ -13,8 +13,8 @@ use Workbench\App\Http\Controllers\OrderController;
 use Workbench\App\Models\ShowcaseItem;
 
 Route::get('users', AdminUserController::class)->name('brume.users.index');
-Route::brumeGrid('orders', OrderController::class)->name('brume.orders.index');
-Route::brumeGrid('grid-showcase', GridShowcaseController::class)->name('brume.grid-showcase.index');
+Route::brumeResource('orders', OrderController::class)->names('brume.orders');
+Route::brumeResource('grid-showcase', GridShowcaseController::class)->names('brume.grid-showcase');
 
 // 元件展示: one registered component (ComponentShowcase.tsx) that renders the whole brume-react kit.
 Route::get('components', fn () => Dashboard::make('元件展示')

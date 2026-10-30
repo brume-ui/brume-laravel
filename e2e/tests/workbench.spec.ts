@@ -53,6 +53,7 @@ test('訂單 lists 60 seeded orders, newest first (the default sort), 15 per pag
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(15);
   await expect(rows.first()).toContainText('BR-20261027-060');
+  await expect(rows.first().getByRole('button', { name: 'BR-20261027-060', exact: true })).toBeVisible();
   await expect(rows.first()).toContainText('2026-10-27');
   await expect(page.getByRole('link', { name: '第 4 頁' })).toBeVisible();
 
