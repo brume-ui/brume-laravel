@@ -363,7 +363,7 @@ class Column
             + ($this->numeric ? ['numeric' => true] : [])
             + ($this->width !== null ? ['width' => $this->width] : [])
             + ($this->displaySchema !== null ? ['display' => $this->displaySchema] : [])
-            + ($this->editor !== null ? ['editor' => $this->editor->toSchema()] : [])
+            + ($this->editor !== null ? ['editor' => $this->editor->toSchema($this)] : [])
             + ($this->sortable ? ['sortable' => true] : [])
             + ($this->filter !== null ? ['filter' => $this->filter->key()] : [])
             // The schema's default is true, so only the exception is written out.

@@ -42,19 +42,7 @@ class FormValidator
     public static function validateFields(array $fields, array $values, ?Model $record = null, ?Model $model = null, ?array $rootValues = null, ?string $rowPath = null, ?array $storedValues = null, array $rowContext = [], string $templatePrefix = '', array $rootDefinitions = [], array $invalidPaths = [], array $conditionControllers = []): array
     {
         self::translations();
-        // Embeds are structural paths; only declared custom/collection values retain semantic
-        // objects. This keeps Arr's established traversal working without flattening custom JSON.
-        $semantic = $values;
-        $values = JsonValues::validationView($values);
-        $missing = new \stdClass;
-        foreach ($fields as $path => $field) {
-            if (in_array($field->type(), ['custom', 'repeater', 'relation', 'multipleSelect', 'checkbox', 'tags'], true)) {
-                $value = data_get($semantic, $path, $missing);
-                if ($value !== $missing) {
-                    Arr::set($values, $path, $value);
-                }
-            }
-        }
+        $values = self::structuralValues($fields, $values);
         if ($rowPath === null) {
             $registry = new DeclarationRegistry($fields, $record ?? $model);
             foreach ($registry->entries as $entry) {
@@ -81,6 +69,9 @@ class FormValidator
         }
         $evaluationDefs = $rowPath === null ? $definitions : array_combine(array_map(fn ($p) => $rowPath.'.'.$p, array_keys($definitions)), $definitions);
         $evaluationDefs = array_replace($rootDefinitions, $evaluationDefs);
+        if ($rowPath === null) {
+            [$evaluation, $evaluationDefs] = self::jsonEvaluation($fields, $authoritative, $record);
+        }
         $resolvedRules = [];
         foreach ($fields as $path => $field) {
             $resolvedRules[$path] = $field->isEditable($record) ? $field->serverRules($record, $model) : [];
@@ -288,10 +279,81 @@ class FormValidator
         return $values;
     }
 
+    private static function structuralValues(array $fields, array $values): array
+    {
+        // Embeds are structural paths; only declared custom/collection values retain semantic
+        // objects. This keeps Arr's established traversal working without flattening custom JSON.
+        $semantic = $values;
+        $values = JsonValues::validationView($values);
+        $missing = new \stdClass;
+        foreach ($fields as $path => $field) {
+            if (in_array($field->type(), ['custom', 'repeater', 'relation', 'multipleSelect', 'checkbox', 'tags'], true)) {
+                $value = data_get($semantic, $path, $missing);
+                if ($value !== $missing) {
+                    Arr::set($values, $path, $value);
+                }
+            }
+        }
+
+        return $values;
+    }
+
+    /** Pure JSON evaluation preparation; relation graph/model resolution remains the planner's job. */
+    private static function jsonEvaluation(array $fields, array $values, ?Model $root, ?array $stored = null, string $prefix = '', string $template = '', array $context = [], bool $locked = false): array
+    {
+        $values = self::structuralValues($fields, $values);
+        $definitions = [];
+        foreach ($fields as $path => $field) {
+            $definitions[$prefix.$path] = ['type' => $field->type()] + $field->settings();
+            $readOnly = $locked || ! $field->isEditable($root);
+            if ($readOnly) {
+                Arr::set($values, $path, $stored !== null ? $field->valueFromJson($stored) : $field->valueFor($root));
+            }
+            if (! $field instanceof Repeater || $field->relationName() !== null) {
+                continue;
+            }
+            $rows = Arr::get($values, $path);
+            if (! is_array($rows) || ! array_is_list($rows)) {
+                continue;
+            }
+            $original = $stored !== null ? data_get($stored, $field->attributeName(), []) : ($root !== null ? $field->storedJsonRows($root) : []);
+            $byKey = [];
+            foreach (JsonRows::hydrate($original ?? [], $root, $template.$path, $context) as $originalRow) {
+                $byKey[$originalRow['_brume']['key']] = $originalRow;
+            }
+            if ($readOnly) {
+                // These positions belong to authoritative storage, never submitted rows.
+                $rows = JsonRows::hydrate($rows, $root, $template.$path, $context);
+            }
+            foreach ($rows as $index => $row) {
+                if ($row instanceof \stdClass) {
+                    $row = get_object_vars($row);
+                }
+                if (! is_array($row) || array_is_list($row)) {
+                    continue;
+                }
+                $key = data_get($row, '_brume.key');
+                $identity = is_string($key) && $key !== '' ? $key : null;
+                [$rows[$index], $children] = self::jsonEvaluation(
+                    $field->rowForm()->fields(), $row, $root, $identity !== null ? ($byKey[$identity] ?? []) : [],
+                    $prefix.$path.'.'.$index.'.', $template.$path.'.*.',
+                    [...$context, ['path' => $template.$path, 'key' => $identity ?? '']], $readOnly,
+                );
+                $definitions = array_replace($definitions, $children);
+            }
+            Arr::set($values, $path, $rows);
+        }
+
+        return [$values, $definitions];
+    }
+
     private static function expandPath(mixed $value, array $parts, string $base = ''): array
     {
         if ($parts === []) {
             return [[$base, $value]];
+        }
+        if ($value instanceof \stdClass) {
+            $value = get_object_vars($value);
         }
         $segment = array_shift($parts);
         if ($segment === '*') {

@@ -2,6 +2,7 @@
 
 namespace Brume\Grid;
 
+use Brume\Form\ClientRules;
 use Brume\Form\Fields\Currency;
 use Brume\Form\Fields\CustomField;
 use Brume\Form\Fields\Field;
@@ -272,9 +273,22 @@ final class Editor
     /**
      * @return array<string, mixed>
      */
-    public function toSchema(): array
+    public function toSchema(?Column $column = null): array
     {
-        return $this->schema;
+        if ($this->customField === null) {
+            return $this->schema;
+        }
+        $field = clone $this->customField;
+        $root = $this->customRules[''] ?? [];
+        $additional = $column?->editRules() ?? [];
+        $rules = fn ($value) => is_string($value) ? array_values(array_filter(explode('|', $value), fn ($rule) => $rule !== '')) : $value;
+        $field->rules([...$rules($root), ...$rules($additional)]);
+        if ($column !== null) {
+            $field->label($column->heading());
+        }
+        $client = ClientRules::for($field, $column?->key() ?? 'value');
+
+        return $this->schema + ($client !== [] ? ['rules' => $client] : []);
     }
 
     /**

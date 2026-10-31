@@ -3,7 +3,6 @@
 namespace Brume\Form;
 
 use Brume\Form\Fields\Decimal;
-use Illuminate\Support\Arr;
 use InvalidArgumentException;
 use JsonSerializable;
 
@@ -193,7 +192,7 @@ final readonly class Conditions implements JsonSerializable
         }
         foreach ($this->paths() as $path) {
             $resolved = $path->resolve($rowPath);
-            if (in_array($resolved, $invalidPaths, true) || ! self::canonical($defs[$resolved] ?? [], Arr::get($values, $resolved))[0]) {
+            if (in_array($resolved, $invalidPaths, true) || ! self::canonical($defs[$resolved] ?? [], data_get($values, $resolved))[0]) {
                 return true;
             }
         }
@@ -222,7 +221,7 @@ final readonly class Conditions implements JsonSerializable
                 return false;
             }
             $path = (new ConditionPath($ast['field']['scope'], $ast['field']['path']))->resolve($rowPath);
-            $raw = Arr::get($values, $path);
+            $raw = data_get($values, $path);
             if ($op === 'empty') {
                 return $raw === null || $raw === '' || $raw === [];
             }

@@ -520,3 +520,23 @@ it('retains empty and nested object shapes through custom cell HTTP and raw read
     $raw = json_decode($response->getContent())->row->_meta->raw->tags;
     expect(json_encode($raw))->toBe('{"empty":{},"list":[],"nested":[{}]}');
 });
+
+it('serializes custom editor supported root rules without child rules', function () {
+    $schema = Editor::component('Contact', rules: ['' => 'required|email', 'label' => ['required', 'min:3']])->toSchema();
+    expect(array_column($schema['rules'] ?? [], 'rule'))->toBe(['required', 'email'])
+        ->and(JsonSchema::errors($schema, 'InlineEditor'))->toBe([]);
+});
+
+it('merges custom editor and column root rules with matching HTTP validation messages', function () {
+    [$item] = cellItems();
+    $editor = Editor::component('Contact', rules: ['' => ['required', 'email']]);
+    $grid = Grid::make(CellItem::class);
+    $column = $grid->column('note', 'Contact')->editable($editor, 'max:8');
+    $schema = $column->toSchema()['editor'];
+    expect(array_column($schema['rules'] ?? [], 'rule'))->toBe(['required', 'email', 'maxLength']);
+    cellRoutes(fn (Grid $grid) => $grid->column('note', 'Contact')->editable($editor, 'max:8'));
+    foreach (['required' => '', 'email' => 'bad', 'maxLength' => 'long@example.com'] as $rule => $value) {
+        $response = patchCell($item->id, ['column' => 'note', 'value' => $value])->assertUnprocessable()->assertJsonValidationErrors('note');
+        expect(collect($schema['rules'])->firstWhere('rule', $rule)['message'])->toBe($response->json('errors.note.0'));
+    }
+});

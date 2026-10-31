@@ -410,3 +410,15 @@ it('requires strict switch controls across recursive condition boundaries', func
         expect($e->errors())->toHaveKeys(['tags.0.active', 'tags.0.name']);
     }
 });
+
+it('fills ordinary validated values containing preserved semantic nested rows', function () {
+    $record = new CellItem(['tags' => [['_brume' => ['key' => 'one'], 'name' => 'old', 'inner' => [['unknown' => 'retain', 'payload' => (object) []]]]]]);
+    $form = Form::make(CellItem::class);
+    $outer = $form->repeater('tags', 'Rows', function (Form $row) {
+        $row->text('name');
+        $row->repeater('inner', 'Inner', fn (Form $child) => $child->text('name'))->readOnly();
+    });
+    $validated = FormValidator::validate($form, ['tags' => [['_brume' => ['key' => 'one'], 'name' => 'changed']]], $record);
+    $outer->fill($record, $validated['tags']);
+    expect($record->getAttributes()['tags'])->toBe('[{"_brume":{"key":"one"},"name":"changed","inner":[{"unknown":"retain","payload":{}}]}]');
+});

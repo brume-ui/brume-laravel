@@ -135,6 +135,14 @@ class Repeater extends Field
         }
         $stored = [];
         foreach ($value ?? [] as $row) {
+            // This writer consumes validated/trusted values. Validation rebuilds every editable
+            // row as an array; semantic object rows are authoritative inactive containers that
+            // must retain their unknown keys and legacy identity exactly, including after moves.
+            if ($row instanceof \stdClass) {
+                $stored[] = $row;
+
+                continue;
+            }
             // Conversion carrier only; validation already used the original nullable root.
             $carrier = new class extends Model {};
             foreach ($this->rowForm->fields() as $path => $field) {
