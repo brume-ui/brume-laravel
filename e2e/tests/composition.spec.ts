@@ -214,3 +214,90 @@ test("custom address labels follow the public locale in all three languages", as
   for (const name of ["邮政编码", "县市", "乡镇市区", "地址"])
     await expect(page.getByRole("textbox", { name, exact: true })).toBeVisible();
 });
+
+async function storedGifts(page: Page, id: number) {
+  const response = await page.request.get(`/admin/compositions/${id}/edit`, {
+    headers: { "X-Brume-Form": "1" },
+  });
+  expect(response.status()).toBe(200);
+  return (await response.json()).page.values.tiers[0].thresholds;
+}
+
+function thresholds(page: Page) {
+  return page.getByRole("list", { name: "門檻", exact: true }).locator(":scope > li");
+}
+
+test("persistent gift branches validate active fields and reload inactive stored scalars and product relations", async ({ page }) => {
+  await edit(page, 9);
+  const before = await storedGifts(page, 9);
+  const first = thresholds(page).nth(0);
+  const second = thresholds(page).nth(1);
+  await first.getByRole("radio", { name: "優惠券", exact: true }).check();
+  await first.getByRole("textbox", { name: "優惠券代碼", exact: true }).fill("COUPON-9");
+  await first.getByRole("textbox", { name: "優惠券金額", exact: true }).fill("25.50");
+  await first.getByLabel("優惠券到期時間", { exact: true }).fill("2030-12-31T18:00");
+  await second.getByRole("radio", { name: "點數", exact: true }).check();
+  await second.getByRole("textbox", { name: "贈送點數", exact: true }).fill("125");
+  await second.getByRole("textbox", { name: "點數備註", exact: true }).fill("活動點數");
+  // A→B→A preserves draft values before save, with independent row conditions.
+  await first.getByRole("radio", { name: "商品", exact: true }).check();
+  await expect(second.getByRole("textbox", { name: "贈送點數", exact: true })).toHaveValue("125");
+  await first.getByRole("radio", { name: "優惠券", exact: true }).check();
+  await expect(first.getByRole("textbox", { name: "優惠券代碼", exact: true })).toHaveValue("COUPON-9");
+  expect((await save(page, 9)).status()).toBe(200);
+  await page.reload();
+  await expect(first.getByRole("radio", { name: "優惠券", exact: true })).toBeChecked();
+  await expect(second.getByRole("radio", { name: "點數", exact: true })).toBeChecked();
+  const accepted = await storedGifts(page, 9);
+  expect(accepted[0].gifts).toEqual(before[0].gifts);
+  expect(accepted[0].coupon_amount).toBe("25.50");
+  expect(accepted[1].coupon_code).toBe("DEMO-9");
+  expect(accepted[1].points).toBe(125);
+  // Hidden unsaved coupon text must not replace the stored coupon when product is active.
+  await first.getByRole("textbox", { name: "優惠券代碼", exact: true }).fill("HIDDEN-UNSAVED");
+  await first.getByRole("radio", { name: "商品", exact: true }).check();
+  expect((await save(page, 9)).status()).toBe(200);
+  await page.reload();
+  await first.getByRole("radio", { name: "優惠券", exact: true }).check();
+  await expect(first.getByRole("textbox", { name: "優惠券代碼", exact: true })).toHaveValue("COUPON-9");
+  await first.getByRole("textbox", { name: "優惠券代碼", exact: true }).fill("");
+  // Client validation blocks empty active coupon fields before a request.
+  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await expect(first.getByRole("textbox", { name: "優惠券代碼", exact: true })).toHaveAttribute("aria-invalid", "true");
+  await first.getByRole("textbox", { name: "優惠券代碼", exact: true }).fill("CORRECTED-9");
+  expect((await save(page, 9)).status()).toBe(200);
+  await page.reload();
+  await expect(first.getByRole("textbox", { name: "優惠券代碼", exact: true })).toHaveValue("CORRECTED-9");
+});
+
+test("persistent gift threshold sorting preserves IDs and a newly added owner chooses its type explicitly", async ({ page }) => {
+  await edit(page, 10);
+  const before = await storedGifts(page, 10);
+  await thresholds(page).nth(0).getByRole("radio", { name: "點數", exact: true }).check();
+  await thresholds(page).nth(0).getByRole("textbox", { name: "贈送點數", exact: true }).fill("77");
+  await page.getByRole("button", { name: "下移 門檻 1", exact: true }).click();
+  await expect(thresholds(page).nth(0).getByRole("radio", { name: "優惠券", exact: true })).toBeChecked();
+  await expect(thresholds(page).nth(1).getByRole("textbox", { name: "贈送點數", exact: true })).toHaveValue("77");
+  expect((await save(page, 10)).status()).toBe(200);
+  await page.reload();
+  const sorted = await storedGifts(page, 10);
+  expect(sorted.map((row: { _brume: { id: string } }) => row._brume.id)).toEqual([before[1]._brume.id, before[0]._brume.id]);
+  expect(sorted[1].points).toBe(77);
+  expect(sorted[1].gifts).toEqual(before[0].gifts);
+  await page.getByRole("button", { name: "新增 門檻", exact: true }).click();
+  const added = thresholds(page).nth(2);
+  // Published alpha14 creates an empty row draft; defaultValue is not an initializer.
+  await expect(added.getByRole("radio", { name: "商品", exact: true })).not.toBeChecked();
+  await added.getByRole("textbox", { name: "門檻名稱", exact: true }).fill("新增點數門檻");
+  await added.getByRole("textbox", { name: "門檻金額", exact: true }).fill("300.00");
+  await added.getByRole("radio", { name: "點數", exact: true }).check();
+  await added.getByRole("textbox", { name: "贈送點數", exact: true }).fill("55");
+  expect((await save(page, 10)).status()).toBe(200);
+  await page.reload();
+  await expect(thresholds(page).nth(2).getByRole("radio", { name: "點數", exact: true })).toBeChecked();
+  await expect(thresholds(page).nth(2).getByRole("textbox", { name: "贈送點數", exact: true })).toHaveValue("55");
+  const fresh = await storedGifts(page, 10);
+  expect(fresh[2]._brume.id).not.toBe(before[0]._brume.id);
+  expect(fresh[2]._brume.id).not.toBe(before[1]._brume.id);
+  expect(fresh[2].gifts).toEqual([]);
+});

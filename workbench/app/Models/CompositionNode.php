@@ -13,9 +13,11 @@ class CompositionNode extends Model
 
     protected $table = 'composition_nodes';
 
+    protected $attributes = ['gift_type' => 'product'];
+
     protected function casts(): array
     {
-        return ['notes' => 'array', 'amount' => 'decimal:2'];
+        return ['notes' => 'array', 'amount' => 'decimal:2', 'coupon_amount' => 'decimal:2', 'coupon_expires_at' => 'datetime', 'points' => 'integer'];
     }
 
     public function thresholds(): HasMany

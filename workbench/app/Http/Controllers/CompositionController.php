@@ -26,7 +26,7 @@ class CompositionController extends Resource
 
     protected function grid(Grid $grid): void
     {
-        $grid->title('關聯組合')->description('關聯、JSON、條件欄位與巢狀上傳的完整範例。');
+        $grid->title('關聯組合')->description('資料庫示範：開啟任一組合，在各門檻切換商品、優惠券或點數，儲存後重新開啟確認。優惠券與點數僅保存設定，不發券、不入帳。');
         $grid->column('title', '名稱')->primary();
         $grid->column('address', '地址')
             ->component('TaiwanAddress')->editable(Editor::component('TaiwanAddress', rules: ['zipcode' => ['required', 'regex:/^[0-9]{3}$/D'], 'address' => ['required', 'string']])
@@ -37,6 +37,7 @@ class CompositionController extends Resource
 
     protected function form(Form $form): void
     {
+        $form->description('資料庫示範：各門檻可獨立選擇商品、優惠券或點數。切換前的草稿保留到儲存；儲存只更新目前分支，重新開啟後顯示完整既存值。可排序兩列再儲存，核對資料仍屬於原門檻。優惠券與點數僅保存設定，沒有發放、兌換或點數入帳。');
         $form->text('title', '名稱')->required();
         $form->select('category', '分類')->options(['A' => 'A 類', 'B' => 'B 類'])->default('A');
         $dependent = OptionSource::make(fn ($context) => CompositionCatalog::where('category', $context->dependencies['category'] ?? 'A'))->label('name')->columns(['sku' => '貨號']);
@@ -55,7 +56,14 @@ class CompositionController extends Resource
             $tier->repeater('thresholds', '門檻', function (Form $threshold) use ($dependent) {
                 $threshold->text('name', '門檻名稱')->required();
                 $threshold->currency('amount', '門檻金額')->decimals(2)->required();
-                $threshold->relationPicker('gifts', '贈品', self::source())->relation('gifts')->associateBy('catalog_id')->orderColumn('position')->restoreRemoved()
+                $threshold->radio('gift_type', '贈品類型')->options(['product' => '商品', 'coupon' => '優惠券', 'points' => '點數'])->default('product')->required()->help('新增門檻請先明確點選類型；商品須選至少一件且數量為正整數，優惠券須填代碼、金額與到期時間，點數須為正整數。');
+                $threshold->text('coupon_code', '優惠券代碼')->required()->maxLength(255)->showWhen(Conditions::eq(Conditions::row('gift_type'), 'coupon'));
+                $threshold->currency('coupon_amount', '優惠券金額')->decimals(2)->required()->pattern('^[0-9]+\\.[0-9]{2}$', '金額須為小數兩位的精確字串。')->rules(['gt:0', 'max:9999999999.99'])->showWhen(Conditions::eq(Conditions::row('gift_type'), 'coupon'));
+                $threshold->datetime('coupon_expires_at', '優惠券到期時間')->required()->showWhen(Conditions::eq(Conditions::row('gift_type'), 'coupon'));
+                $threshold->number('points', '贈送點數')->min(1)->max(2147483647)->step(1)->required()->showWhen(Conditions::eq(Conditions::row('gift_type'), 'points'));
+                $threshold->textarea('points_note', '點數備註')->showWhen(Conditions::eq(Conditions::row('gift_type'), 'points'));
+                $threshold->relationPicker('gifts', '贈品', self::source())->relation('gifts')->associateBy('catalog_id')->orderColumn('position')->restoreRemoved()->required()
+                    ->showWhen(Conditions::eq(Conditions::row('gift_type'), 'product'))
                     ->remote($dependent, ['category' => Conditions::root('category')])
                     ->extra(function (Form $gift) {
                         $gift->number('quantity', '贈品數量')->min(1)->required()->rules([

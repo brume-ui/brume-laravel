@@ -804,6 +804,52 @@ Playground `/#/form-composition` supplements the focused relation/repeater route
 acceptance, precompiled distribution and install checks all use the actual published alpha.14
 packages.
 
+### 資料庫贈品示範與安全升級
+
+在 `/admin/compositions` 開啟任何既有組合，各門檻的「贈品類型」可獨立選擇商品、優惠券或點數。
+商品保留原本 `gifts` 關聯、選擇順序、數量、附件與 counter；優惠券必填代碼、精確兩位小數的正金額及
+到期時間，點數須為正整數，備註可留空。到期時間使用既有公開 datetime 契約 `YYYY-MM-DDTHH:mm`。
+優惠券金額限制在 decimal(12,2) 範圍，點數限制在可跨 SQLite／MySQL 保存的 signed integer 範圍。
+這些僅是設定，沒有發券、兌換、點數帳本或排程。每列可選不同分支，排序後儲存，再重新開啟核對原門檻與設定。
+
+切換分支會保留成功儲存前的草稿；儲存只驗證及更新 active 分支。inactive 的既存 scalar／relation 不變；
+重新開啟採用伺服器完整資料，隱藏未存草稿不會被永久保留。`gift_type` 僅允許 `product|coupon|points`。
+舊資料在升級時預設為 product。新門檻 schema 宣告 defaultValue=product，model 也有 product 預設，
+但目前 published alpha14 的新增列不會初始化 editable draft；新增門檻後請明確點選合法類型，再填欄位與儲存。
+缺少類型或無效類型的新增請求會回 422。隔離 fresh seed 額外提供 IDs 9、10 的兩門檻範例；既有資料可直接切換，**不用重新 seed**。
+
+升級既有 workbench 時，由部署管理者先確認正在使用的 checkout、DB connection／實體路徑、
+`migrations` ledger 與附件目錄，暫停寫入並完成可還原的資料庫與附件備份。
+SQLite 使用 SQLite 的 `.backup` 或等效一致性備份，勿在寫入中直接複製單一 DB 主檔而漏掉 WAL。
+先在備份副本測試，再於相同 checkout、相同服務設定執行以下唯一指定的新 migration：
+
+```sh
+# 在目標 brume-laravel checkout 根目錄；沿用服務的 DB 設定。
+php vendor/bin/testbench migrate:status --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php
+php vendor/bin/testbench migrate --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php --pretend --no-interaction
+php vendor/bin/testbench migrate --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php --force --no-interaction
+```
+
+這次只新增 `gift_type`（default product）、nullable `coupon_code`、`coupon_amount`（decimal 12,2）、
+`coupon_expires_at`（datetime）、`points`（integer）、`points_note`（text），不更新原有關聯或上傳檔案。
+前提為既有 composition tables 已完成舊 migration；status 須先確認新 migration 為 Pending，預覽只含新增欄位。
+完成後確認 status 已 Ran，重新開啟同一組合檢查商品、數量、附件及每列 ID，切換優惠券／點數並儲存、重開核對。
+**不要執行 workbench:build、migrate:fresh、migrate:refresh、db:seed 或 composer build／serve**：現有 workbench build 會重建並 seed 資料。
+
+`down()` 只移除六個新增欄位，會永久失去券與點數設定；原 nodes／gifts／counters／附件仍保留。
+正式環境程式回退可保留新增欄位；如必須還原資料，使用已驗證的備份。
+以下 rollback／重套命令只在隔離 fixture 中驗證，不得對使用中的資料庫執行：
+
+```sh
+php vendor/bin/testbench migrate:rollback --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php --step=1 --force --no-interaction
+php vendor/bin/testbench migrate --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php --force --no-interaction
+```
+
+`tests/Feature/Form/CompositionUpgradeTest.php` 用獨立 SQLite 實體檔建構舊 schema，保存既有 gift IDs、
+counter、position、軟刪除記錄、JSON 備註及附件 SHA-256，再經窄範圍 migrate／down／重套核對。
+MySQL CI 使用既有隔離 test DB 的獨立 prefix 執行同一證明；執行結果需以該 CI 為準。
+不要將測試命令指向任何試用或正式服務的 DB。
+
 Custom inline cells use `Editor::component('TaiwanAddress', props: [], rules: [...])` and optional
 `->attributes([...])` with the same safe mapping. The server rule map uses `''` for the entire value
 and relative keys for children; Column `editable(..., rules: ...)` still merges root rules.

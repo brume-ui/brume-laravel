@@ -14,11 +14,15 @@ class CompositionSeeder extends Seeder
         for ($id = 1; $id <= 24; $id++) {
             CompositionCatalog::create(['id' => $id, 'name' => sprintf('商品 %02d', $id), 'sku' => sprintf('CP-%02d', $id), 'category' => $id <= 22 ? 'A' : 'B']);
         }
-        for ($id = 1; $id <= 8; $id++) {
+        for ($id = 1; $id <= 10; $id++) {
             $root = Composition::create(['id' => $id, 'title' => '關聯組合 '.$id, 'category' => 'A', 'zipcode' => '100', 'county' => '臺北市', 'district' => '中正區', 'address' => '中山南路1號', 'notes' => [['_brume' => ['key' => 'note-'.$id], 'message' => '原始備註', 'labels' => [['_brume' => ['key' => 'label-'.$id], 'text' => '保留']]]]]);
             $tier = $root->tiers()->create(['name' => '第一級', 'position' => 0]);
             $threshold = $tier->thresholds()->create(['composition_id' => $root->id, 'name' => '門檻一', 'position' => 0, 'amount' => '100.00']);
             $threshold->gifts()->create(['catalog_id' => 1, 'quantity' => 2]);
+            if ($id >= 9) {
+                // Dedicated persistent gift cases leave product-only IDs 1–8 unchanged.
+                $tier->thresholds()->create(['name' => '門檻二', 'position' => 1, 'amount' => '200.00', 'gift_type' => 'coupon', 'coupon_code' => 'DEMO-'.$id, 'coupon_amount' => '10.00', 'coupon_expires_at' => '2030-12-31 18:00:00']);
+            }
         }
     }
 }

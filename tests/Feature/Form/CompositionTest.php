@@ -132,7 +132,7 @@ it('creates a new tier threshold and gift through the public recursive resource 
     $values['tiers'][] = [
         '_brume' => ['key' => 'new-tier'], 'name' => '第二級',
         'thresholds' => [[
-            '_brume' => ['key' => 'new-threshold'], 'name' => '新門檻', 'amount' => '200.00',
+            '_brume' => ['key' => 'new-threshold'], 'name' => '新門檻', 'amount' => '200.00', 'gift_type' => 'product',
             'gifts' => [['id' => '2', 'quantity' => 1]],
         ]],
     ];
@@ -160,4 +160,94 @@ it('hydrates restored intermediary authority without restoring or exposing its u
         ->and($response->json('data.0.authority.values'))->not->toHaveKey('counter')
         ->and($gift->fresh()->counter)->toBe(37)->and($gift->fresh()->deleted_at)->not->toBeNull()
         ->and(JsonSchema::errors($response->json(), 'PickerSearchResponse'))->toBe([]);
+});
+
+it('declares threshold scoped gift branches with defaults and exact currency contracts', function () {
+    $page = $this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk();
+    expect(JsonSchema::errors($page->json(), 'PageEnvelope'))->toBe([]);
+    $row = $page->json('page.values.tiers.0.thresholds.0');
+    expect($row)->toHaveKey('gift_type', 'product');
+    $encoded = json_encode($page->json('page.form'));
+    expect($encoded)->toContain('coupon_amount')->toContain('coupon_expires_at')->toContain('points_note');
+    $find = function (array $nodes, string $name) use (&$find): ?array {
+        foreach ($nodes as $node) {
+            if (($node['field']['name'] ?? null) === $name) {
+                return $node['field'];
+            }
+            if ($found = $find($node['field']['nodes'] ?? $node['children'] ?? [], $name)) {
+                return $found;
+            }
+        }
+
+        return null;
+    };
+    $nodes = $page->json('page.form.nodes');
+    expect($find($nodes, 'gift_type')['defaultValue'])->toBe('product');
+    foreach (['gifts' => 'product', 'coupon_code' => 'coupon', 'coupon_amount' => 'coupon', 'coupon_expires_at' => 'coupon', 'points' => 'points', 'points_note' => 'points'] as $name => $type) {
+        expect($find($nodes, $name)['showWhen'])->toBe(['op' => 'eq', 'field' => ['scope' => 'row', 'path' => 'gift_type'], 'value' => $type]);
+    }
+});
+
+it('persists different gift branches per threshold and preserves inactive scalars and product relations through sorting', function () {
+    $tier = Composition::find(1)->tiers()->first();
+    $first = $tier->thresholds()->first();
+    $gift = $first->gifts()->first();
+    $second = $tier->thresholds()->create(['name' => '第二門檻', 'amount' => '200.00', 'position' => 1]);
+    $values = $this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
+    $rows = &$values['tiers'][0]['thresholds'];
+    $rows[0] = array_replace($rows[0], ['gift_type' => 'coupon', 'coupon_code' => ' SAVE-10 ', 'coupon_amount' => '1234567890.12', 'coupon_expires_at' => '2030-12-31T18:00', 'points' => 999, 'points_note' => 'forged', 'gifts' => []]);
+    $rows[1] = array_replace($rows[1], ['gift_type' => 'points', 'points' => 125, 'points_note' => '活動點數', 'coupon_code' => 'forged', 'coupon_amount' => 'invalid', 'gifts' => [['id' => '2', 'quantity' => 0]]]);
+    $this->putJson('/compositions/1', ['values' => $values])->assertOk();
+    expect($first->fresh()->coupon_amount)->toBe('1234567890.12')->and($first->fresh()->coupon_code)->toBe('SAVE-10')
+        ->and($first->fresh()->points)->toBeNull()->and($first->fresh()->points_note)->toBeNull()
+        ->and($first->gifts()->first()->id)->toBe($gift->id)->and($gift->fresh()->counter)->toBe(37)
+        ->and($second->fresh()->points)->toBe(125)->and($second->fresh()->coupon_code)->toBeNull()->and($second->gifts()->count())->toBe(0);
+    $values = $this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
+    $rows = &$values['tiers'][0]['thresholds'];
+    $rows[0]['gift_type'] = 'product';
+    $rows[0]['coupon_code'] = 'FORGED';
+    $rows[0]['coupon_amount'] = '0.01';
+    $rows[0]['coupon_expires_at'] = '2040-01-01T00:00';
+    $rows[0]['gifts'][0]['quantity'] = 3;
+    $rows[1] = array_replace($rows[1], ['gift_type' => 'coupon', 'coupon_code' => 'SECOND', 'coupon_amount' => '7.00', 'coupon_expires_at' => '2031-01-01T12:30', 'points' => 999, 'points_note' => 'forged replacement']);
+    $rows = array_reverse($rows);
+    $this->putJson('/compositions/1', ['values' => $values])->assertOk();
+    $fresh = $this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values.tiers.0.thresholds');
+    expect(array_map(fn ($row) => $row['_brume']['id'], $fresh))->toBe([(string) $second->id, (string) $first->id])
+        ->and($fresh[0]['points'])->toBe(125)->and($fresh[0]['points_note'])->toBe('活動點數')->and($fresh[0]['coupon_code'])->toBe('SECOND')->and($fresh[1]['coupon_code'])->toBe('SAVE-10')->and($fresh[1]['coupon_expires_at'])->toBe('2030-12-31T18:00')
+        ->and($fresh[1]['coupon_amount'])->toBe('1234567890.12')->and($fresh[1]['gifts'][0]['quantity'])->toBe(3)
+        ->and($gift->fresh()->id)->toBe($gift->id)->and($gift->fresh()->counter)->toBe(37);
+});
+
+it('validates only the active gift branch and rejects unknown gift types atomically', function () {
+    $values = $this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
+    foreach ([
+        ['gift_type' => 'unknown'],
+        ['gift_type' => 'coupon', 'coupon_code' => '', 'coupon_amount' => '', 'coupon_expires_at' => ''],
+        ['gift_type' => 'coupon', 'coupon_code' => 'X', 'coupon_amount' => '0.00', 'coupon_expires_at' => 'not-a-date'],
+        ['gift_type' => 'coupon', 'coupon_code' => 'X', 'coupon_amount' => '1.001', 'coupon_expires_at' => '2030-01-01T00:00'],
+        ['gift_type' => 'points', 'points' => 0],
+        ['gift_type' => 'points', 'points' => 1.5],
+        ['gift_type' => 'product', 'gifts' => []],
+        ['gift_type' => 'product', 'gifts' => [['id' => '1', 'quantity' => 1.5]]],
+        ['gift_type' => 'coupon', 'coupon_code' => 'X', 'coupon_amount' => 1.25, 'coupon_expires_at' => '2030-01-01T00:00'],
+        ['gift_type' => 'coupon', 'coupon_code' => 'X', 'coupon_amount' => '10000000000.00', 'coupon_expires_at' => '2030-01-01T00:00'],
+    ] as $invalid) {
+        $attempt = $values;
+        $attempt['title'] = 'must remain unchanged';
+        $attempt['tiers'][0]['thresholds'][0] = array_replace($attempt['tiers'][0]['thresholds'][0], $invalid);
+        $this->putJson('/compositions/1', ['values' => $attempt])->assertUnprocessable();
+        expect(Composition::find(1)->title)->toBe('關聯組合 1');
+    }
+    $values['tiers'][0]['thresholds'][0] = array_replace($values['tiers'][0]['thresholds'][0], ['gift_type' => 'points', 'points' => 2, 'coupon_amount' => 'invalid', 'coupon_expires_at' => 'invalid', 'gifts' => [['id' => '1', 'quantity' => 0]]]);
+    $this->putJson('/compositions/1', ['values' => $values])->assertOk();
+});
+
+it('requires an explicit valid gift type for newly submitted threshold owners', function () {
+    $values = $this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
+    $values['tiers'][0]['thresholds'][] = ['_brume' => ['key' => 'new-gift-owner'], 'name' => '新門檻', 'amount' => '250.00', 'gifts' => [['id' => '2', 'quantity' => 1]]];
+    $this->putJson('/compositions/1', ['values' => $values])->assertUnprocessable()->assertJsonValidationErrors('tiers.0.thresholds.1.gift_type');
+    $values['tiers'][0]['thresholds'][1]['gift_type'] = 'product';
+    $this->putJson('/compositions/1', ['values' => $values])->assertOk();
+    expect($this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values.tiers.0.thresholds.1.gift_type'))->toBe('product');
 });
