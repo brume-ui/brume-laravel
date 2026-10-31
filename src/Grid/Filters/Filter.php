@@ -3,8 +3,11 @@
 namespace Brume\Grid\Filters;
 
 use Brume\Grid\Options\RemoteOptions;
+use Brume\Options\OptionContext;
+use Brume\Options\OptionSource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 /**
@@ -101,8 +104,18 @@ class Filter
         return $this->input('date', FilterInput::date($withTime));
     }
 
+    public function selectTable(OptionSource $source): static
+    {
+        return $this->input('selectTable', FilterInput::table($source, false));
+    }
+
+    public function multipleSelectTable(OptionSource $source): static
+    {
+        return $this->input('multipleSelectTable', FilterInput::table($source, true));
+    }
+
     /**
-     * Options searched on the server (SelectTable): the model's $labelColumn, matched by
+     * Options searched on the server (remote combobox): the model's $labelColumn, matched by
      * $searchColumns (default the label), with $valueColumn (default the key) as the value.
      *
      * @param  class-string<Model>|Builder  $model
@@ -114,7 +127,7 @@ class Filter
     }
 
     /**
-     * remoteSelect() choosing several values (MultipleSelectTable).
+     * remoteSelect() choosing several values in a combobox.
      *
      * @param  class-string<Model>|Builder  $model
      * @param  list<string>  $searchColumns
@@ -244,7 +257,18 @@ class Filter
     {
         $remote = $this->input->remoteOptions();
 
-        return $this->input->display($value, $remote?->labels((array) $value) ?? []);
+        $labels = $remote?->labels((array) $value) ?? [];
+        if (($source = $this->input->optionSource()) !== null) {
+            try {
+                $labels = array_column($source->response(new OptionContext(null), ['value' => (array) $value])['data'], 'label', 'value');
+            } catch (ValidationException) {
+                // URL filters retain their tolerant scalar/list contract. A malformed key has
+                // no label; the explicit options endpoint still returns its strict 422.
+                $labels = [];
+            }
+        }
+
+        return $this->input->display($value, $labels);
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace Brume\Grid\Filters;
 
 use Brume\Grid\Options\RemoteOptions;
+use Brume\Options\OptionSource;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -23,6 +24,7 @@ final class FilterInput
         protected string $type,
         protected array $props = [],
         protected ?RemoteOptions $remote = null,
+        protected ?OptionSource $source = null,
     ) {}
 
     public static function text(?string $placeholder = null, bool $numeric = false): self
@@ -65,6 +67,16 @@ final class FilterInput
         return new self($multiple ? 'multipleSelect' : 'select', [], $options);
     }
 
+    public static function table(OptionSource $source, bool $multiple): self
+    {
+        return new self($multiple ? 'multipleSelectTable' : 'selectTable', source: $source);
+    }
+
+    public function optionSource(): ?OptionSource
+    {
+        return $this->source;
+    }
+
     public function type(): string
     {
         return $this->type;
@@ -75,7 +87,7 @@ final class FilterInput
      */
     public function isList(): bool
     {
-        return in_array($this->type, ['multipleSelect', 'checkbox'], true);
+        return in_array($this->type, ['multipleSelect', 'multipleSelectTable', 'checkbox'], true);
     }
 
     /**
@@ -141,6 +153,7 @@ final class FilterInput
             'text' => ['type' => 'text']
                 + ($this->props['numeric'] ? ['inputMode' => 'numeric'] : [])
                 + ($this->props['placeholder'] !== null ? ['placeholder' => $this->props['placeholder']] : []),
+            'selectTable', 'multipleSelectTable' => ['type' => $this->type, 'remote' => true],
             'select', 'multipleSelect' => ['type' => $this->type]
                 + ($this->remote !== null ? ['remote' => true] : ['options' => $this->props['options']]),
             'radio', 'checkbox' => ['type' => $this->type, 'options' => $this->props['options']],
@@ -177,7 +190,7 @@ final class FilterInput
         return match ($this->type) {
             'range' => $this->parseRange($raw),
             'group' => $this->parseGroup($raw),
-            'select', 'radio' => is_string($raw) && $this->allows($raw) ? $raw : null,
+            'select', 'selectTable', 'radio' => is_string($raw) && $this->allows($raw) ? $raw : null,
             default => is_string($raw) ? $this->scalar($raw, $this->of()) : null,
         };
     }
@@ -187,7 +200,7 @@ final class FilterInput
      */
     protected function allows(string $value): bool
     {
-        return $value !== '' && ($this->remote !== null || in_array($value, array_column($this->props['options'], 'value'), true));
+        return $value !== '' && ($this->remote !== null || $this->source !== null || in_array($value, array_column($this->props['options'], 'value'), true));
     }
 
     /**
@@ -212,7 +225,7 @@ final class FilterInput
             return __('brume::grid.operators.'.$value['op']).' '.$value['value'];
         }
 
-        if (in_array($this->type, ['select', 'multipleSelect', 'radio', 'checkbox'], true)) {
+        if (in_array($this->type, ['select', 'multipleSelect', 'selectTable', 'multipleSelectTable', 'radio', 'checkbox'], true)) {
             $labels += array_column($this->props['options'] ?? [], 'label', 'value');
 
             return implode(__('brume::grid.separator'), array_map(

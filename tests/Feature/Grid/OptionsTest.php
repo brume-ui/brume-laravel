@@ -4,6 +4,7 @@ use Brume\Grid\Grid;
 use Brume\Grid\Options\RemoteOptions;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Models\User;
+use Brume\Options\OptionSource;
 use Brume\Tests\Support\JsonSchema;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -172,3 +173,30 @@ it('refuses a hidden attribute as the label, value or a search column', function
     'value' => [['name', 'remember_token']],
     'search' => [['name', null, ['name', 'password']]],
 ])->throws(InvalidArgumentException::class, '的 $hidden 裡');
+
+it('grid table picker preserves scalar and array filters through generated options routes', function () {
+    optionsUsers(3);
+    optionsRoutes(function (Grid $grid) {
+        $source = OptionSource::make(fn () => User::where('username', '!=', 'u03'))->label('name')->columns(['username' => 'Account']);
+        $grid->filters()->equal('table_owner', 'Owner', 'customer')->selectTable($source);
+        $grid->filters()->in('table_owners', 'Owners', 'customer')->multipleSelectTable($source);
+    });
+    $response = $this->getJson('/admin/orders/_brume/options/table_owner?value[]='.optionsId(3))->assertOk();
+    expect($response->json('data'))->toBe([]);
+    $response = $this->getJson('/admin/orders/_brume/options/table_owners?q=Ada')->assertOk();
+    expect(JsonSchema::errors($response->json(), 'PickerSearchResponse'))->toBe([])
+        ->and($response->json('data.0.columns.username'))->toBe('u02');
+    $page = $this->get('/admin/orders?'.http_build_query(['filter' => ['table_owner' => optionsId(2), 'table_owners' => [optionsId(2)]]]))->assertOk()->viewData('page')['props']['envelope']['page'];
+    expect($page['filters']['items'][2]['input'])->toBe(['type' => 'selectTable', 'remote' => true])
+        ->and($page['filters']['items'][3]['input'])->toBe(['type' => 'multipleSelectTable', 'remote' => true])
+        ->and($page['appliedFilters'][0]['display'])->toBe('Ada 02')
+        ->and($page['appliedFilters'][1]['display'])->toBe('Ada 02');
+    $this->getJson('/admin/orders/_brume/options/table_owner?per_page=51')->assertUnprocessable();
+});
+
+it('keeps a malformed table filter URL readable while its options endpoint remains strict', function () {
+    optionsRoutes(fn (Grid $grid) => $grid->filters()->equal('table_owner', 'Owner', 'customer')->selectTable(OptionSource::make(User::class)->label('name')));
+    $page = $this->get('/admin/orders?filter[table_owner]=not-an-integer')->assertOk()->viewData('page')['props']['envelope']['page'];
+    expect($page['appliedFilters'][0]['display'])->toBe('not-an-integer');
+    $this->getJson('/admin/orders/_brume/options/table_owner?value[]=not-an-integer')->assertUnprocessable();
+});

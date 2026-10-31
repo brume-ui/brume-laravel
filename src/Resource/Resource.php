@@ -8,6 +8,7 @@ use Brume\Form\FormSaver;
 use Brume\Grid\Grid;
 use Brume\Grid\RowLookup;
 use Brume\Http\ErrorResponse;
+use Brume\Options\OptionsController;
 use Brume\Pages\ErrorPage;
 use Brume\Uploads\UploadController;
 use Illuminate\Database\Eloquent\Builder;
@@ -64,6 +65,16 @@ abstract class Resource extends Controller
         return ($record = $this->record($request)) === null ? $this->notFound($request) : $this->buildForm($request, $record)->toResponse($request);
     }
 
+    final public function options(Request $request)
+    {
+        return app(OptionsController::class)->respond($this->buildForm($request), $request);
+    }
+
+    final public function recordOptions(Request $request)
+    {
+        return ($record = $this->record($request)) === null ? $this->notFound($request) : app(OptionsController::class)->respond($this->buildForm($request, $record), $request);
+    }
+
     final public function store(Request $request)
     {
         return $this->persist($request, null);
@@ -94,6 +105,7 @@ abstract class Resource extends Controller
     {
         $form = Form::make($this->query())->id($request->route()->getAction(ResourceRouteRegistrar::ACTION_KEY))->name($this->name)->forRecord($record)
             ->submitTo($record === null ? 'post' : 'put', $this->url($request, $record === null ? 'store' : 'update', $record?->getKey()))
+            ->optionsUrl($this->url($request, $record === null ? 'options' : 'record-options', $record?->getKey()))
             ->uploadUrl($this->url($request, $record === null ? 'upload' : 'record-upload', $record?->getKey()))
             ->listUrl($this->url($request, 'index'))
             ->urls(fn (Model $saved) => ['list' => $this->url($request, 'index'), 'edit' => $this->url($request, 'edit', $saved->getKey()), 'create' => $this->url($request, 'create')]);

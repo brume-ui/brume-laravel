@@ -38,6 +38,15 @@ class Form implements Renderable, Responsable
         return $this->id ?? throw new LogicException('Configure Form::id() with a stable identity before using uploads.');
     }
 
+    protected ?string $optionsUrl = null;
+
+    public function optionsUrl(string $url): static
+    {
+        $this->optionsUrl = Href::checked($url, 'Form::optionsUrl');
+
+        return $this;
+    }
+
     protected ?string $uploadUrl = null;
 
     protected ?string $listUrl = null;
@@ -232,6 +241,14 @@ class Form implements Renderable, Responsable
             $this->fire('creating', $this);
         } else {
             $this->fire('editing', $this->record, $this);
+        }
+        if ($this->optionsUrl !== null) {
+            $registry = new DeclarationRegistry($this->fields(), $this->record ?? $this->query->getModel());
+            foreach ($registry->entries as $path => $entry) {
+                if (method_exists($entry['field'], 'optionSource') && $entry['field']->optionSource() !== null) {
+                    $entry['field']->optionsEndpoint($this->optionsUrl.(str_contains($this->optionsUrl, '?') ? '&' : '?').'field='.rawurlencode($path));
+                }
+            }
         }
     }
 

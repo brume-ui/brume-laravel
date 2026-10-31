@@ -10,6 +10,7 @@ use Brume\Grid\Grid;
 use Brume\Grid\GridRouteRegistrar;
 use Brume\Http\ErrorResponse;
 use Brume\Http\Middleware\HandleGridEndpoint;
+use Brume\Options\OptionContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -97,6 +98,9 @@ class GridEndpointController
      */
     public function options(Grid $grid, Request $request, string $source): JsonResponse
     {
+        if (($declared = $grid->filters()->optionSource($source)) !== null) {
+            return new JsonResponse($declared->response(new OptionContext(null), $request->query(), true));
+        }
         $options = $grid->filters()->remoteOptions($source);
 
         return $options !== null ? new JsonResponse($options->respond($request)) : $this->unavailable();

@@ -30,6 +30,8 @@ final class ResourceRouteRegistrar
         $this->grid = (new GridRouteRegistrar($this->router))->register($uri, [$controller, 'index']);
         $this->groupName = $this->grid->page()->getName() ?? '';
         foreach ([
+            'options' => ['get', "$uri/_brume/form-options", 'options'],
+            'record-options' => ['get', "$uri/{_brume_record}/_brume/form-options", 'recordOptions'],
             'create' => ['get', "$uri/create", 'create'],
             'store' => ['post', $uri, 'store'],
             'edit' => ['get', "$uri/{_brume_record}/edit", 'edit'],

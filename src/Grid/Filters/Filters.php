@@ -4,6 +4,7 @@ namespace Brume\Grid\Filters;
 
 use Brume\Grid\Column;
 use Brume\Grid\Options\RemoteOptions;
+use Brume\Options\OptionSource;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use InvalidArgumentException;
@@ -287,7 +288,7 @@ class Filters
      */
     public function hasRemote(): bool
     {
-        return array_filter($this->filters, fn ($filter) => $filter instanceof Filter && $filter->filterInput()->remoteOptions() !== null) !== [];
+        return array_filter($this->filters, fn ($filter) => $filter instanceof Filter && ($filter->filterInput()->remoteOptions() !== null || $filter->filterInput()->optionSource() !== null)) !== [];
     }
 
     /**
@@ -295,6 +296,13 @@ class Filters
      *
      * @internal
      */
+    public function optionSource(string $key): ?OptionSource
+    {
+        $filter = $this->filters[$key] ?? null;
+
+        return $filter instanceof Filter ? $filter->filterInput()->optionSource() : null;
+    }
+
     public function remoteOptions(string $key): ?RemoteOptions
     {
         $filter = $this->filters[$key] ?? null;

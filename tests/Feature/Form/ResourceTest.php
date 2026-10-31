@@ -46,7 +46,7 @@ beforeEach(function () {
 
 it('registers all resource routes with stable names and shared modifiers', function () {
     $registrar = Route::brumeResource('guarded-orders', Task20OrderResource::class)->names('guarded')->middleware('can:manage-orders')->whereNumber('_brume_record');
-    expect($registrar->routes())->toHaveCount(12);
+    expect($registrar->routes())->toHaveCount(14);
     foreach ($registrar->routes() as $route) {
         expect($route->middleware())->toContain('can:manage-orders')->and($route->wheres)->toHaveKey('_brume_record');
     }
