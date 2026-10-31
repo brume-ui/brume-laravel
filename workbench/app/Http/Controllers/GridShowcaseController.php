@@ -65,9 +65,9 @@ class GridShowcaseController extends Resource
         if ($operator !== null) {
             if (in_array($operator, ['where', 'whereBetween'], true)) {
                 if ($operator === 'where') {
-                    $filters->where('demo', '庫存相等（callback）', fn (Builder $q, $value) => $q->where('stock', $value)->orWhere('stock', -1))->number();
+                    $filters->where('demo', '庫存相等（callback）', fn (Builder $q, $value) => $q->where('stock', $value)->orWhere('stock', 0))->number();
                 } else {
-                    $filters->whereBetween('demo', '庫存區間（callback）', fn (Builder $q, $start, $end) => $q->when($start !== null, fn (Builder $q) => $q->where('stock', '>=', $start))->when($end !== null, fn (Builder $q) => $q->where('stock', '<=', $end))->orWhere('stock', -1))->number();
+                    $filters->whereBetween('demo', '庫存區間（callback）', fn (Builder $q, $start, $end) => $q->when($start !== null, fn (Builder $q) => $q->where('stock', '>=', $start))->when($end !== null, fn (Builder $q) => $q->where('stock', '<=', $end))->orWhere('stock', 0))->number();
                 }
             } elseif ($operator === 'group') {
                 $filters->group('demo', '庫存條件', ['equal', 'notEqual', 'like', 'ilike', 'startWith', 'endWith', 'gt', 'lt', 'ngt', 'nlt'], 'stock')->number();

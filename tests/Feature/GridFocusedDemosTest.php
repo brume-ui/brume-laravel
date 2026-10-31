@@ -63,10 +63,16 @@ it('runs JSON membership paths relations and default clearing in focused workben
 });
 
 it('keeps callback OR conditions scoped by the root search and ignores invalid group operators', function () {
-    ShowcaseItem::query()->where('sku', 'FD-004')->update(['stock' => -1]);
+    ShowcaseItem::query()->where('sku', 'FD-004')->update(['stock' => 0]);
     foreach (['where' => '20', 'whereBetween' => ['start' => '10', 'end' => '20']] as $operator => $value) {
-        $page = $this->get('/admin/grid-showcase?'.http_build_query(['example' => 'grid.operator.'.$operator, 'q' => 'FD-002', 'filter' => ['demo' => $value]]))->assertOk()->viewData('page')['props']['envelope']['page'];
+        // The OR sentinel is legal on unsigned columns and actually matches before root search.
+        $query = ['example' => 'grid.operator.'.$operator, 'filter' => ['demo' => $value], 'sort' => 'sku'];
+        $unsearched = $this->get('/admin/grid-showcase?'.http_build_query($query))->assertOk()->viewData('page')['props']['envelope']['page'];
+        expect(array_column($unsearched['rows'], 'sku'))->toBe($operator === 'where' ? ['FD-002', 'FD-004'] : ['FD-001', 'FD-002', 'FD-004']);
+        $page = $this->get('/admin/grid-showcase?'.http_build_query([...$query, 'q' => 'FD-002']))->assertOk()->viewData('page')['props']['envelope']['page'];
         expect(array_column($page['rows'], 'sku'))->toBe(['FD-002']);
+        $excluded = $this->get('/admin/grid-showcase?'.http_build_query([...$query, 'q' => 'FD-003']))->assertOk()->viewData('page')['props']['envelope']['page'];
+        expect($excluded['rows'])->toBe([]);
     }
     $page = $this->get('/admin/grid-showcase?'.http_build_query(['example' => 'grid.operator.group', 'filter' => ['demo' => ['op' => 'between', 'value' => '20']]]))->assertOk()->viewData('page')['props']['envelope']['page'];
     expect($page['appliedFilters'])->toBe([])->and($page['pagination']['total'])->toBe(4);
