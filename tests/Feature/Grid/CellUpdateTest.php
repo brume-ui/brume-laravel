@@ -4,6 +4,7 @@ use Brume\Grid\Column;
 use Brume\Grid\Editor;
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
+use Brume\Support\Assets;
 use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\JsonSemantics;
 use Brume\Tests\Support\Models\CellItem;
@@ -528,16 +529,46 @@ it('serializes custom editor supported root rules without child rules', function
         ->and(JsonSchema::errors($schema, 'InlineEditor'))->toBe([]);
 });
 
-it('merges custom editor and column root rules with matching HTTP validation messages', function () {
+it('merges custom editor and column root rules with matching HTTP validation messages', function (string $defaultLocale, ?string $cookie) {
+    config(['brume.locale' => $defaultLocale]);
+    $this->withCredentials();
+    if ($cookie !== null) {
+        $this->withUnencryptedCookie('brume_locale', $cookie);
+    }
     [$item] = cellItems();
     $editor = Editor::component('Contact', rules: ['' => ['required', 'email']]);
-    $grid = Grid::make(CellItem::class);
-    $column = $grid->column('note', 'Contact')->editable($editor, 'max:8');
-    $schema = $column->toSchema()['editor'];
-    expect(array_column($schema['rules'] ?? [], 'rule'))->toBe(['required', 'email', 'maxLength']);
     cellRoutes(fn (Grid $grid) => $grid->column('note', 'Contact')->editable($editor, 'max:8'));
+    // A cold validation request must not depend on a previous page render warming translations.
+    $coldMessages = [];
+    foreach (['required' => '', 'email' => 'bad', 'maxLength' => 'long@example.com'] as $rule => $value) {
+        $coldMessages[$rule] = patchCell($item->id, ['column' => 'note', 'value' => $value])->assertUnprocessable()->assertJsonValidationErrors('note')->json('errors.note.0');
+    }
+    $page = $this->get('/admin/cells', ['X-Inertia' => 'true', 'X-Inertia-Version' => Assets::version()])->assertOk();
+    $schema = collect($page->json('props.envelope.page.columns'))->firstWhere('key', 'note')['editor'];
+    expect(array_column($schema['rules'] ?? [], 'rule'))->toBe(['required', 'email', 'maxLength']);
+    $locale = $cookie === null ? $defaultLocale : str_replace('-', '_', $cookie);
+    expect($page->json('props.brume.app.locale'))->toBe(str_replace('_', '-', $locale));
     foreach (['required' => '', 'email' => 'bad', 'maxLength' => 'long@example.com'] as $rule => $value) {
         $response = patchCell($item->id, ['column' => 'note', 'value' => $value])->assertUnprocessable()->assertJsonValidationErrors('note');
-        expect(collect($schema['rules'])->firstWhere('rule', $rule)['message'])->toBe($response->json('errors.note.0'));
+        expect(collect($schema['rules'])->firstWhere('rule', $rule)['message'])->toBe($response->json('errors.note.0'))
+            ->and($coldMessages[$rule])->toBe($response->json('errors.note.0'));
     }
-});
+})->with(['en', 'zh_TW', 'zh_CN'])->with([
+    'configured default' => [null], 'English cookie' => ['en'], 'Traditional Chinese cookie' => ['zh-TW'], 'Simplified Chinese cookie' => ['zh-CN'],
+]);
+
+it('keeps native editor cold and warm validation localized without overriding host messages', function (string $locale, bool $override) {
+    config(['brume.locale' => $locale]);
+    if ($override) {
+        app('translator')->addLines(['validation.min.numeric' => ':attribute HOSTMIN :min'], $locale);
+    }
+    [$item] = cellItems();
+    cellRoutes(fn (Grid $grid) => $grid->column('note', 'Contact')->editable(Editor::number(min: 3)), customer: Editor::component('Contact', rules: ['' => ['required']]));
+    $cold = patchCell($item->id, ['column' => 'note', 'value' => 2])->assertUnprocessable()->assertJsonValidationErrors('note')->json('errors.note.0');
+    $this->get('/admin/cells', ['X-Inertia' => 'true', 'X-Inertia-Version' => Assets::version()])->assertOk();
+    $warm = patchCell($item->id, ['column' => 'note', 'value' => 2])->assertUnprocessable()->assertJsonValidationErrors('note')->json('errors.note.0');
+    expect($cold)->toBe($warm);
+    if ($override) {
+        expect($cold)->toBe('Contact HOSTMIN 3');
+    }
+})->with(['en', 'zh_TW', 'zh_CN'])->with([false, true]);

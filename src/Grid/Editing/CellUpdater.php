@@ -2,6 +2,7 @@
 
 namespace Brume\Grid\Editing;
 
+use Brume\Form\FormValidator;
 use Brume\Form\JsonValues;
 use Brume\Grid\Column;
 use Brume\Grid\Grid;
@@ -100,6 +101,7 @@ class CellUpdater
         $declared = $column->editRules();
         $declared = is_string($declared) ? array_filter(explode('|', $declared), fn ($rule) => $rule !== '') : $declared;
         $rules[$key] = [...$rules[$key], ...array_values($declared)];
+        FormValidator::translations();
         $validator = Validator::make([$key => JsonValues::validationView($value)], $rules, [], $this->attributeNames($column));
 
         if ($validator->fails()) {
