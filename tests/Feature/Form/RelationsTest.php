@@ -1071,3 +1071,73 @@ it('round one restores inactive authority when the saving hook disables an activ
     graphSave($form, $root, ($nested ? ['children' => [graphRow($child, $draft)]] : $draft) + ['code' => (string) $two->id]);
     expect($seen)->toBe([2, 1])->and(($child ?? $root)->fresh()->sold)->toBe(1)->and($root->fresh()->code)->toBe((string) $one->id);
 })->with([false, true]);
+
+class GraphReaderProduct extends GraphProduct
+{
+    protected $casts = ['data' => 'array', 'stored' => 'array'];
+}
+class GraphReaderRoot extends GraphRoot
+{
+    public function owner()
+    {
+        return $this->belongsTo(GraphReaderProduct::class, 'owner_id');
+    }
+
+    public function products()
+    {
+        return $this->hasMany(GraphReaderProduct::class, 'root_id');
+    }
+}
+
+it('round two separates JSON container reader context from newly associated storage', function ($mode, $creating) {
+    Schema::table('graph_products', function ($table) {
+        $table->json('data')->nullable();
+        $table->json('stored')->nullable();
+    });
+    $root = $creating ? null : GraphReaderRoot::create();
+    $product = GraphReaderProduct::create(['data' => [], 'stored' => [['_brume' => ['key' => 'owned'], 'name' => 'authoritative', 'opaque' => (object) [], 'list' => []]]]);
+    $readers = [];
+    $jsonContexts = [];
+    $writers = [];
+    $form = Form::make(GraphReaderRoot::class)->urls(fn ($record) => ['edit' => '/roots/'.$record->id]);
+    $form->relationPicker($mode, 'Owner', OptionSource::make(GraphReaderProduct::class)->label('name'))->relation($mode)->multiple($mode === 'products')->extra(function ($row) use (&$readers, &$jsonContexts, &$writers) {
+        $row->repeater('data', 'JSON', function ($json) use (&$jsonContexts) {
+            $json->text('name')->readOnly(function (?GraphReaderRoot $context) use (&$jsonContexts) {
+                $jsonContexts[] = $context;
+
+                return false;
+            });
+            $json->repeater('nested', 'Nested', fn ($nested) => $nested->text('name'))->value(function (?GraphReaderRoot $context) {
+                return [];
+            })->readOnly(function (?GraphReaderRoot $context) use (&$jsonContexts) {
+                $jsonContexts[] = $context;
+
+                return false;
+            });
+        })->value(function (?GraphReaderRoot $context) use (&$readers) {
+            $readers[] = $context;
+
+            return [];
+        })->saveUsing(function (Model $target, $value) use (&$writers) {
+            $writers[] = [$target::class, $target->getKey(), $target->exists];
+            $target->data = $value;
+        });
+        $row->repeater('stored', 'Stored', function ($json) {
+            $json->text('name')->readOnly();
+            $json->component('opaque', 'Opaque', 'Json')->readOnly();
+            $json->component('list', 'List', 'Json')->readOnly();
+        });
+    });
+    $selected = ['id' => (string) $product->id, 'data' => [['_brume' => ['key' => 'new'], 'name' => 'saved', 'nested' => [['_brume' => ['key' => 'nested'], 'name' => 'nested saved']]]], 'stored' => [['_brume' => ['key' => 'owned'], 'name' => 'forged', 'opaque' => [], 'list' => (object) []]]];
+    $result = graphSave($form, $root, [$mode => $mode === 'products' ? [$selected] : $selected]);
+    $savedRoot = GraphReaderRoot::findOrFail($result['id']);
+    $saved = $product->fresh();
+    expect($mode === 'owner' ? $savedRoot->owner_id : $saved->root_id)->toBe($mode === 'owner' ? $product->id : $savedRoot->id);
+    expect($saved->data[0]['name'])->toBe('saved')->and($saved->data[0]['nested'][0]['name'])->toBe('nested saved');
+    expect($saved->stored[0]['name'])->toBe('authoritative');
+    $raw = json_decode($saved->getRawOriginal('stored'));
+    expect($raw[0]->opaque)->toBeInstanceOf(stdClass::class)->and($raw[0]->list)->toBe([]);
+    // Null association context preserves Field::valueFor(null): default, without invoking a reader.
+    expect($readers)->toBe([])->and($writers)->toBe([[GraphReaderProduct::class, $product->id, true]]);
+    expect($jsonContexts)->not->toBeEmpty()->and(collect($jsonContexts)->every(fn ($context) => $context === $root))->toBeTrue();
+})->with(['owner', 'products'])->with([false, true]);

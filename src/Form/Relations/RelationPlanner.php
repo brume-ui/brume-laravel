@@ -183,7 +183,7 @@ final class RelationPlanner
         $this->entries[$path]['existing'] = $existing;
         $storedRows = [];
         if (! $isRelation) {
-            $storedRows = $json !== null ? data_get($json, $field->attributeName(), []) : ($model->exists ? $field->storedJsonRows($model) : []);
+            $storedRows = $json !== null ? data_get($json, $field->attributeName(), []) : ($model->exists ? $field->storedJsonRowsForContext($model, $callback) : []);
             $this->entries[$path]['stored'] = $storedRows;
             $storedRows = JsonRows::hydrate($storedRows ?? [], $this->root, $template.$relative, $storageContext);
         }

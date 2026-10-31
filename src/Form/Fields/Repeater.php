@@ -125,7 +125,15 @@ class Repeater extends Field
 
     public function storedJsonRows(Model $record): array
     {
-        return JsonValues::storedValue($record, $this->attributeName(), parent::valueFor($record)) ?? [];
+        return $this->storedJsonRowsForContext($record, $record);
+    }
+
+    /** Keep encoded storage authority separate from a declared reader's association context. */
+    public function storedJsonRowsForContext(Model $storage, ?Model $context): array
+    {
+        $value = parent::valueFor($this->reader === null ? $storage : $context);
+
+        return JsonValues::storedValue($storage, $this->attributeName(), $value) ?? [];
     }
 
     public function valueFor(?Model $record): mixed
