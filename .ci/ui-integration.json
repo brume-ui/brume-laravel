@@ -1,5 +1,5 @@
 {
   "repository": "brume-ui/brume-ui",
-  "sha": "d3d0ed5a4a64e7964a6583ae665051818f05ad88",
+  "sha": "7c6eef8eb7f1d3e070a5d85fba038624e58b4243",
   "purpose": "Temporary alpha13 prepublication source acceptance; published dist/install/E2E gates remain registry packages. Remove after published alpha13 integration."
 }
