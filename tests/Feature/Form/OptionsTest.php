@@ -9,6 +9,7 @@ use Brume\Options\OptionContext;
 use Brume\Options\OptionSource;
 use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\Models\CellItem;
+use Brume\Tests\Support\Models\CodeItem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
@@ -361,4 +362,107 @@ it('refuses a forged sibling target chain for a row-relative dependency', functi
         });
     });
     formOptionsRequest($root->id, 'tags.*.choice', ['depends' => '{"name":"B"}', 'rowContext' => '[{"path":"tags","key":"a"}]', 'dependencyContexts' => '{"name":[{"path":"tags","key":"b"}]}'])->assertUnprocessable();
+});
+
+it('rejects numeric picker aliases before readonly authority resolution for owner target and collection contexts', function (string $mode) {
+    $root = OptionsRecord::create(['shop_id' => 999, 'customer' => 'Root', 'status' => 'root']);
+    $product = OptionsRecord::create(['shop_id' => 999, 'customer' => 'Product', 'status' => 'source']);
+    $owned = $root->children()->create(['customer' => (string) $product->id, 'note' => 'Owned']);
+    $candidate = OptionsRecord::create(['shop_id' => 999, 'customer' => 'Owned', 'status' => 'candidate']);
+    OptionsRecord::create(['shop_id' => 999, 'customer' => 'New', 'status' => 'candidate']);
+    $seen = [];
+    formOptionsRoutes(function ($form) use (&$seen) {
+        $childSource = OptionSource::make(function (OptionContext $c) use (&$seen) {
+            $name = $c->dependencies['name'] ?? data_get($c->dependencies, 'products.0.note');
+            $seen[] = $name;
+
+            return OptionsRecord::where('status', 'candidate')->where('customer', $name);
+        })->label('customer');
+        $form->relationPicker('products', 'Products', OptionSource::make(fn () => OptionsRecord::where('status', 'source'))->label('customer'))->relation('children')->associateBy('customer')->extra(function ($row) use ($childSource) {
+            $row->text('note')->default('New')->readOnly();
+            $row->select('choice')->remote($childSource, ['name' => ConditionPath::row('note')]);
+        });
+        $form->select('target')->remote($childSource, ['name' => ConditionPath::root('products.0.note')]);
+        $form->select('collection')->remote($childSource, ['products' => ConditionPath::root('products')]);
+    });
+    $request = function (string $id) use ($mode, $root) {
+        $chain = [['path' => 'products', 'key' => $id, 'id' => $id]];
+        [$field, $parameters] = match ($mode) {
+            'owner' => ['products.*.choice', ['rowContext' => json_encode($chain), 'depends' => '{"name":"forged"}']],
+            'target' => ['target', ['dependencyContexts' => json_encode(['name' => $chain]), 'depends' => '{"name":"forged"}']],
+            default => ['collection', ['depends' => json_encode(['products' => [['id' => $id, 'note' => 'forged']]])]],
+        };
+        $parameters['ancestorSources'] = '[{"path":"products","rowContext":[],"depends":{}}]';
+
+        return formOptionsRequest($root->id, $field, $parameters);
+    };
+    expect($request((string) $product->id)->assertOk()->json('data.0.value'))->toBe((string) $candidate->id);
+    $request('0'.$product->id)->assertUnprocessable();
+    expect($seen)->toBe(['Owned']);
+    $product->update(['status' => 'inactive']);
+    expect($request((string) $product->id)->assertOk()->json('data.0.value'))->toBe((string) $candidate->id);
+    $owned->delete();
+    $request((string) $product->id)->assertUnprocessable();
+    $product->update(['status' => 'source']);
+    $request((string) $product->id)->assertOk();
+    expect($seen)->toBe(['Owned', 'Owned', 'New']);
+    formOptionsRequest($root->id, 'collection', ['depends' => json_encode(['products' => [['id' => (string) $product->id], ['id' => '0'.$product->id]]])])->assertUnprocessable();
+    formOptionsRequest($root->id, 'collection', ['depends' => json_encode(['products' => [['id' => (string) $product->id], ['id' => (string) $product->id]]])])->assertUnprocessable();
+})->with(['owner', 'target', 'collection']);
+
+it('retains exact string picker source identities including leading zero and case differences', function () {
+    $root = OptionsRecord::create(['shop_id' => 999, 'customer' => 'Root', 'status' => 'root']);
+    $root->children()->create(['customer' => '02', 'note' => 'Owned']);
+    CodeItem::create(['code' => '02', 'name' => 'Leading']);
+    CodeItem::create(['code' => 'Abc', 'name' => 'Mixed']);
+    $seen = [];
+    formOptionsRoutes(function ($form) use (&$seen) {
+        $form->relationPicker('products', 'Products', OptionSource::make(CodeItem::class)->label('name'))->relation('children')->associateBy('customer')->extra(function ($row) use (&$seen) {
+            $row->text('note')->readOnly()->default('New');
+            $row->select('choice')->remote(OptionSource::make(function (OptionContext $c) use (&$seen) {
+                $seen[] = $c->dependencies['name'];
+
+                return User::query();
+            })->label('name'), ['name' => ConditionPath::row('note')]);
+        });
+    });
+    foreach (['02' => 200, '2' => 422, 'Abc' => 200, 'abc' => 422] as $id => $status) {
+        formOptionsRequest($root->id, 'products.*.choice', ['rowContext' => json_encode([['path' => 'products', 'key' => (string) $id, 'id' => (string) $id]])])->assertStatus($status);
+    }
+    expect($seen)->toBe(['Owned', 'New']);
+});
+
+it('uses one canonical picker identity policy for nested ancestor instances', function () {
+    $root = OptionsRecord::create(['shop_id' => 999, 'customer' => 'Root', 'status' => 'root']);
+    $first = OptionsRecord::create(['shop_id' => 999, 'customer' => 'First', 'status' => 'source']);
+    $second = OptionsRecord::create(['shop_id' => 999, 'customer' => 'Second', 'status' => 'source']);
+    $intermediary = $root->children()->create(['customer' => (string) $first->id]);
+    $intermediary->children()->create(['customer' => (string) $second->id, 'note' => 'Nested']);
+    $called = 0;
+    formOptionsRoutes(function ($form) use (&$called) {
+        $source = OptionSource::make(fn () => OptionsRecord::where('status', 'source'))->label('customer');
+        $form->relationPicker('products', 'Products', $source)->relation('children')->associateBy('customer')->extra(function ($row) use ($source, &$called) {
+            $row->relationPicker('products', 'Products', $source)->relation('children')->associateBy('customer')->extra(function ($row) use (&$called) {
+                $row->text('note')->readOnly()->default('New');
+                $row->select('choice')->remote(OptionSource::make(function (OptionContext $c) use (&$called) {
+                    $called++;
+                    expect($c->dependencies['name'])->toBe('Nested');
+
+                    return User::query();
+                })->label('name'), ['name' => ConditionPath::row('note')]);
+            });
+        });
+    });
+    $outer = ['path' => 'products', 'key' => (string) $first->id, 'id' => (string) $first->id];
+    $inner = ['path' => 'products.*.products', 'key' => (string) $second->id, 'id' => (string) $second->id];
+    $metadata = [['path' => 'products', 'rowContext' => [], 'depends' => (object) []], ['path' => 'products.*.products', 'rowContext' => [$outer], 'depends' => (object) []]];
+    $parameters = ['rowContext' => json_encode([$outer, $inner]), 'ancestorSources' => json_encode($metadata)];
+    formOptionsRequest($root->id, 'products.*.products.*.choice', $parameters)->assertOk();
+    $alias = ['path' => 'products', 'key' => '0'.$first->id, 'id' => '0'.$first->id];
+    $metadata[1]['rowContext'] = [$alias];
+    $parameters['ancestorSources'] = json_encode($metadata);
+    formOptionsRequest($root->id, 'products.*.products.*.choice', $parameters)->assertUnprocessable();
+    $parameters['rowContext'] = json_encode([$alias, $inner]);
+    formOptionsRequest($root->id, 'products.*.products.*.choice', $parameters)->assertUnprocessable();
+    expect($called)->toBe(1);
 });

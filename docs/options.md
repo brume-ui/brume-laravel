@@ -81,3 +81,10 @@ Their URL values remain a scalar string or string array. Grid contexts have null
 dependencies; capture the authorized tenant in the declared source closure. Existing
 `remoteSelect(...)` and `remoteMultipleSelect(...)` remain remote comboboxes with their original
 RemoteOptions API, tolerant paging and bounded/truncated hydration behavior.
+
+Picker row contexts and whole-collection identities must use the canonical source-key spelling.
+For integer source models `"02"` is rejected with 422 before choosing an existing/new intermediary;
+for string source models `"02"` remains an exact string key. This policy also applies to dependency
+target chains and ancestor-instance owner prefixes. Ordinary source hydration retains its documented
+numeric normalization. Existing parent-owned associations still provide readonly authority even when
+the source is no longer newly selectable; genuinely new selections must pass the source query.

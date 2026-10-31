@@ -214,19 +214,23 @@ final class FormOptionContext
                     if (! isset($identity['id']) || $identity['key'] !== $identity['id']) {
                         $this->invalid('rowContext');
                     }
+                    $sourceContext = $this->ancestor($path, $ancestors);
+                    $lookup = new RowLookup($container->optionSource()->query($sourceContext));
+                    $id = $lookup->normalizeId($identity['id']);
+                    // Context identities must already use the source's canonical spelling.
+                    // Decide existing/new only after this check; numeric aliases must not turn
+                    // an owned intermediary into a new row with different readonly defaults.
+                    if ($id === null || (string) $id !== $identity['id']) {
+                        $this->invalid('rowContext');
+                    }
                     if ($parent !== null) {
                         $relation = $container->relationship($parent);
                         $attribute = $container->associationAttribute() ?? $relation->getRelated()->getKeyName();
                         $matches = $relation->where($relation->getRelated()->qualifyColumn($attribute), $identity['id'])->get();
                         $record = $matches->first(fn ($row) => (string) $row->getAttribute($attribute) === $identity['id']);
                     }
-                    $sourceContext = $this->ancestor($path, $ancestors);
-                    if ($record === null) {
-                        $lookup = new RowLookup($container->optionSource()->query($sourceContext));
-                        $id = $lookup->normalizeId($identity['id']);
-                        if ($id === null || $lookup->find([$id])?->first() === null) {
-                            $this->invalid('rowContext');
-                        }
+                    if ($record === null && $lookup->find([$id])?->first() === null) {
+                        $this->invalid('rowContext');
                     }
                     // Source identity is never used as the intermediary callback model.
                 } elseif (isset($identity['id'])) {
