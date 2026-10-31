@@ -172,13 +172,31 @@ test("Grid single/multiple picker filters use ID queries and custom inline edito
   const row = page
     .locator("tbody tr")
     .filter({ has: page.getByRole("link", { name: "關聯組合 6", exact: true }) });
-  await row.getByRole("button", { name: /編輯.*地址/ }).click();
+  const addressCell = row.getByRole("cell").filter({ hasText: "中山南路1號" });
+  await expect(
+    addressCell.getByText("100, 臺北市, 中正區, 中山南路1號", { exact: true }),
+  ).toBeVisible();
+  await expect(addressCell).not.toContainText("{");
+  const editAddress = row.getByRole("button", { name: /編輯.*地址/ });
+  await expect(editAddress).not.toHaveAttribute("aria-label", /\{/);
+  await editAddress.click();
+  await page.getByRole("textbox", { name: "地址", exact: true }).fill("取消的行內地址");
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(
+    addressCell.getByText("100, 臺北市, 中正區, 中山南路1號", { exact: true }),
+  ).toBeVisible();
+  await expect(addressCell).not.toContainText("{");
+  await editAddress.click();
   await page.getByRole("textbox", { name: "地址", exact: true }).fill("行內編輯地址");
   const changed = page.waitForResponse((response) => response.request().method() === "PATCH");
   await page.getByRole("button", { name: "儲存", exact: true }).click();
   expect((await changed).status()).toBe(200);
+  const savedAddress = "100, 臺北市, 中正區, 行內編輯地址";
+  await expect(row.getByText(savedAddress, { exact: true })).toBeVisible();
+  await expect(row).not.toContainText("{");
   await page.reload();
-  await expect(row).toContainText("行內編輯地址");
+  await expect(row.getByText(savedAddress, { exact: true })).toBeVisible();
+  await expect(row).not.toContainText("{");
 });
 
 test("custom address labels follow the public locale in all three languages", async ({
