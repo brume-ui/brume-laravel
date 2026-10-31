@@ -186,7 +186,7 @@ class RelationPicker extends Field
 
     public function schemaFor(?Model $record, ?Model $root): array
     {
-        return $this->remoteSchema() + parent::toSchema($record) + ['fields' => $this->extraForm->nodesSchema(null, $root)];
+        return ($this->extraForm->fields() !== [] ? ['hydrateAuthority' => true] : []) + $this->remoteSchema() + parent::toSchema($record) + ['fields' => $this->extraForm->nodesSchema(null, $root)];
     }
 
     public function valueFor(?Model $record): mixed

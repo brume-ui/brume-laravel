@@ -113,6 +113,17 @@ class OptionSource
     /** Strict new-source protocol; legacy Grid RemoteOptions deliberately keeps its tolerant API. */
     public function response(OptionContext $context, array $parameters, bool $picker = false): array
     {
+        return $this->respond($context, $parameters, $picker, false);
+    }
+
+    /** Only the server-declared Tags control may preserve unmatched strings as literals. */
+    public function tagsResponse(OptionContext $context, array $parameters): array
+    {
+        return $this->respond($context, $parameters, false, true);
+    }
+
+    private function respond(OptionContext $context, array $parameters, bool $picker, bool $literals): array
+    {
         $page = $this->positive($parameters, 'page', 1, 999999);
         $perPage = $this->positive($parameters, 'per_page', 20, 50);
         $q = $parameters['q'] ?? '';
@@ -121,7 +132,7 @@ class OptionSource
         }
         $query = $this->query($context);
         $sections = $this->configuration['sections'] ?? [];
-        $section = $parameters['section'] ?? array_key_first($sections);
+        $section = $parameters['section'] ?? (array_key_exists('value', $parameters) ? null : array_key_first($sections));
         if ($section !== null) {
             if ((! is_string($section) && ! is_int($section)) || ! array_key_exists($section, $sections)) {
                 $this->invalid('section');
@@ -135,8 +146,18 @@ class OptionSource
                 $this->invalid('value');
             }
             $ids = [];
+            $requested = [];
             foreach ($values as $value) {
                 $id = $lookup->normalizeId($value);
+                if ($literals) {
+                    if (! is_string($value) || in_array($value, $requested, true)) {
+                        $this->invalid('value');
+                    }
+                    $requested[] = $value;
+                    if ($id === null || (string) $id !== $value) {
+                        continue;
+                    }
+                }
                 if ($id === null || in_array($id, $ids, true)) {
                     $this->invalid('value');
                 }
@@ -165,7 +186,13 @@ class OptionSource
             $pagination = ['page' => $page, 'perPage' => $perPage, 'hasMore' => $rows->count() > $perPage];
             $rows = $rows->take($perPage)->all();
         }
-        $result = ['data' => array_map(fn (Model $row) => $this->option($row, $picker), $rows), 'pagination' => $pagination];
+        $data = array_map(fn (Model $row) => $this->option($row, $picker), $rows);
+        if ($literals && isset($requested)) {
+            $labels = array_column($data, null, 'value');
+            $data = array_map(fn (string $value) => $labels[$value] ?? ['value' => $value, 'label' => $value], $requested);
+            $pagination['perPage'] = max(1, count($requested));
+        }
+        $result = ['data' => $data, 'pagination' => $pagination];
         if ($picker) {
             foreach (['columns', 'sections'] as $key) {
                 if (isset($this->configuration[$key])) {

@@ -1,6 +1,7 @@
 <?php
 
 use Brume\Form\ConditionPath;
+use Brume\Form\Conditions;
 use Brume\Form\Form;
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
@@ -63,6 +64,11 @@ it('picker projections and search refuse hidden attributes', function (string $c
 class OptionsRecord extends CellItem
 {
     protected $table = 'cell_items';
+
+    public function sourceOwner()
+    {
+        return $this->belongsTo(User::class, 'customer');
+    }
 
     public function children()
     {
@@ -465,4 +471,113 @@ it('uses one canonical picker identity policy for nested ancestor instances', fu
     $parameters['rowContext'] = json_encode([$alias, $inner]);
     formOptionsRequest($root->id, 'products.*.products.*.choice', $parameters)->assertUnprocessable();
     expect($called)->toBe(1);
+});
+
+it('hydrates later partitions and literal Tags only through their declared control endpoint', function () {
+    $root = OptionsRecord::create(['shop_id' => 1, 'customer' => 'Root', 'status' => 'root']);
+    $later = brumeUser(['username' => 'later', 'name' => 'Later label']);
+    CodeItem::create(['code' => 'SKU-A', 'name' => 'String label']);
+    formOptionsRoutes(function ($form) {
+        $source = OptionSource::make(User::class)->label('name')->sections(['first' => 'First', 'later' => 'Later'], fn ($q, $section) => $q->where('username', $section === 'first' ? 'admin' : 'later'));
+        $form->tags('tags')->remote($source);
+        $form->select('strict')->remote($source);
+        $form->multipleSelect('multiple')->remote($source);
+        $form->relationPicker('picker', 'Picker', $source)->relation('children')->associateBy('customer');
+        $form->tags('strings')->remote(OptionSource::make(CodeItem::class)->label('name'));
+    });
+    $values = [(string) $later->id, 'free text'];
+    expect(formOptionsRequest($root->id, 'tags', ['value' => $values])->assertOk()->json('data'))->toBe([
+        ['value' => (string) $later->id, 'label' => 'Later label'], ['value' => 'free text', 'label' => 'free text'],
+    ]);
+    foreach (['strict', 'multiple', 'picker'] as $field) {
+        formOptionsRequest($root->id, $field, ['value' => $values, 'literals' => 'true'])->assertUnprocessable();
+        expect(formOptionsRequest($root->id, $field, ['value' => [(string) $later->id]])->assertOk()->json('data.0.label'))->toBe('Later label');
+    }
+    expect(formOptionsRequest($root->id, 'strings', ['value' => ['SKU-A', 'a literal']])->assertOk()->json('data'))->toBe([
+        ['value' => 'SKU-A', 'label' => 'String label'], ['value' => 'a literal', 'label' => 'a literal'],
+    ]);
+    expect(formOptionsRequest($root->id, 'tags', ['section' => 'first', 'value' => [(string) $later->id]])->assertOk()->json('data.0.label'))->toBe((string) $later->id);
+    formOptionsRequest($root->id, 'tags', ['value' => range(1, 101)])->assertUnprocessable();
+});
+
+it('returns declared scoped picker authority without confusing source storage with intermediary defaults', function () {
+    $root = OptionsRecord::create(['shop_id' => 1, 'customer' => 'Root', 'status' => 'root']);
+    $allowed = brumeUser(['username' => 'allowed', 'name' => 'Stored source name']);
+    $foreign = brumeUser(['username' => 'foreign', 'name' => 'Secret']);
+    formOptionsRoutes(function ($form) use ($allowed) {
+        $source = OptionSource::make(fn () => User::whereKey($allowed->id))->label('name');
+        $form->relationPicker('owner', 'Owner', $source)->relation('sourceOwner')->multiple(false)->extra(function ($row) {
+            $row->text('name')->default('new default')->readOnly(fn ($record) => $record !== null);
+            $row->text('password');
+        });
+        $form->relationPicker('intermediaries', 'Intermediaries', $source)->relation('children')->associateBy('customer')->extra(fn ($row) => $row->text('note')->default('new note'));
+        $form->repeater('tags', 'Rows', function ($row) {
+            $row->switch('flag')->default(false);
+            $row->number('zero')->default(0);
+            $row->text('empty')->default('');
+            $row->text('mapped')->attributes(['start', 'end'])->default(['ignored', 'ignored']);
+        });
+    });
+    $response = formOptionsRequest($root->id, 'owner', ['value' => [(string) $allowed->id]])->assertOk();
+    expect($response->json('data.0.authority.values.name'))->toBe('Stored source name')
+        ->and($response->json('data.0.authority.values.password'))->toBeNull()
+        ->and($response->json('data.0.authority.rowFields.0.fields.name.readOnly'))->toBeFalse()
+        ->and(JsonSchema::errors($response->json(), 'PickerSearchResponse'))->toBe([]);
+    expect(formOptionsRequest($root->id, 'owner', ['value' => [(string) $foreign->id]])->assertOk()->json('data'))->toBe([]);
+    expect(formOptionsRequest($root->id, 'owner')->assertOk()->json('data.0'))->not->toHaveKey('authority');
+    expect(formOptionsRequest($root->id, 'intermediaries', ['value' => [(string) $allowed->id]])->assertOk()->json('data.0.authority.values.note'))->toBe('new note');
+    $page = $this->get('/option-records/'.$root->id.'/edit', ['X-Brume-Form' => '1'])->assertOk();
+    $nodes = $page->json('page.form.nodes.2.field.nodes');
+    expect(array_column(array_column($nodes, 'field'), 'defaultValue'))->toBe([false, 0, '', [null, null]])
+        ->and(JsonSchema::errors($page->json(), 'PageEnvelope'))->toBe([]);
+});
+
+it('saves and reloads conditional chains with stored inactive authority at root and nested owners', function (string $condition) {
+    $root = OptionsRecord::create(['shop_id' => 1, 'customer' => 'A', 'status' => 'root', 'is_active' => true, 'note' => 'old note', 'tags' => [['_brume' => ['key' => 'a'], 'visible' => true, 'kind' => 'A', 'note' => 'old nested']]]);
+    formOptionsRoutes(function ($form) use ($condition) {
+        $form->switch('is_active');
+        $form->text('customer')->{$condition}(Conditions::eq(ConditionPath::root('is_active'), true));
+        $form->text('note')->required()->showWhen(Conditions::eq(ConditionPath::root('customer'), 'B'));
+        $form->repeater('tags', 'Rows', function ($row) use ($condition) {
+            $row->switch('visible')->default(false);
+            $row->text('kind')->default('A')->{$condition}(Conditions::eq(ConditionPath::row('visible'), true));
+            $row->text('note')->required()->showWhen(Conditions::eq(ConditionPath::row('kind'), 'B'));
+        });
+    });
+    $values = $this->get('/option-records/'.$root->id.'/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
+    $values['customer'] = 'B';
+    $values['note'] = '';
+    $values['is_active'] = false;
+    $values['tags'][0] = ['_brume' => ['key' => 'a'], 'visible' => false, 'kind' => 'B', 'note' => ''];
+    $values['tags'][] = ['_brume' => ['key' => 'new'], 'visible' => false, 'kind' => 'B', 'note' => 'ignored'];
+    $this->putJson('/option-records/'.$root->id, ['values' => $values])->assertOk();
+    $fresh = $this->get('/option-records/'.$root->id.'/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
+    expect($fresh['customer'])->toBe('A')->and($fresh['note'])->toBe('old note')
+        ->and($fresh['tags'][0]['kind'])->toBe('A')->and($fresh['tags'][0]['note'])->toBe('old nested')
+        ->and($fresh['tags'][1]['kind'])->toBe('A');
+    $values['is_active'] = true;
+    $values['note'] = 'new root';
+    $values['tags'][0]['visible'] = true;
+    $values['tags'][0]['note'] = 'new nested';
+    $this->putJson('/option-records/'.$root->id, ['values' => $values])->assertOk();
+    expect($root->fresh()->customer)->toBe('B')->and($root->fresh()->note)->toBe('new root')
+        ->and($root->fresh()->tags[0]['kind'])->toBe('B')->and($root->fresh()->tags[0]['note'])->toBe('new nested');
+})->with(['showWhen', 'enableWhen']);
+
+it('persists later-section picker selections with extras and hydrates their labels after reload', function () {
+    $root = OptionsRecord::create(['shop_id' => 999, 'customer' => 'Root', 'status' => 'root']);
+    $later = brumeUser(['username' => 'later', 'name' => 'Archived eligible']);
+    formOptionsRoutes(function ($form) {
+        $source = OptionSource::make(User::class)->label('name')->sections(['current' => 'Current', 'archived' => 'Archived'], fn ($q, $section) => $q->where('username', $section === 'current' ? 'admin' : 'later'));
+        $form->relationPicker('items', 'Items', $source)->relation('children')->associateBy('customer')->extra(fn ($row) => $row->text('note'));
+    });
+    expect(formOptionsRequest($root->id, 'items', ['section' => 'archived'])->assertOk()->json('data.0.value'))->toBe((string) $later->id);
+    $this->putJson('/option-records/'.$root->id, ['values' => ['items' => [['id' => (string) $later->id, 'note' => 'retained extra']]]])->assertOk();
+    $page = $this->get('/option-records/'.$root->id.'/edit', ['X-Brume-Form' => '1'])->assertOk();
+    expect($page->json('page.values.items.0'))->toBe(['id' => (string) $later->id, 'note' => 'retained extra']);
+    $hydrated = formOptionsRequest($root->id, 'items', ['value' => [$page->json('page.values.items.0.id')]])->assertOk();
+    expect($hydrated->json('data.0.label'))->toBe('Archived eligible')
+        ->and($hydrated->json('data.0.authority.values.note'))->toBe('retained extra')
+        ->and(JsonSchema::errors($hydrated->json(), 'PickerSearchResponse'))->toBe([]);
+    expect(formOptionsRequest($root->id, 'items', ['section' => 'current', 'value' => [(string) $later->id]])->assertOk()->json('data'))->toBe([]);
 });

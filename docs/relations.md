@@ -60,3 +60,33 @@ editable/mapped extras. Submitted undeclared `position` values do not control it
 with the validated whole graph and written to the actual owned target, including restored rows;
 omitted, readonly and inactive selections retain their exact stored order metadata. A later invalid
 relation prevents every earlier reorder. The workbench maps nested gifts and featured pivots this way.
+
+## Effective values and selected-owner hydration
+
+The browser retains inactive edits for reactivation, while conditions and option dependencies use
+stored/default authoritative values for inactive or readonly controllers. Initial owner snapshots
+follow stable identities across moves/removals; reset replaces that baseline. `defaultValue` is
+normalized public new-owner metadata, preserving false/zero/empty strings and mapped JSON values.
+JSON row defaults use `valueFromJson([])` and may differ from new-model defaults. Stored null wins.
+
+Generated Form pickers with extras advertise `hydrateAuthority: true`. Selected-value hydration on
+the same generated options route returns optional `data[].authority: {values,rowFields?}` using
+`FormOptionContext` and `FormSnapshot`, with verified parent/selected scope, public declared fields,
+hidden-attribute filtering, actual source/intermediary/pivot storage and nullable new-association
+callbacks. `restoreRemoved` declarations also read the actual parent-owned soft-deleted
+intermediary authority without restoring it or exposing undeclared counters. Search and Grid responses do not eagerly load candidate graphs. Client caches never
+become submitted authority or overwrite drafts; unknown authority blocks affected dependent editing
+and picker commit, with retry on failed/missing snapshots. Source, row lifetime, removal, reset and
+dependency changes fence asynchronous reads. Definitions without the optional capability retain
+the legacy/standalone behavior; custom adapters advertising it must return the snapshots.
+
+Selected-label hydration without an explicit section uses the authorized base source query across
+browsing partitions. Explicit sections still constrain hydration, and default browsing still chooses
+the first section. A universal `all` section is unnecessary. No global model fallback is used.
+
+Only a declared Form Tags endpoint uses `OptionSource::tagsResponse` to preserve unmatched strings
+as normal literal labels alongside scoped numeric/string suggestions. No request flag can enable
+this for Select, MultipleSelect or picker IDs; their strict validation/unavailable behavior remains.
+The documented 100-ID request limit remains. Both renderer hydration paths deduplicate and issue
+sequential batches under one cancellable scope/lifetime operation, returning ordered merged labels
+only when all batches remain current. A selection can contain more than 100 values.

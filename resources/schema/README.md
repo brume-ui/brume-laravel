@@ -1,11 +1,13 @@
 # Vendored schema provenance
 
 The committed `v0.json` is copied byte-for-byte from `brume-ui` commit
-`0db32998a801375bc33f9ccfe9dda926accc0d5f`, path `packages/schema/schema/v0.json`.
-SHA-256: `55558d91fe94795ee9fc3632d0d5068887adbec930b622788c26bb28067185f0`.
+`d3d0ed5a4a64e7964a6583ae665051818f05ad88`, path `packages/schema/schema/v0.json`.
+SHA-256: `ddf64808127250adb9cf696663b4f93c5360ae97d4e74794af306b469e6554fd`.
 
 This is schema `0.4.0`: reviewed Tasks 1–6 source `b3854935db4e8a8a6e27e4612029a173c0a101ee`
-plus the controller-approved S3-R15 resolved `FormDef.rowFields` contract in Task 7.
+plus the controller-approved S3-R15 resolved `FormDef.rowFields` contract and final
+S3-R34/R35 normalized `defaultValue`, `hydrateAuthority` capability and scoped selected-owner
+`PickerSearchResponse.data[].authority` snapshots. The complete source is pinned above.
 The source version remains alpha.12 until the coordinated alpha.13 release; this source
 integration is not a claim that an alpha.13 registry package exists.
 

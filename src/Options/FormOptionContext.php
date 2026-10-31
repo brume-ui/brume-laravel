@@ -177,6 +177,21 @@ final class FormOptionContext
         return $this->resolved[$key] = $context;
     }
 
+    /** Snapshot only declared fields, using the exact scoped storage/callback split of reads. */
+    public function pickerAuthority(array $entry, array $owner, string $id, OptionContext $context): array
+    {
+        $path = $entry['path'];
+        $this->resolved[$this->key($path, $owner)] = $context;
+        $chain = [...$owner, ['path' => $path, 'key' => $id, 'id' => $id]];
+        [$record, $json, $locked, $storage] = $this->row($this->form, $this->registry, ['parents' => [...$entry['parents'], $path]], $chain);
+        $snapshot = new FormSnapshot;
+        $multiple = $entry['field']->settings()['multiple'];
+        $values = $snapshot->values($entry['field']->rowForm(), $record, $json, $chain, $path.($multiple ? '.*.' : '.'), $this->form->record(), $storage);
+
+        return ['values' => $values === [] ? (object) [] : $values]
+            + ($snapshot->rowFields !== [] ? ['rowFields' => $snapshot->rowFields] : []);
+    }
+
     /** Internal upload authorization uses the same declared ancestor authority as options. */
     public function uploadContext(array $entry, array $chain): array
     {
@@ -230,6 +245,9 @@ final class FormOptionContext
                     }
                     if ($parent !== null) {
                         $relation = $container->relationship($parent);
+                        if ($container->restoresRemoved()) {
+                            $relation->withTrashed();
+                        }
                         $attribute = $container->associationAttribute() ?? $relation->getRelated()->getKeyName();
                         $matches = $relation->where($relation->getRelated()->qualifyColumn($attribute), $identity['id'])->get();
                         $record = $matches->first(fn ($row) => (string) $row->getAttribute($attribute) === $identity['id']);

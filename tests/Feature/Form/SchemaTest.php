@@ -26,7 +26,12 @@ it('outputs nested values, date ranges and password without exposing hidden attr
 it('serializes every field variant exactly', function (string $method, array $extra) {
     $form = Form::make(User::class);
     $field = in_array($method, ['dateRange', 'datetimeRange']) ? $form->$method('value', 'Value', 'starts_at', 'ends_at') : $form->$method('value', 'Value');
-    expect(Arr::except($field->toSchema(null), ['rules']))->toBe(['type' => match ($method) {
+    $default = match ($method) {
+        'password' => '', 'dateRange', 'datetimeRange' => ['start' => null, 'end' => null],
+        'multipleSelect', 'checkbox', 'tags', 'multipleImage', 'multipleFile' => [],
+        'switch' => false, default => null,
+    };
+    expect(Arr::except($field->toSchema(null), ['rules']))->toBe(($default !== null ? ['defaultValue' => $default] : []) + ['type' => match ($method) {
         'image', 'multipleImage', 'file', 'multipleFile' => 'upload', 'switch' => 'switch', default => $method
     }, 'name' => 'value', 'label' => 'Value'] + $extra);
 })->with([
@@ -130,7 +135,7 @@ it('serializes layout trees with relative field names and complete registered pa
                 ['width' => 7, 'children' => [['type' => 'divider', 'label' => 'Break']]],
             ]],
             ['type' => 'embeds', 'name' => 'meta', 'label' => 'Meta', 'children' => [
-                ['type' => 'embeds', 'name' => 'design', 'label' => 'Design', 'children' => [['type' => 'field', 'field' => ['type' => 'text', 'name' => 'color', 'label' => 'Color']]]],
+                ['type' => 'embeds', 'name' => 'design', 'label' => 'Design', 'children' => [['type' => 'field', 'field' => ['defaultValue' => 'blue', 'type' => 'text', 'name' => 'color', 'label' => 'Color']]]],
             ]],
         ]],
     ], 'sections' => 'tabs']);

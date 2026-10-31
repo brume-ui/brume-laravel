@@ -7,6 +7,7 @@ use Brume\Form\FormSaver;
 use Brume\Form\Relations\RelationPlanner;
 use Brume\Form\Relations\RelationSynchronizer;
 use Brume\Options\FormOptionContext;
+use Brume\Options\OptionContext;
 use Brume\Options\OptionSource;
 use Brume\Tests\Support\Models\CodeItem;
 use Illuminate\Database\Eloquent\Model;
@@ -1079,3 +1080,23 @@ it('round two separates JSON container reader context from newly associated stor
     expect($readers)->toBe([])->and($writers)->toBe([[GraphReaderProduct::class, $product->id, true]]);
     expect($jsonContexts)->not->toBeEmpty()->and(collect($jsonContexts)->every(fn ($context) => $context === $root))->toBeTrue();
 })->with(['owner', 'products'])->with([false, true]);
+
+it('persists 101 eligible picker selections and hydrates them in bounded transport batches', function () {
+    $root = GraphRoot::create();
+    $ids = [];
+    for ($i = 1; $i <= 101; $i++) {
+        $ids[] = (string) GraphProduct::create(['name' => 'Batch '.$i, 'tenant' => 1, 'active' => true])->id;
+    }
+    $form = graphForm();
+    $source = graphSource();
+    $form->relationPicker('products', 'Products', $source)->relation('products');
+    graphSave($form, $root, ['products' => array_map(fn ($id) => ['id' => $id], $ids)]);
+    expect($root->products()->count())->toBe(101);
+    $context = new OptionContext($root);
+    expect(fn () => $source->response($context, ['value' => $ids], true))->toThrow(ValidationException::class);
+    $labels = [];
+    foreach (array_chunk($ids, 100) as $batch) {
+        $labels = [...$labels, ...$source->response($context, ['value' => $batch], true)['data']];
+    }
+    expect(array_column($labels, 'value'))->toBe($ids);
+});

@@ -473,7 +473,21 @@ class Field
     {
         $rules = $this->isEditable($record) ? ClientRules::for($this, $this->path(), $record) : [];
 
-        return ($rules !== [] ? ['rules' => $rules] : []) + ['type' => $this->type(), 'name' => $this->name, 'label' => $this->label] + $this->schema + ($this->isReadOnly($record) ? ['readOnly' => true] : []);
+        $default = $this instanceof Repeater || $this instanceof RelationPicker ? null : $this->valueFor(null);
+        self::assertJsonDefault($default);
+
+        return ($default !== null ? ['defaultValue' => $default] : []) + ($rules !== [] ? ['rules' => $rules] : []) + ['type' => $this->type(), 'name' => $this->name, 'label' => $this->label] + $this->schema + ($this->isReadOnly($record) ? ['readOnly' => true] : []);
+    }
+
+    private static function assertJsonDefault(mixed $value): void
+    {
+        if (is_array($value) || $value instanceof \stdClass) {
+            foreach ((array) $value as $item) {
+                self::assertJsonDefault($item);
+            }
+        } elseif (is_object($value) || is_resource($value) || (is_float($value) && ! is_finite($value))) {
+            throw new InvalidArgumentException('Field defaults must be public JSON values.');
+        }
     }
 
     /** Hidden attributes are checked at every model boundary, including hidden JSON roots. */

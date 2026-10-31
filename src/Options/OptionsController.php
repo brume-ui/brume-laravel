@@ -4,6 +4,7 @@ namespace Brume\Options;
 
 use Brume\Form\DeclarationRegistry;
 use Brume\Form\Fields\RelationPicker;
+use Brume\Form\Fields\Tags;
 use Brume\Form\Form;
 use Brume\Http\ErrorResponse;
 use Illuminate\Http\Request;
@@ -29,7 +30,17 @@ final class OptionsController
             $context = $resolver->resolve($entry, $owner, $this->json($request, 'depends', new stdClass), $this->json($request, 'dependencyContexts', new stdClass));
             $resolver->assertConsumed();
 
-            return response()->json($field->optionSource()->response($context, $request->query(), $field instanceof RelationPicker));
+            $result = $field instanceof Tags
+                ? $field->optionSource()->tagsResponse($context, $request->query())
+                : $field->optionSource()->response($context, $request->query(), $field instanceof RelationPicker);
+            if ($field instanceof RelationPicker && $request->query->has('value') && $field->rowForm()->fields() !== []) {
+                foreach ($result['data'] as &$item) {
+                    $item['authority'] = $resolver->pickerAuthority($entry + ['path' => $path], $owner, $item['value'], $context);
+                }
+            }
+            $resolver->assertConsumed();
+
+            return response()->json($result);
         } catch (ValidationException $e) {
             return ErrorResponse::make($e->getMessage(), 422, $e->errors());
         }

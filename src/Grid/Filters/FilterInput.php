@@ -153,7 +153,7 @@ final class FilterInput
             'text' => ['type' => 'text']
                 + ($this->props['numeric'] ? ['inputMode' => 'numeric'] : [])
                 + ($this->props['placeholder'] !== null ? ['placeholder' => $this->props['placeholder']] : []),
-            'selectTable', 'multipleSelectTable' => ['type' => $this->type, 'remote' => true],
+            'selectTable', 'multipleSelectTable' => ['type' => $this->type],
             'select', 'multipleSelect' => ['type' => $this->type]
                 + ($this->remote !== null ? ['remote' => true] : ['options' => $this->props['options']]),
             'radio', 'checkbox' => ['type' => $this->type, 'options' => $this->props['options']],

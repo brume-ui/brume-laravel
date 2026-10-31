@@ -121,7 +121,35 @@ class Repeater extends Field
 
     public function schemaFor(?Model $record, ?Model $root): array
     {
-        return parent::toSchema($record) + ['nodes' => $this->rowForm->nodesSchema($this->relationName !== null ? null : $root, $root)];
+        $nodes = $this->rowForm->nodesSchema($this->relationName !== null ? null : $root, $root);
+        if ($this->relationName === null) {
+            // A new JSON row reads missing mapped attributes, not a new model's scalar default.
+            $defaults = function (array $nodes, string $prefix = '') use (&$defaults): array {
+                foreach ($nodes as &$node) {
+                    if ($node['type'] === 'field') {
+                        $field = $this->rowForm->fields()[$prefix.$node['field']['name']];
+                        if (! $field instanceof self && ! $field instanceof RelationPicker) {
+                            $value = $field->valueFromJson([]);
+                            unset($node['field']['defaultValue']);
+                            if ($value !== null) {
+                                $node['field']['defaultValue'] = $value;
+                            }
+                        }
+                    } elseif (isset($node['children'])) {
+                        $node['children'] = $defaults($node['children'], $prefix.($node['type'] === 'embeds' ? $node['name'].'.' : ''));
+                    } elseif (isset($node['columns'])) {
+                        foreach ($node['columns'] as &$column) {
+                            $column['children'] = $defaults($column['children'], $prefix);
+                        }
+                    }
+                }
+
+                return $nodes;
+            };
+            $nodes = $defaults($nodes);
+        }
+
+        return parent::toSchema($record) + ['nodes' => $nodes];
     }
 
     public function storedJsonRows(Model $record): array

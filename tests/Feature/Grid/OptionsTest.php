@@ -187,8 +187,9 @@ it('grid table picker preserves scalar and array filters through generated optio
     expect(JsonSchema::errors($response->json(), 'PickerSearchResponse'))->toBe([])
         ->and($response->json('data.0.columns.username'))->toBe('u02');
     $page = $this->get('/admin/orders?'.http_build_query(['filter' => ['table_owner' => optionsId(2), 'table_owners' => [optionsId(2)]]]))->assertOk()->viewData('page')['props']['envelope']['page'];
-    expect($page['filters']['items'][2]['input'])->toBe(['type' => 'selectTable', 'remote' => true])
-        ->and($page['filters']['items'][3]['input'])->toBe(['type' => 'multipleSelectTable', 'remote' => true])
+    expect(JsonSchema::errors($this->get('/admin/orders')->viewData('page')['props']['envelope'], 'PageEnvelope'))->toBe([]);
+    expect($page['filters']['items'][2]['input'])->toBe(['type' => 'selectTable'])
+        ->and($page['filters']['items'][3]['input'])->toBe(['type' => 'multipleSelectTable'])
         ->and($page['appliedFilters'][0]['display'])->toBe('Ada 02')
         ->and($page['appliedFilters'][1]['display'])->toBe('Ada 02');
     $this->getJson('/admin/orders/_brume/options/table_owner?per_page=51')->assertUnprocessable();
@@ -199,4 +200,20 @@ it('keeps a malformed table filter URL readable while its options endpoint remai
     $page = $this->get('/admin/orders?filter[table_owner]=not-an-integer')->assertOk()->viewData('page')['props']['envelope']['page'];
     expect($page['appliedFilters'][0]['display'])->toBe('not-an-integer');
     $this->getJson('/admin/orders/_brume/options/table_owner?value[]=not-an-integer')->assertUnprocessable();
+});
+
+it('hydrates later partition Grid labels within base scope and keeps explicit sections scoped', function () {
+    $later = brumeUser(['username' => 'later', 'name' => 'Later partition']);
+    optionsRoutes(function (Grid $grid) {
+        $source = OptionSource::make(User::class)->label('name')->sections(['first' => 'First', 'later' => 'Later'], fn ($q, $section) => $q->where('username', $section === 'first' ? 'admin' : 'later'));
+        $grid->filters()->equal('partition', 'Partition', 'customer')->selectTable($source);
+        $grid->filters()->in('partitions', 'Partitions', 'customer')->multipleSelectTable($source);
+    });
+    $params = http_build_query(['value' => [(string) $later->id]]);
+    expect($this->getJson('/admin/orders/_brume/options/partition?'.$params)->assertOk()->json('data.0.label'))->toBe('Later partition');
+    expect($this->getJson('/admin/orders/_brume/options/partition?section=first&'.$params)->assertOk()->json('data'))->toBe([]);
+    expect($this->getJson('/admin/orders/_brume/options/partition')->assertOk()->json('data.0.label'))->toBe('Admin');
+    $envelope = $this->get('/admin/orders?'.http_build_query(['filter' => ['partition' => (string) $later->id, 'partitions' => [(string) $later->id]]]))->assertOk()->viewData('page')['props']['envelope'];
+    expect(JsonSchema::errors($envelope, 'PageEnvelope'))->toBe([])
+        ->and(array_column($envelope['page']['appliedFilters'], 'display'))->toBe(['Later partition', 'Later partition']);
 });

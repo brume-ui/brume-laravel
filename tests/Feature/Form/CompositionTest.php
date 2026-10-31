@@ -144,3 +144,20 @@ it('creates a new tier threshold and gift through the public recursive resource 
     $fresh = $this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
     expect($fresh['tiers'][1]['thresholds'][0]['gifts'][0]['id'])->toBe('2');
 });
+
+it('hydrates restored intermediary authority without restoring or exposing its undeclared counters', function () {
+    $root = Composition::find(1);
+    $tier = $root->tiers()->first();
+    $threshold = $tier->thresholds()->first();
+    $gift = $threshold->gifts()->first();
+    $gift->delete();
+    $params = ['field' => 'tiers.*.thresholds.*.gifts', 'depends' => '{"category":"A"}', 'value' => [(string) $gift->catalog_id], 'rowContext' => json_encode([
+        ['path' => 'tiers', 'key' => 'record:'.$tier->id, 'id' => (string) $tier->id],
+        ['path' => 'tiers.*.thresholds', 'key' => 'record:'.$threshold->id, 'id' => (string) $threshold->id],
+    ])];
+    $response = $this->getJson('/compositions/1/_brume/form-options?'.http_build_query($params))->assertOk();
+    expect($response->json('data.0.authority.values.quantity'))->toBe(2)
+        ->and($response->json('data.0.authority.values'))->not->toHaveKey('counter')
+        ->and($gift->fresh()->counter)->toBe(37)->and($gift->fresh()->deleted_at)->not->toBeNull()
+        ->and(JsonSchema::errors($response->json(), 'PickerSearchResponse'))->toBe([]);
+});
