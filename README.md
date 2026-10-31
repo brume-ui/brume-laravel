@@ -705,7 +705,7 @@ Currency defaults to zero decimals; choose two explicitly for values such as
 `"1280.50"`. Decimal normalization uses strings. Tags options are suggestions and
 custom strings are accepted; the model attribute must have an array/JSON cast.
 
-### Conditional, composite and recursive declarations (phase-2 source)
+### Conditional, composite and recursive declarations
 
 Conditions are immutable JSON ASTs. Equality preserves JSON types; money compares exact canonical
 strings. Switches used as condition controllers require boolean wire values (`true`/`false`);
@@ -800,9 +800,9 @@ The workbench `/admin/compositions` resource demonstrates model-owned tiers → 
 pivot extras, BelongsTo extras, direct HasMany selection, JSON-in-JSON notes, conditional required
 values, dependent sources, mapped addresses, custom inline editing and nested Uploads. It uses
 separate deterministic tables/seeds so existing Order/GridShowcase examples retain their data.
-Playground `/#/form-composition` supplements the focused relation/repeater routes. Source acceptance
-uses the reviewed immutable UI checkout; ordinary dist/install checks still use actual published
-packages until the alpha.13 release gate.
+Playground `/#/form-composition` supplements the focused relation/repeater routes. Ordinary browser
+acceptance, precompiled distribution and install checks all use the actual published alpha.13
+packages.
 
 Custom inline cells use `Editor::component('TaiwanAddress', props: [], rules: [...])` and optional
 `->attributes([...])` with the same safe mapping. The server rule map uses `''` for the entire value
@@ -840,13 +840,10 @@ paths and `onChange` receives one semantic value in root forms, nested rows and 
 Precompiled mode retains unknown-component guidance; application React code requires the custom
 frontend installation. Both install modes continue to be checked using actual published packages.
 
-### Temporary source integration (maintainers)
+### Published frontend verification (maintainers)
 
-`.ci/ui-integration.json` pins a reviewed 40-hex UI commit. The separately named source E2E job
-checks out that exact commit with persisted credentials disabled, installs its frozen graph, builds
-it and verifies all five linked package origins. `BRUME_UI_INTEGRATION=1` and `BRUME_UI_SOURCE` are
-both required; modified checkouts and moving refs reject. Only source workbench acceptance enables
-substitution. The published E2E job, precompiled frontend byte check and four install-smoke jobs
-retain registry-origin checks and frozen package graphs. After actual alpha.13 publication, remove
-the temporary source job/script/pin and enable composition tests in ordinary published E2E. Linux
-baseline generation is opt-in; inspect every changed PNG and run ordinary non-update CI afterward.
+All five `@brume-ui/brume-*` dependencies pin `0.1.0-alpha.13` with registry integrity in the
+frozen frontend lockfile. `check-package-origins.mjs` rejects source links before the distribution
+and ordinary workbench E2E gates. All 51 browser cases, including composition, run in ordinary E2E.
+Linux baseline generation remains opt-in; inspect every changed PNG and run ordinary non-update CI
+afterward. The composition baselines retain the reviewed prepublication source PNG bytes.

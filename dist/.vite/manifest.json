@@ -176,12 +176,12 @@
     "src": "frontend/node_modules/@brume-ui/brume-react/dist/fonts/jf-openhuninn-41.woff2"
   },
   "stubs/frontend/app.tsx": {
-    "file": "assets/app-9aIOpqJz.js",
+    "file": "assets/app-KYLPEtti.js",
     "name": "app",
     "src": "stubs/frontend/app.tsx",
     "isEntry": true,
     "css": [
-      "assets/app-NMd2upU3.css"
+      "assets/app-WYq7IUoA.css"
     ],
     "assets": [
       "assets/jf-openhuninn-00-U4jDIsYY.woff2",

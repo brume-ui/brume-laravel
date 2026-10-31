@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { axeViolations, login, useScheme } from "./support";
 
-// Dedicated source-acceptance project after forms; every case owns its seeded composition ID.
+// Dedicated published-package acceptance project after forms; every case owns its seeded composition ID.
 // Resource options/save/upload/cell endpoints are real, with no AJAX mocks.
 test.beforeEach(async ({ page }) => {
   await login(page);

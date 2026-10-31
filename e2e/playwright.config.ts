@@ -5,11 +5,6 @@ const PORT = Number(process.env.E2E_PORT ?? 8100);
 
 export default defineConfig({
   testDir: "./tests",
-  // Published alpha12 and reviewed source are different products until release.
-  snapshotPathTemplate:
-    process.env.BRUME_UI_INTEGRATION === "1"
-      ? "./source-snapshots/{testFilePath}/{arg}-{projectName}-{platform}{ext}"
-      : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   // One seeded database and the single-process PHP server: keep concurrency low.
@@ -42,19 +37,15 @@ export default defineConfig({
       dependencies: ["grid"],
       retries: 0,
     },
-    // Dedicated tables/seed identities; source-only until actual alpha13 is installed.
-    ...(process.env.BRUME_UI_INTEGRATION === "1"
-      ? [
-          {
-            name: "composition",
-            use: { ...devices["Desktop Chrome"] },
-            testMatch: "composition.spec.ts",
-            dependencies: ["forms"],
-            retries: 0,
-            fullyParallel: false,
-          },
-        ]
-      : []),
+    // Dedicated tables/seed identities; runs after the existing form scenarios.
+    {
+      name: "composition",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: "composition.spec.ts",
+      dependencies: ["forms"],
+      retries: 0,
+      fullyParallel: false,
+    },
   ],
   webServer: {
     // Builds the workbench frontend, migrates and seeds a fresh database, then serves the workbench.
