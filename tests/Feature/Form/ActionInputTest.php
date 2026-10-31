@@ -1,5 +1,7 @@
 <?php
 
+use Brume\Form\ConditionPath;
+use Brume\Form\Conditions;
 use Brume\Form\Form;
 use Brume\Grid\Actions\Action;
 use Brume\Grid\Grid;
@@ -62,3 +64,38 @@ it('accepts custom action tags regardless of suggestion configuration', function
     $this->postJson('/tag-actions/_brume/actions/tag', ['target' => 'tool', 'ids' => [], 'input' => ['tags' => ['custom']]])->assertOk();
     expect($seen->input)->toBe(['tags' => ['custom']]);
 })->with(['populated' => [['a' => 'A']], 'empty' => [[]], 'omitted' => [null]]);
+
+it('applies shared flat action activity before passing input to the handler', function () {
+    $this->actingAs(brumeUser(), 'brume');
+    $seen = (object) ['input' => null];
+    Route::middleware(['web', 'brume.auth', HandleBrumeRequests::class])->group(fn () => Route::brumeGrid('conditional-actions', function () use ($seen) {
+        $grid = Grid::make(CellItem::class);
+        $grid->column('customer');
+        $grid->tools(Action::make('run', 'Run')->form(function (Form $form) {
+            $form->text('mode')->default('off')->readOnly();
+            $form->text('reason')->required()->enableWhen(Conditions::eq(ConditionPath::root('mode'), 'on'));
+        })->handle(function ($models, $request, array $input) use ($seen) {
+            $seen->input = $input;
+        }));
+
+        return $grid;
+    }));
+    $this->postJson('/conditional-actions/_brume/actions/run', ['target' => 'tool', 'ids' => [], 'input' => ['mode' => 'on', 'reason' => 'forged']])->assertOk();
+    expect($seen->input)->toBe([]);
+});
+
+it('rejects object shaped flat action arrays and keeps dependent validation active', function () {
+    $this->actingAs(brumeUser(), 'brume');
+    Route::middleware(['web', 'brume.auth', HandleBrumeRequests::class])->group(fn () => Route::brumeGrid('shape-actions', function () {
+        $grid = Grid::make(CellItem::class);
+        $grid->column('customer');
+        $grid->tools(Action::make('run', 'Run')->form(function (Form $form) {
+            $form->tags('tags');
+            $form->text('reason')->required()->showWhen(Conditions::not(Conditions::empty(Conditions::root('tags'))));
+        })->handle(fn () => null));
+
+        return $grid;
+    }));
+    $this->postJson('/shape-actions/_brume/actions/run', ['target' => 'tool', 'ids' => [], 'input' => ['tags' => (object) []]])->assertUnprocessable()->assertJsonValidationErrors(['tags', 'reason']);
+    $this->postJson('/shape-actions/_brume/actions/run', ['target' => 'tool', 'ids' => [], 'input' => ['tags' => []]])->assertOk();
+});

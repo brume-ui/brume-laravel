@@ -2,6 +2,7 @@
 
 namespace Brume\Form;
 
+use Brume\Form\Fields\Decimal;
 use Brume\Form\Fields\Field;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Validator;
@@ -25,7 +26,7 @@ class ClientRules
             [$name, $parameters] = array_pad(explode(':', $rule, 2), 2, '');
             $client = ['rule' => $name];
             if (in_array($name, ['min', 'max'], true)) {
-                $array = in_array($field->type(), ['multipleSelect', 'checkbox', 'tags', 'upload'], true);
+                $array = in_array($field->type(), ['multipleSelect', 'checkbox', 'tags', 'upload', 'repeater', 'relation'], true) || in_array('array', array_map(fn ($rule) => explode(':', $rule, 2)[0], array_filter($rules, 'is_string')), true);
                 if ($array && ! ($field->type() === 'upload' && ($field->settings()['multiple'] ?? false) && $name === 'max')) {
                     continue;
                 }
@@ -35,7 +36,8 @@ class ClientRules
                 if ($field->validationPattern() === null || ! in_array($rule, $field->impliedRules(), true)) {
                     continue;
                 }
-                $client = ['rule' => 'pattern', 'pattern' => $field->validationPattern()];
+                $pattern = $field instanceof Decimal && $rule === 'regex:~'.$field->strictPattern().'~u' ? $field->strictPattern() : $field->validationPattern();
+                $client = ['rule' => 'pattern', 'pattern' => $pattern];
             } elseif (! in_array($name, ['required', 'email', 'url', 'integer', 'numeric'], true)) {
                 continue;
             }

@@ -25,7 +25,7 @@ function cellRoutes(?Closure $declare = null, ?Editor $customer = null, ?Editor 
             $grid->column('status', '狀態')->editable($status ?? Editor::select(['open' => '未處理', 'paid' => '已付款', 'done' => '完成']));
             $grid->column('amount', '金額')->numeric()->editable(Editor::number(0, 1000));
             $grid->column('tags', '標籤')->editable($tags ?? Editor::checkbox(['a' => 'A', 'b' => 'B', 'c' => 'C']))
-                ->display(fn (?array $tags) => implode(',', $tags ?? []));
+                ->display(fn ($value) => $tags?->type() === 'custom' ? json_encode($value) : implode(',', $value ?? []));
             $grid->column('is_active', '啟用')->switch();
             $grid->column('flags', '標記')->switchGroup(['is_featured' => '精選', 'is_new' => '新品']);
             $declare?->__invoke($grid);
@@ -484,3 +484,39 @@ it('validates currency limits as amounts and stores exact configured scales', fu
         expect($item->fresh()->note)->toBe($expected);
     }
 })->with([0, 2]);
+
+it('round trips declared custom JSON values and preserves nested 422 paths', function () {
+    [$item] = cellItems();
+    cellRoutes(function (Grid $grid) {
+        $grid->column('address', 'Address')->editable(Editor::component('TaiwanAddress', rules: [
+            '' => ['required', 'array:zipcode,county,district,address'],
+            'zipcode' => ['required', 'string', 'size:3'],
+            'county' => ['required', 'string'], 'district' => ['required', 'string'], 'address' => ['required', 'string'],
+        ])->attributes(['zipcode' => 'customer', 'county' => 'status', 'district' => 'note', 'address' => 'due_date']))->display(fn ($value) => $value['address'] ?? '');
+    });
+    $value = ['zipcode' => '100', 'county' => 'Taipei', 'district' => 'Zhongzheng', 'address' => 'Road'];
+    patchCell($item->id, ['column' => 'address', 'value' => array_replace($value, ['zipcode' => '1'])])->assertUnprocessable()->assertJsonValidationErrors('address.zipcode');
+    expect($item->fresh()->customer)->toBe('Ada');
+    $response = patchCell($item->id, ['column' => 'address', 'value' => $value])->assertOk();
+    expect($item->fresh()->customer)->toBe('100')->and($item->fresh()->note)->toBe('Zhongzheng')
+        ->and($response->json('row._meta.raw.address'))->toBe($value)
+        ->and(JsonSchema::errors($response->json(), 'CellUpdateResponse'))->toBe([]);
+});
+
+it('keeps custom JSON blank strings exact when host middleware permits them', function () {
+    ConvertEmptyStringsToNull::skipWhen(fn () => true);
+    [$item] = cellItems();
+    cellRoutes(tags: Editor::component('JSON', rules: ['' => ['array:id,label'], 'id' => ['string'], 'label' => ['nullable', 'string']]));
+    $value = ['id' => 'a', 'label' => ''];
+    patchCell($item->id, ['column' => 'tags', 'value' => $value])->assertOk();
+    expect($item->fresh()->tags)->toBe($value);
+})->after(fn () => ConvertEmptyStringsToNull::flushState());
+
+it('retains empty and nested object shapes through custom cell HTTP and raw readback', function () {
+    [$item] = cellItems();
+    cellRoutes(tags: Editor::component('JSON', rules: ['' => ['array']]));
+    $response = patchCell($item->id, ['column' => 'tags', 'value' => (object) ['empty' => (object) [], 'list' => [], 'nested' => [(object) []]]])->assertOk();
+    expect($item->fresh()->getRawOriginal('tags'))->toBe('{"empty":{},"list":[],"nested":[{}]}');
+    $raw = json_decode($response->getContent())->row->_meta->raw->tags;
+    expect(json_encode($raw))->toBe('{"empty":{},"list":[],"nested":[{}]}');
+});

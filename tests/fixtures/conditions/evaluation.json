@@ -1,0 +1,435 @@
+[
+  {
+    "name": "strict string identity",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "id"
+      },
+      "value": 7
+    },
+    "values": {
+      "id": "7"
+    },
+    "expected": false
+  },
+  {
+    "name": "leading zero code",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "code"
+      },
+      "value": "7"
+    },
+    "values": {
+      "code": "007"
+    },
+    "expected": false
+  },
+  {
+    "name": "missing is empty",
+    "condition": {
+      "op": "empty",
+      "field": {
+        "scope": "root",
+        "path": "missing"
+      }
+    },
+    "values": {},
+    "expected": true
+  },
+  {
+    "name": "null is empty",
+    "condition": {
+      "op": "empty",
+      "field": {
+        "scope": "root",
+        "path": "value"
+      }
+    },
+    "values": {
+      "value": null
+    },
+    "expected": true
+  },
+  {
+    "name": "empty string",
+    "condition": {
+      "op": "empty",
+      "field": {
+        "scope": "root",
+        "path": "value"
+      }
+    },
+    "values": {
+      "value": ""
+    },
+    "expected": true
+  },
+  {
+    "name": "whitespace not empty",
+    "condition": {
+      "op": "empty",
+      "field": {
+        "scope": "root",
+        "path": "value"
+      }
+    },
+    "values": {
+      "value": " "
+    },
+    "expected": false
+  },
+  {
+    "name": "false not empty",
+    "condition": {
+      "op": "empty",
+      "field": {
+        "scope": "root",
+        "path": "value"
+      }
+    },
+    "values": {
+      "value": false
+    },
+    "expected": false
+  },
+  {
+    "name": "zero not empty",
+    "condition": {
+      "op": "empty",
+      "field": {
+        "scope": "root",
+        "path": "value"
+      }
+    },
+    "values": {
+      "value": 0
+    },
+    "expected": false
+  },
+  {
+    "name": "empty list",
+    "condition": {
+      "op": "empty",
+      "field": {
+        "scope": "root",
+        "path": "value"
+      }
+    },
+    "values": {
+      "value": []
+    },
+    "expected": true
+  },
+  {
+    "name": "empty all",
+    "condition": {
+      "op": "all",
+      "conditions": []
+    },
+    "values": {},
+    "expected": true
+  },
+  {
+    "name": "empty any",
+    "condition": {
+      "op": "any",
+      "conditions": []
+    },
+    "values": {},
+    "expected": false
+  },
+  {
+    "name": "strict membership",
+    "condition": {
+      "op": "in",
+      "field": {
+        "scope": "root",
+        "path": "value"
+      },
+      "values": [0, false, "7"]
+    },
+    "values": {
+      "value": 7
+    },
+    "expected": false
+  },
+  {
+    "name": "nested row origin",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "row",
+        "path": "on"
+      },
+      "value": true
+    },
+    "values": {
+      "on": false,
+      "rows": [
+        {
+          "children": [
+            {
+              "on": false
+            },
+            {
+              "on": true
+            }
+          ]
+        }
+      ]
+    },
+    "rowPath": "rows.0.children.1",
+    "expected": true
+  },
+  {
+    "name": "boolean composition",
+    "condition": {
+      "op": "not",
+      "condition": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": {
+              "scope": "root",
+              "path": "a"
+            },
+            "value": false
+          },
+          {
+            "op": "ne",
+            "field": {
+              "scope": "root",
+              "path": "b"
+            },
+            "value": 2
+          }
+        ]
+      }
+    },
+    "values": {
+      "a": true,
+      "b": 2
+    },
+    "expected": true
+  },
+  {
+    "name": "field aware number",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "amount"
+      },
+      "value": 2
+    },
+    "values": {
+      "amount": "2"
+    },
+    "fields": [
+      {
+        "type": "number",
+        "name": "amount",
+        "label": "Amount"
+      }
+    ],
+    "expected": true
+  },
+  {
+    "name": "exact large money",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "amount"
+      },
+      "value": "9007199254740993.10"
+    },
+    "values": {
+      "amount": "09007199254740993.1"
+    },
+    "fields": [
+      {
+        "type": "currency",
+        "name": "amount",
+        "label": "Amount",
+        "decimals": 2
+      }
+    ],
+    "expected": true
+  },
+  {
+    "name": "money negative zero",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "amount"
+      },
+      "value": "0.00"
+    },
+    "values": {
+      "amount": "-0.0"
+    },
+    "fields": [
+      {
+        "type": "decimal",
+        "name": "amount",
+        "label": "Amount",
+        "decimals": 2
+      }
+    ],
+    "expected": true
+  },
+  {
+    "name": "money keeps operand types",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "amount"
+      },
+      "value": 1
+    },
+    "values": {
+      "amount": "1.00"
+    },
+    "fields": [
+      {
+        "type": "currency",
+        "name": "amount",
+        "label": "Amount",
+        "decimals": 2
+      }
+    ],
+    "expected": false
+  },
+  {
+    "name": "invalid controller forces whole condition active even under not",
+    "condition": {
+      "op": "not",
+      "condition": {
+        "op": "eq",
+        "field": {
+          "scope": "root",
+          "path": "amount"
+        },
+        "value": 1
+      }
+    },
+    "values": {
+      "amount": "bad"
+    },
+    "fields": [
+      {
+        "type": "number",
+        "name": "amount",
+        "label": "Amount",
+        "rules": [
+          {
+            "rule": "numeric",
+            "message": "Invalid number"
+          }
+        ]
+      }
+    ],
+    "invalidPaths": ["amount"],
+    "expected": true
+  },
+  {
+    "name": "invalid money operand never becomes null",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "amount"
+      },
+      "value": "bad"
+    },
+    "values": {
+      "amount": null
+    },
+    "fields": [
+      {
+        "type": "currency",
+        "name": "amount",
+        "label": "Amount",
+        "decimals": 2
+      }
+    ],
+    "expected": false
+  },
+  {
+    "name": "malformed boolean conservatively enables",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "enabled"
+      },
+      "value": true
+    },
+    "values": {
+      "enabled": "false"
+    },
+    "fields": [
+      {
+        "type": "switch",
+        "name": "enabled",
+        "label": "Enabled"
+      }
+    ],
+    "expected": true
+  },
+  {
+    "name": "malformed selection conservatively enables",
+    "condition": {
+      "op": "eq",
+      "field": {
+        "scope": "root",
+        "path": "product"
+      },
+      "value": "7"
+    },
+    "values": {
+      "product": 7
+    },
+    "fields": [
+      {
+        "type": "select",
+        "name": "product",
+        "label": "Product",
+        "options": []
+      }
+    ],
+    "expected": true
+  },
+  {
+    "name": "overprecision money remains invalid before rounding",
+    "condition": {
+      "op": "ne",
+      "field": {
+        "scope": "root",
+        "path": "amount"
+      },
+      "value": "500.00"
+    },
+    "values": {
+      "amount": "500.001"
+    },
+    "fields": [
+      {
+        "type": "currency",
+        "name": "amount",
+        "label": "Amount",
+        "decimals": 2
+      }
+    ],
+    "expected": true
+  }
+]

@@ -51,7 +51,7 @@ it('validates resource create edit submission validation and uploads against the
     expect(JsonSchema::errors($edit->json(), 'PageEnvelope'))->toBe([])->and($edit->json('page.formId'))->toBe($create->json('page.formId'));
     $updated = $this->putJson('/admin/protocol-users/'.$saved->json('id'), ['values' => ['username' => 'protocol', 'name' => 'Updated']])->assertOk();
     expect(JsonSchema::errors($updated->json(), 'FormSubmitResponse'))->toBe([]);
-    $invalid = $this->putJson('/admin/protocol-users/'.$saved->json('id'), ['values' => []])->assertUnprocessable();
+    $invalid = $this->putJson('/admin/protocol-users/'.$saved->json('id'), ['values' => (object) []])->assertUnprocessable();
     expect(JsonSchema::errors($invalid->json(), 'ErrorResponse'))->toBe([])->and($invalid->json('errors'))->toHaveKeys(['name', 'username']);
     foreach ([$create->json('page.uploadUrl'), $edit->json('page.uploadUrl')] as $url) {
         $upload = $this->post($url, ['field' => 'avatar', 'file' => UploadedFile::fake()->image('avatar.png')], ['Accept' => 'application/json'])->assertOk();

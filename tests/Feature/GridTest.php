@@ -145,7 +145,7 @@ it('can be returned straight from a controller', function () {
 
     $this->get('/grid-direct')->assertOk()->assertInertia(fn ($page) => $page
         ->component('brume/page')
-        ->where('envelope.schemaVersion', '0.3.0')
+        ->where('envelope.schemaVersion', '0.4.0')
         ->where('envelope.page.type', 'list')
         ->where('envelope.page.title', 'Users'));
 });

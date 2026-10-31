@@ -2,6 +2,7 @@
 
 namespace Brume\Form\Fields;
 
+use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 
 class Decimal extends Number
@@ -21,6 +22,31 @@ class Decimal extends Number
         $this->schema['decimals'] = $decimals;
 
         return $this;
+    }
+
+    public function fill(Model $record, mixed $value): void
+    {
+        parent::fill($record, $this->normalizeValue($value));
+    }
+
+    public function strictPattern(): string
+    {
+        return '^[+-]?[0-9]+(?:\\.[0-9]{0,'.$this->schema['decimals'].'})?$(?![\\s\\S])';
+    }
+
+    public function validationPattern(): ?string
+    {
+        return $this->patternSource ?? $this->strictPattern();
+    }
+
+    public function impliedRules(): array
+    {
+        $rules = parent::impliedRules();
+        if ($this->patternSource !== null) {
+            $rules[] = 'regex:~'.$this->strictPattern().'~u';
+        }
+
+        return $rules;
     }
 
     /** Round decimal strings without converting potentially large amounts to binary floats. */

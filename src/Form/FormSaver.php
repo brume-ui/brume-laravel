@@ -13,7 +13,12 @@ class FormSaver
     public function save(Form $form, ?Model $record, Request $request): array
     {
         $form->forRecord($record)->initialize();
-        $raw = $request->input('values', []);
+        $raw = JsonValues::requestValue($request, 'values', []);
+        if ($raw instanceof \stdClass) {
+            $raw = get_object_vars($raw);
+        } elseif ($request->isJson()) {
+            throw ValidationException::withMessages(['values' => 'Values must be an object.']);
+        }
         if (! is_array($raw)) {
             throw ValidationException::withMessages(['values' => 'Values must be an object.']);
         }

@@ -3,6 +3,8 @@
 namespace Brume\Grid;
 
 use Brume\Form\Fields\Currency;
+use Brume\Form\Fields\CustomField;
+use Brume\Form\Fields\Field;
 use Brume\Grid\Filters\FilterInput;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
@@ -18,6 +20,40 @@ final class Editor
      * @param  array<string, mixed>  $schema
      */
     private function __construct(private array $schema) {}
+
+    private array $customRules = [];
+
+    private ?CustomField $customField = null;
+
+    public static function component(string $name, array $props = [], array $rules = []): self
+    {
+        $field = new CustomField('value', 'Value', $name, $props);
+        $editor = new self(['type' => 'custom', 'component' => $field->settings()['component']]);
+        foreach ($rules as $path => $rule) {
+            if ($path !== '') {
+                Field::assertValidationPath((string) $path);
+            }
+        }
+        $editor->customRules = $rules;
+        $editor->customField = $field;
+
+        return $editor;
+    }
+
+    public function attributes(array $attributes): self
+    {
+        if ($this->customField === null) {
+            throw new InvalidArgumentException('Attribute mapping requires a custom editor.');
+        }
+        $this->customField->attributes($attributes);
+
+        return $this;
+    }
+
+    public function mappedField(): ?CustomField
+    {
+        return $this->customField?->mappedAttributes() !== [] ? $this->customField : null;
+    }
 
     public static function date(bool $withTime = false): self
     {
@@ -58,7 +94,7 @@ final class Editor
 
     public function prepare(mixed $value): mixed
     {
-        if (in_array($this->type(), ['text', 'textarea'], true)) {
+        if (in_array($this->type(), ['text', 'textarea', 'custom'], true)) {
             return $value;
         }
 
@@ -98,6 +134,16 @@ final class Editor
         $editor = $this->schema;
         $whole = $model?->hasCast($key, ['int', 'integer'])
             || (isset($editor['step']) && floor($editor['step']) === (float) $editor['step']);
+
+        if ($editor['type'] === 'custom') {
+            $rules = [$key => $this->customField?->impliedRules() ?? []];
+            foreach ($this->customRules as $path => $value) {
+                $target = $path === '' ? $key : $key.'.'.$path;
+                $rules[$target] = [...($rules[$target] ?? []), ...(is_string($value) ? explode('|', $value) : $value)];
+            }
+
+            return $rules;
+        }
 
         return match ($editor['type']) {
             'select', 'radio' => [$key => [$this->optionRule($options)]],

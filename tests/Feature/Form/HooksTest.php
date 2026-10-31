@@ -33,7 +33,7 @@ it('initializes editing once across repeated rendering and save', function () {
     });
     $form->toSchema(Request::create('/'));
     $form->toSchema(Request::create('/'));
-    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => []]));
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => (object) []]));
     expect($count)->toBe(1);
 });
 
@@ -141,7 +141,7 @@ it('rolls back database side effects made by a cancelling saving hook', function
 
         return Feedback::toast('warning', 'Cancelled');
     });
-    $result = (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => []]));
+    $result = (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => (object) []]));
     expect($result['cancelled'])->toBeTrue()->and($record->fresh()->name)->toBe('管理員');
 });
 
@@ -167,7 +167,7 @@ it('does not report success when a model event refuses persistence', function ()
     $form = Form::make(FormSaveRecord::class)->urls(fn ($r) => ['edit' => '/records/'.$r->getKey()]);
     FormSaveRecord::saving(fn () => false);
     try {
-        expect(fn () => (new FormSaver)->save($form, null, Request::create('/', 'POST', ['values' => []])))->toThrow(LogicException::class);
+        expect(fn () => (new FormSaver)->save($form, null, Request::create('/', 'POST', ['values' => (object) []])))->toThrow(LogicException::class);
         expect(FormSaveRecord::count())->toBe(0);
     } finally {
         FormSaveRecord::flushEventListeners();
@@ -216,7 +216,7 @@ it('replaces submitted range bounds through HTTP while retaining an omitted whol
     $this->putJson('/range-records/'.$record->id, ['values' => ['period' => (object) $bounds]])->assertOk();
     $expected = ['start' => $bounds['start'] ?? null, 'end' => $bounds['end'] ?? null];
     $this->get('/range-records/'.$record->id.'/edit', ['X-Brume-Form' => '1'])->assertOk()->assertJsonPath('page.values.period', $expected);
-    $this->putJson('/range-records/'.$record->id, ['values' => []])->assertOk();
+    $this->putJson('/range-records/'.$record->id, ['values' => (object) []])->assertOk();
     $this->get('/range-records/'.$record->id.'/edit', ['X-Brume-Form' => '1'])->assertOk()->assertJsonPath('page.values.period', $expected);
 })->with(['dateRange', 'datetimeRange'])->with([[['start']], [['end']], [['start', 'end']]]);
 
@@ -246,6 +246,6 @@ it('passes reference saving transformations through archive and field writers af
     (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => ['amount' => 'original']]));
     expect($record->fresh()->amount)->toBe('normalized')->and($record->fresh()->file)->toBe('final/transformed.pdf')->and($events)->toBe(['submitted', 'saving']);
     $events = [];
-    expect(fn () => (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => []])))->toThrow(ValidationException::class);
+    expect(fn () => (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => (object) []])))->toThrow(ValidationException::class);
     expect($events)->toBe(['submitted']);
 });

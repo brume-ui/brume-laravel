@@ -2,6 +2,7 @@
 
 namespace Brume\Grid\Editing;
 
+use Brume\Form\JsonValues;
 use Brume\Grid\Column;
 use Brume\Grid\Grid;
 use Brume\Grid\RowLookup;
@@ -51,7 +52,8 @@ class CellUpdater
         }
 
         $key = $this->validId($rows, $id);
-        $value = $this->validValue($column, $request->input('value'), $rows->query()->getModel());
+        $input = $column->editor()->type() === 'custom' ? JsonValues::requestValue($request, 'value') : $request->input('value');
+        $value = $this->validValue($column, $input, $rows->query()->getModel());
 
         $model = $rows->find([$key])?->first();
 
@@ -62,8 +64,9 @@ class CellUpdater
         // Refuse before writing, as the list does when it renders the row.
         $column->assertCheckboxCast($model);
 
-        match ($column->editor()->type()) {
-            'switchGroup' => array_walk($value, fn (mixed $on, string|int $attribute) => $model->setAttribute((string) $attribute, $on)),
+        match (true) {
+            $column->editor()->mappedField() !== null => $column->editor()->mappedField()->fill($model, $value),
+            $column->editor()->type() === 'switchGroup' => array_walk($value, fn (mixed $on, string|int $attribute) => $model->setAttribute((string) $attribute, $on)),
             default => $model->setAttribute($column->key(), $value),
         };
 
@@ -97,10 +100,10 @@ class CellUpdater
         $declared = $column->editRules();
         $declared = is_string($declared) ? array_filter(explode('|', $declared), fn ($rule) => $rule !== '') : $declared;
         $rules[$key] = [...$rules[$key], ...array_values($declared)];
-        $validator = Validator::make([$key => $value], $rules, [], $this->attributeNames($column));
+        $validator = Validator::make([$key => JsonValues::validationView($value)], $rules, [], $this->attributeNames($column));
 
         if ($validator->fails()) {
-            throw ValidationException::withMessages([$key => array_values(array_unique($validator->errors()->all()))]);
+            throw ValidationException::withMessages($editor->type() === 'custom' ? $validator->errors()->toArray() : [$key => array_values(array_unique($validator->errors()->all()))]);
         }
 
         return $column->editor()->normalize($value);

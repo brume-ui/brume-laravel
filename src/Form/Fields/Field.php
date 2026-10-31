@@ -4,6 +4,7 @@ namespace Brume\Form\Fields;
 
 use BackedEnum;
 use Brume\Form\ClientRules;
+use Brume\Form\Conditions;
 use Closure;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +17,30 @@ use InvalidArgumentException;
 class Field
 {
     protected array $schema = [];
+
+    public function showWhen(Conditions $condition): static
+    {
+        $this->schema['showWhen'] = $condition->jsonSerialize();
+
+        return $this;
+    }
+
+    public function enableWhen(Conditions $condition): static
+    {
+        $this->schema['enableWhen'] = $condition->jsonSerialize();
+
+        return $this;
+    }
+
+    public function excludeSelectedIn(array $paths): static
+    {
+        if (! in_array($this->type(), ['select', 'multipleSelect', 'tags', 'radio', 'checkbox', 'relation'], true)) {
+            throw new InvalidArgumentException('Exclusions require a choice field.');
+        }
+        $this->schema['excludeSelectedIn'] = array_map(fn ($path) => Conditions::path($path)->jsonSerialize(), $paths);
+
+        return $this;
+    }
 
     protected array|string|Closure $validationRules = [];
 
@@ -105,13 +130,16 @@ class Field
     {
         $rules = match ($this->type()) {
             'email' => ['email'], 'url' => ['url:http,https'], 'number' => ['integer'],
-            'decimal', 'currency' => ['numeric', 'decimal:0,'.$this->schema['decimals']],
+            'decimal', 'currency' => ['string', 'numeric'],
             'select', 'radio' => ['string', $this->choiceRule()],
             'multipleSelect', 'checkbox', 'tags' => ['array', 'list'],
             'upload' => ($this->schema['multiple'] ?? false) ? ['array', 'list'] : [],
             'date' => ['date_format:Y-m-d'], 'datetime' => ['date_format:Y-m-d\\TH:i'],
             'dateRange', 'datetimeRange' => ['array:start,end'], 'switch' => ['boolean'], default => [],
         };
+        if ($this->attributeMap !== []) {
+            $rules[] = 'array:'.implode(',', array_keys($this->attributeMap));
+        }
         if ($this->schema['required'] ?? false) {
             $rules[] = 'required';
         }
@@ -167,6 +195,8 @@ class Field
 
     protected ?string $attributeName = null;
 
+    protected array $attributeMap = [];
+
     protected string $prefix = '';
 
     public function __construct(protected string $name, protected ?string $label = null)
@@ -178,10 +208,15 @@ class Field
     public static function assertPath(string $path): void
     {
         foreach (explode('.', $path) as $segment) {
-            if ($segment === '' || in_array($segment, ['__proto__', 'prototype', 'constructor', '*'], true)) {
+            if (! preg_match('/^(?:[A-Za-z_$][A-Za-z0-9_$-]*|[0-9]+)$/D', $segment) || in_array($segment, ['__proto__', 'prototype', 'constructor', '*', '_brume'], true)) {
                 throw new InvalidArgumentException("Unsafe form path: {$path}");
             }
         }
+    }
+
+    public static function assertValidationPath(string $path): void
+    {
+        self::assertPath(implode('.', array_map(fn ($segment) => $segment === '*' ? '0' : $segment, explode('.', $path))));
     }
 
     public function name(): string
@@ -303,6 +338,38 @@ class Field
         return $this;
     }
 
+    public function attributes(array $attributes): static
+    {
+        if ($attributes === []) {
+            throw new InvalidArgumentException('Attribute mapping cannot be empty.');
+        }
+        foreach ($attributes as $key => $attribute) {
+            self::assertPath((string) $key);
+            self::assertPath($attribute);
+            if (str_contains((string) $key, '.') || $key === '_brume') {
+                throw new InvalidArgumentException('Invalid mapped object key.');
+            }
+        }
+        foreach ($attributes as $key => $attribute) {
+            foreach ($attributes as $otherKey => $other) {
+                if ($key !== $otherKey && (str_starts_with($attribute, $other.'.') || str_starts_with($other, $attribute.'.'))) {
+                    throw new InvalidArgumentException('Overlapping mapped attributes.');
+                }
+            }
+        }
+        if (count(array_unique($attributes)) !== count($attributes)) {
+            throw new InvalidArgumentException('Duplicate mapped attribute.');
+        }
+        $this->attributeMap = $attributes;
+
+        return $this;
+    }
+
+    public function mappedAttributes(): array
+    {
+        return $this->attributeMap;
+    }
+
     public function value(Closure $fn): static
     {
         $this->reader = $fn;
@@ -321,6 +388,16 @@ class Field
     {
         if ($this->writer !== null) {
             ($this->writer)($record, $value);
+
+            return;
+        }
+        if ($this->attributeMap !== []) {
+            $value = $value instanceof \stdClass ? get_object_vars($value) : $value;
+            foreach ($this->attributeMap as $key => $attribute) {
+                if ($value === null || array_key_exists($key, $value)) {
+                    (new Field($attribute))->fill($record, $value[$key] ?? null);
+                }
+            }
 
             return;
         }
@@ -386,6 +463,12 @@ class Field
         return $record;
     }
 
+    /** Internal recursive serializer preserves global root context for JSON templates. */
+    public function schemaFor(?Model $record, ?Model $root): array
+    {
+        return $this->toSchema($record);
+    }
+
     public function toSchema(?Model $record = null): array
     {
         $rules = $this->isEditable($record) ? ClientRules::for($this, $this->path(), $record) : [];
@@ -407,6 +490,17 @@ class Field
         return $value;
     }
 
+    public function hasHiddenAttributes(Model $record): bool
+    {
+        foreach ($this->mappedAttributes() ?: [$this->attributeName()] as $attribute) {
+            if ($this->attributeIsHidden($record, $attribute)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     protected function attributeIsHidden(Model $record, string $path): bool
     {
         $value = $record;
@@ -420,8 +514,20 @@ class Field
         return false;
     }
 
+    public function valueFromJson(array $stored): mixed
+    {
+        if ($this->attributeMap !== []) {
+            return array_map(fn ($attribute) => data_get($stored, $attribute), $this->attributeMap);
+        }
+
+        return $this->normalizeValue(data_get($stored, $this->attributeName(), $this->defaultValue));
+    }
+
     public function valueFor(?Model $record): mixed
     {
+        if ($this->attributeMap !== [] && $this->reader === null) {
+            return $record === null ? $this->defaultValue : array_map(fn ($attribute) => $this->readAttribute($record, $attribute), $this->attributeMap);
+        }
         if ($record !== null && $this->reader === null && $this->attributeIsHidden($record, $this->attributeName())) {
             return null;
         }

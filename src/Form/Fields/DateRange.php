@@ -59,6 +59,16 @@ class DateRange extends Date
         return $this->endColumn;
     }
 
+    public function mappedAttributes(): array
+    {
+        return ['start' => $this->startColumn, 'end' => $this->endColumn];
+    }
+
+    public function valueFromJson(array $stored): mixed
+    {
+        return ['start' => $this->normalizeValue(data_get($stored, $this->startColumn)), 'end' => $this->normalizeValue(data_get($stored, $this->endColumn))];
+    }
+
     public function valueFor(?Model $record): mixed
     {
         $value = $record === null ? $this->defaultValue : ($this->reader !== null ? ($this->reader)($record) : ['start' => $this->readAttribute($record, $this->startColumn), 'end' => $this->readAttribute($record, $this->endColumn)]);

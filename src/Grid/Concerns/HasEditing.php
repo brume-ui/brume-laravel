@@ -4,6 +4,7 @@ namespace Brume\Grid\Concerns;
 
 use Brume\Form\Fields\Date;
 use Brume\Form\Fields\Datetime;
+use Brume\Form\JsonValues;
 use Brume\Grid\Editor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -163,6 +164,14 @@ trait HasEditing
      */
     protected function editedValue(mixed $row, mixed $value): mixed
     {
+        if ($row instanceof Model && $this->editor?->mappedField() !== null) {
+            return $this->editor->mappedField()->valueFor($row);
+        }
+
+        if ($row instanceof Model && $this->editor?->type() === 'custom') {
+            return JsonValues::storedValue($row, $this->key, $value);
+        }
+
         return match ($this->editor?->type()) {
             'switchGroup' => array_map(
                 fn (string|int $key) => (bool) data_get($row, (string) $key),

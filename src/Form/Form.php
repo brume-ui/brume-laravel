@@ -7,6 +7,7 @@ use Brume\Contracts\Renderable;
 use Brume\Facades\Brume;
 use Brume\Form\Fields\Field;
 use Brume\Form\Fields\Upload;
+use Brume\Options\OptionSource;
 use Brume\Support\Href;
 use Closure;
 use Illuminate\Contracts\Support\Responsable;
@@ -303,6 +304,21 @@ class Form implements Renderable, Responsable
 
     public function fields(): array
     {
+        $claimed = [];
+        foreach ($this->fields as $field) {
+            if ($field->type() === 'display' || ($field->settings()['displayOnly'] ?? false)) {
+                continue;
+            }
+            foreach ($field->mappedAttributes() ?: [$field->attributeName()] as $attribute) {
+                foreach ($claimed as $existing) {
+                    if (($field->mappedAttributes() !== [] || $existing['mapped']) && ($attribute === $existing['attribute'] || str_starts_with($attribute, $existing['attribute'].'.') || str_starts_with($existing['attribute'], $attribute.'.'))) {
+                        throw new InvalidArgumentException('Conflicting mapped attribute: '.$attribute);
+                    }
+                }
+                $claimed[] = ['attribute' => $attribute, 'mapped' => $field->mappedAttributes() !== []];
+            }
+        }
+
         return $this->fields;
     }
 
@@ -369,6 +385,49 @@ class Form implements Renderable, Responsable
         $this->nodes[] = $field;
 
         return $field;
+    }
+
+    public function repeater(string $name, string $label, Closure $fields): Fields\Repeater
+    {
+        $row = new static($this->query);
+        $fields($row);
+        $row->assertReservedFields(['_brume']);
+
+        return $this->add(new Fields\Repeater($name, $label, $row));
+    }
+
+    public function relationPicker(string $name, string $label, OptionSource $source): Fields\RelationPicker
+    {
+        return $this->add(new Fields\RelationPicker($name, $label, $source, new static($this->query)));
+    }
+
+    public function assertReservedFields(array $reserved): void
+    {
+        foreach (array_keys($this->fields) as $path) {
+            if (in_array(explode('.', $path)[0], $reserved, true)) {
+                throw new InvalidArgumentException('Reserved row field: '.$path);
+            }
+        }
+    }
+
+    public function nodesSchema(?Model $record = null, ?Model $root = null): array
+    {
+        return array_map(fn ($node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->schemaFor($record, $root)] : $node->toSchema($record, $root), $this->nodes);
+    }
+
+    public function valuesFor(?Model $record): array
+    {
+        $values = [];
+        foreach ($this->fields() as $path => $field) {
+            data_set($values, $path, $field->valueFor($record));
+        }
+
+        return $values;
+    }
+
+    public function component(string $name, string $label, string $component, array $props = []): Fields\CustomField
+    {
+        return $this->add(new Fields\CustomField($name, $label, $component, $props));
     }
 
     public function text(string $name, ?string $label = null): Fields\Text
@@ -593,7 +652,7 @@ class Form implements Renderable, Responsable
     public function plainFields(): array
     {
         foreach ($this->nodes as $node) {
-            if (! $node instanceof Field || $node instanceof Upload || str_contains($node->name(), '.')) {
+            if (! $node instanceof Field || ! in_array($node->type(), ['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'dateRange', 'datetimeRange', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags'], true) || (method_exists($node, 'optionSource') && $node->optionSource() !== null) || isset($node->settings()['excludeSelectedIn']) || str_contains($node->name(), '.')) {
                 throw new InvalidArgumentException('Upload extras must be flat non-upload fields.');
             }
         }
@@ -607,10 +666,9 @@ class Form implements Renderable, Responsable
             throw new LogicException('Configure Form::submitTo() before rendering.');
         }
         $this->initialize();
-        $values = [];
-        foreach ($this->fields as $path => $field) {
-            data_set($values, $path, $field->valueFor($this->record));
-        }
+        new DeclarationRegistry($this->fields(), $this->record ?? $this->query->getModel());
+        $snapshot = new FormSnapshot;
+        $values = $snapshot->values($this, $this->record, root: $this->record);
         foreach (array_keys($this->embeds) as $path) {
             // Only declared object containers are cast; list-valued fields keep their arrays.
             data_set($values, $path, (object) (data_get($values, $path) ?? []));
@@ -622,10 +680,13 @@ class Form implements Renderable, Responsable
         $page = [
             'type' => 'form', 'title' => $this->title ?? __($this->record === null ? 'brume::form.create_title' : 'brume::form.edit_title', ['name' => $this->name]),
             'formId' => $this->id ?? (count(array_filter($this->fields, fn ($field) => $field instanceof Upload)) > 0 ? $this->formId() : ($request->route()?->getName() ?? $request->path())), 'name' => $this->name, 'mode' => $this->record === null ? 'create' : 'edit',
-            'form' => ['layout' => $this->layout, 'nodes' => array_map(fn ($node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->toSchema($this->record)] : $node->toSchema($this->record), $this->nodes)] + ($this->tabs ? ['sections' => 'tabs'] : []),
+            'form' => ['layout' => $this->layout, 'nodes' => $this->nodesSchema($this->record, $this->record)] + ($this->tabs ? ['sections' => 'tabs'] : []),
             'values' => array_is_list($values) ? (object) $values : $values,
             'submit' => $this->submit, 'after' => $this->afterSchema(), 'presentation' => $presentation, 'size' => $size,
         ];
+        if ($snapshot->rowFields !== []) {
+            $page['form']['rowFields'] = $snapshot->rowFields;
+        }
         if ($this->description !== null) {
             $page['description'] = $this->description;
         }

@@ -1,5 +1,7 @@
 <?php
 
+use Brume\Form\ConditionPath;
+use Brume\Form\Conditions;
 use Brume\Form\Form;
 use Brume\Grid\Actions\Action;
 use Brume\Grid\Actions\Feedback;
@@ -31,7 +33,7 @@ beforeEach(fn () => $this->actingAs(brumeUser(), 'brume'));
 it('quick creates through FormSaver and returns real edit URLs and schema', function () {
     quickGridRoutes();
     $page = $this->get('/quick-items')->assertOk()->viewData('page')['props']['envelope']['page'];
-    expect(JsonSchema::errors(['schemaVersion' => '0.3.0', 'page' => $page], 'PageEnvelope'))->toBe([]);
+    expect(JsonSchema::errors(['schemaVersion' => '0.4.0', 'page' => $page], 'PageEnvelope'))->toBe([]);
     expect($page['quickCreate']['fields'][0]['name'])->toBe('customer')->and($page['quickCreate']['submitUrl'])->toBe('/quick-items/_brume/quick-create');
     $response = $this->postJson('/quick-items/_brume/quick-create', ['values' => ['customer' => 'Ada', 'shop_id' => 1, 'password' => 'evil', 'unknown' => 'evil']])->assertOk();
     expect(JsonSchema::errors($response->json(), 'FormSubmitResponse'))->toBe([])
@@ -41,7 +43,7 @@ it('quick creates through FormSaver and returns real edit URLs and schema', func
 
 it('uses root validation keys and never writes invalid quick input', function () {
     quickGridRoutes();
-    $this->postJson('/quick-items/_brume/quick-create', ['values' => []])->assertUnprocessable()->assertJsonValidationErrors('customer');
+    $this->postJson('/quick-items/_brume/quick-create', ['values' => (object) []])->assertUnprocessable()->assertJsonValidationErrors('customer');
     expect(CellItem::count())->toBe(0);
 });
 
@@ -124,3 +126,25 @@ it('persists custom quick tags regardless of suggestion configuration', function
     $response = $this->postJson('/quick-items/_brume/quick-create', ['values' => ['customer' => 'Ada', 'shop_id' => 1, 'tags' => ['custom']]])->assertOk();
     expect(CellItem::findOrFail($response->json('id'))->tags)->toBe(['custom']);
 })->with(['populated' => [['a' => 'A']], 'empty' => [[]], 'omitted' => [null]]);
+
+it('applies flat quick-create conditions using readonly defaults and strips forged hidden input', function () {
+    quickGridRoutes(function (Form $form) {
+        $form->text('customer')->required();
+        $form->number('shop_id');
+        $form->text('status')->default('open')->readOnly();
+        $form->text('note')->required()->showWhen(Conditions::eq(ConditionPath::root('status'), 'paid'));
+    });
+    $response = $this->postJson('/quick-items/_brume/quick-create', ['values' => ['customer' => 'Ada', 'shop_id' => 1, 'status' => 'paid', 'note' => 'forged']])->assertOk();
+    expect(CellItem::findOrFail($response->json('id'))->note)->toBeNull();
+});
+
+it('rejects object shaped quick-create arrays without hiding dependent validation', function () {
+    quickGridRoutes(function (Form $form) {
+        $form->text('customer');
+        $form->number('shop_id');
+        $form->tags('tags');
+        $form->text('note')->required()->showWhen(Conditions::not(Conditions::empty(Conditions::root('tags'))));
+    });
+    $this->postJson('/quick-items/_brume/quick-create', ['values' => ['customer' => 'Ada', 'shop_id' => 1, 'tags' => (object) []]])->assertUnprocessable()->assertJsonValidationErrors(['tags', 'note']);
+    $this->postJson('/quick-items/_brume/quick-create', ['values' => ['customer' => 'Ada', 'shop_id' => 1, 'tags' => []]])->assertOk();
+});

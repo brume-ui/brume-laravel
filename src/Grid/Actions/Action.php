@@ -4,6 +4,7 @@ namespace Brume\Grid\Actions;
 
 use Brume\Form\Form;
 use Brume\Form\FormValidator;
+use Brume\Form\JsonValues;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -67,12 +68,17 @@ class Action
         if ($this->inputForm === null) {
             return [];
         }
-        $raw = $request->input('input', []);
+        $raw = JsonValues::requestValue($request, 'input', []);
+        if ($raw instanceof \stdClass) {
+            $raw = get_object_vars($raw);
+        } elseif ($request->isJson()) {
+            throw ValidationException::withMessages(['input' => 'Input must be an object.']);
+        }
         if (! is_array($raw)) {
             throw ValidationException::withMessages(['input' => 'Input must be an object.']);
         }
 
-        return FormValidator::validateFields(FormValidator::editableFields($this->inputForm), FormValidator::editableValues($this->inputForm, $raw), null, $model);
+        return FormValidator::validateFields($this->inputForm->fields(), $raw, null, $model);
     }
 
     final public function __construct(protected string $key, protected string $label)

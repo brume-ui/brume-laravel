@@ -710,3 +710,104 @@ Inline editing also supports `Editor::date(withTime: true)`,
 Currency defaults to zero decimals; choose two explicitly for values such as
 `"1280.50"`. Decimal normalization uses strings. Tags options are suggestions and
 custom strings are accepted; the model attribute must have an array/JSON cast.
+
+### Conditional, composite and recursive declarations (phase-2 source)
+
+Conditions are immutable JSON ASTs. Equality preserves JSON types; money compares exact canonical
+strings. Switches used as condition controllers require boolean wire values (`true`/`false`);
+ordinary legacy switches continue accepting Laravel’s 0/1 forms. Readonly controllers use their
+authoritative stored value, and an invalid editable controller keeps dependent validation active.
+`Conditions::root()` and `Conditions::row()` return scope/path declarations. A row path
+starts at the enclosing repeater or selected item, not at a numeric segment guessed from its name.
+
+```php
+use Brume\Form\Conditions;
+use Brume\Form\Form;
+use Brume\Options\OptionSource;
+
+$form->text('reason')->required()
+    ->showWhen(Conditions::eq(Conditions::root('status'), 'rejected'));
+$form->text('reference')->enableWhen(Conditions::not(Conditions::empty(Conditions::root('name'))));
+$form->tags('primary')->excludeSelectedIn([Conditions::root('secondary')]);
+
+$form->repeater('addresses', 'Addresses', function (Form $row) {
+    $row->text('label')->required();
+    $row->text('instructions')->showWhen(Conditions::eq(Conditions::row('label'), 'Office'));
+})->min(1)->max(5)->distinct('label');
+
+$form->component('address', '地址', 'TaiwanAddress')->attributes([
+    'zipcode' => 'zipcode', 'county' => 'county', 'district' => 'district', 'address' => 'address',
+])->required()->childRules([
+    'zipcode' => ['required', 'regex:/^[0-9]{3}$/D'],
+    'county' => ['required', 'string'], 'district' => ['required', 'string'],
+    'address' => ['required', 'string'],
+]);
+$form->component('total', 'Total', 'Calculator')->displayOnly();
+```
+
+`eq`, `ne`, `in`, `empty`, `all`, `any`, and `not` serialize through `toArray()`. Unknown paths,
+activity cycles, reserved identity paths and overlapping composite attribute mappings fail during
+declaration resolution. Symmetric exclusions are valid. Hidden model attributes remain protected;
+conditions that require a protected model attribute are rejected. Readonly/disabled controllers use
+stored/default values, and invalid controlling values keep dependents active for validation.
+Inactive submitted values do not enter the writable allowlist. Flat Action and quick-create inputs
+support conditions, while remote, exclusion, recursive and custom declarations remain Form-only.
+
+Composite objects write only mapped keys; unknown keys fail validation and missing keys leave their
+attributes unchanged. Explicit null clears the mapped attributes when the declared rules permit it.
+No temporary address column or saving hook is required. `childRules()` uses relative paths, including
+explicit `*` segments inside the custom JSON value. Child rules are server-only and produce errors
+such as `address.zipcode`; supported root rules remain in the normal `ClientRule[]` protocol.
+
+JSON repeaters require an array/JSON cast. Stored rows carry `_brume: {key}`; old plain arrays receive
+deterministic keys scoped to the root record, declaration, ancestor identities and original position.
+The first save persists those keys. New rows use client UUIDs and cannot inherit another stored row's
+readonly values. JSON mode rejects `_brume.id`; metadata is not a model attribute mapping.
+All JSON child readonly/rules callbacks receive the original nullable **root Form record**, even when
+JSON is nested inside a related row. A conversion carrier is never passed to these callbacks.
+
+Relation repeaters use `->relation('children')->orderColumn('position')`. `relationPicker()` takes an
+`OptionSource`, supports `multiple(bool)`, `relation()`, `associateBy()`, `restoreRemoved()` and
+`extra(fn (Form $extra) => ...)`. Selected values are `{id, ...declaredFields}`, without an `extra`
+wrapper. The selected id is distinct from any intermediary child id. Direct HasMany picker
+foreign keys must be nullable; restoration requires a soft-deletable intermediary relation.
+Related-row callbacks receive the parent-scoped related model; new-row templates receive null.
+
+`FormDef.rowFields` contains resolved readonly/client-rule snapshots for initial rows, keyed by the
+ordered stable `RowContext`. These are presentation metadata outside `values`; the server never
+uses submitted snapshots as authorization. An explicit empty rules list clears template rules.
+New client rows use template defaults; JSON templates retain the global root context. Reordering
+preserves resolved capabilities and inherited parent locks still apply.
+
+```php
+$source = OptionSource::make(Product::class)->label('name')->search(['name'])
+    ->columns(['name' => 'Product'])->depth('depth');
+$form->select('product_id')->remote($source, ['category' => Conditions::root('category_id')]);
+$form->relationPicker('freebies', 'Freebies', $source)->relation('freebies')
+    ->associateBy('product_id')->restoreRemoved()
+    ->extra(fn (Form $row) => $row->number('quantity')->required());
+```
+
+`OptionSource` also accepts a Closure receiving `OptionContext` (readonly `record`, `dependencies`,
+`rowContext`) and returning a scoped Builder; `sections(labels, scope)` declares section metadata.
+At this source checkpoint, query/response execution and generated source routes belong to Task 8.
+A remote declaration without a bound endpoint throws; no placeholder response is emitted.
+Relation graph writes remain explicitly unsupported until Task 9 and never reach scalar fill.
+Nested upload ownership/archival is Task 10. These intermediate declarations are not a release claim.
+
+Custom inline cells use `Editor::component('TaiwanAddress', props: [], rules: [...])` and optional
+`->attributes([...])` with the same safe mapping. The server rule map uses `''` for the entire value
+and relative keys for children; Column `editable(..., rules: ...)` still merges root rules.
+PATCH stays `{column, value}`. Custom nested 422 keys remain `column.child`; ordinary editors retain
+their previous error shape. Custom JSON retains blank strings where host middleware permits them.
+Inline registry eligibility does not grant server authorization.
+
+Owned JSON submission paths preserve object/list container kinds for custom values, including `{}`
+and nested empty objects. Laravel validation receives an associative view for its array/child rules;
+conditions, saving hooks and custom persistence retain semantic objects (`stdClass`) and lists.
+Middleware trimming and blank-to-null transformations still apply. Saving hooks receive these values
+before mutation; their replacements are never overwritten by a later raw-request restoration.
+JSON `values`/Action `input` envelopes must be objects, not lists. Programmatic PHP array submissions
+retain their PHP representation. Custom stored readback restores shapes only for ordinary declared
+`array`/`json`/`object` casts, using current raw attributes; application accessors/readers own their
+returned semantics. This does not decode arbitrary text columns or change Laravel globally.
