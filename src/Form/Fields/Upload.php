@@ -132,6 +132,10 @@ class Upload extends Field
 
     protected function archivedValue(mixed $value): ?array
     {
+        // Normalize structural envelopes only; declared extra values retain their semantic JSON.
+        if ($value instanceof \stdClass) {
+            $value = get_object_vars($value);
+        }
         $path = is_string($value) ? $value : ($value['path'] ?? null);
         if (! is_string($path) || $path === '') {
             return null;
@@ -144,6 +148,7 @@ class Upload extends Field
         if ($this->extraFields !== []) {
             $extra = [];
             $stored = is_array($value) ? ($value['extra'] ?? []) : [];
+            $stored = $stored instanceof \stdClass ? get_object_vars($stored) : (is_array($stored) ? $stored : []);
             foreach ($this->extraFields as $field) {
                 $extra[$field->name()] = $field->extraValueFor($stored[$field->name()] ?? null);
             }

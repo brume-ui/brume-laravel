@@ -8,6 +8,7 @@ use Brume\Form\UploadArchiver;
 use Brume\Options\OptionsController;
 use Brume\Options\OptionSource;
 use Brume\Resource\ResourceDeletion;
+use Brume\Tests\Support\JsonSemantics;
 use Brume\Uploads\TempUpload;
 use Brume\Uploads\TempUploads;
 use Brume\Uploads\UploadController;
@@ -579,3 +580,127 @@ it('nested archive plan scope restores after a host override exception or reentr
     });
     Storage::disk('public')->assertExists(['old/a.txt', 'old/b.txt']);
 })->with([false, true]);
+
+it('round one structured JSON uploads round trip opaque extras through fresh reads omission and reorder', function ($multiple) {
+    $root = NestedUploadRecord::create(['data' => []]);
+    $make = function (Model $record) use ($multiple) {
+        $form = Form::make(NestedUploadRecord::class)->id('json-extra-roundtrip')->forRecord($record)->submitTo('put', '/nested')->urls(fn () => ['edit' => '/nested']);
+        $form->repeater('data', 'Rows', function ($row) use ($multiple) {
+            $upload = $multiple ? $row->multipleFile('file') : $row->file('file');
+            $upload->extra(function ($extra) {
+                $extra->text('caption');
+                $extra->text('locked')->readOnly();
+                $extra->text('payload')->readOnly();
+            });
+        });
+
+        return $form;
+    };
+    $form = $make($root);
+    $payload = (object) ['empty' => (object) [], 'list' => [1, '2', [], (object) []]];
+    $items = [];
+    foreach (range(1, $multiple ? 2 : 1) as $index) {
+        $token = nestedUploadToken($form, 'data.0.file', [['path' => 'data', 'key' => 'a']]);
+        $items[] = ['token' => $token['token'], 'extra' => ['caption' => 'caption-'.$index, 'payload' => $payload]];
+    }
+    nestedUploadSave($form, $root, ['data' => [['_brume' => ['key' => 'a'], 'file' => $multiple ? $items : $items[0]]]]);
+    $raw = json_decode($root->fresh()->getRawOriginal('data'));
+    $stored = $multiple ? $raw[0]->file : [$raw[0]->file];
+    $paths = array_map(fn ($item) => $item->path, $stored);
+    Storage::disk('public')->assertExists($paths);
+    foreach ($stored as $item) {
+        $item->extra->locked = 'server-only';
+        $item->extra->payload = $payload;
+    }
+    $root->update(['data' => $raw]);
+    $fresh = $make($root->fresh())->toSchema(Request::create('/'));
+    $read = $multiple ? $fresh['values']['data'][0]['file'] : [$fresh['values']['data'][0]['file']];
+    expect(array_column($read, 'path'))->toBe($paths);
+    foreach ($read as $item) {
+        expect($item['extra']->locked)->toBe('server-only');
+        expect(JsonSemantics::canonical(json_encode($item['extra']->payload)))->toBe(JsonSemantics::canonical(json_encode($payload)));
+    }
+    nestedUploadSave($make($root->fresh()), $root->fresh(), ['data' => [['_brume' => ['key' => 'a']]]]);
+    $editing = array_reverse($read);
+    foreach ($editing as &$item) {
+        $item['extra'] = ['caption' => 'edited', 'locked' => 'forged', 'payload' => $payload];
+    }
+    unset($item);
+    nestedUploadSave($make($root->fresh()), $root->fresh(), ['data' => [['_brume' => ['key' => 'b']], ['_brume' => ['key' => 'a'], 'file' => $multiple ? $editing : $editing[0]]]]);
+    $after = $make($root->fresh())->toSchema(Request::create('/'))['values']['data'][1]['file'];
+    $after = $multiple ? $after : [$after];
+    expect(array_column($after, 'path'))->toBe(array_reverse($paths));
+    foreach ($after as $item) {
+        expect($item['extra']->caption)->toBe('edited')->and($item['extra']->locked)->toBe('server-only');
+        expect(JsonSemantics::canonical(json_encode($item['extra']->payload)))->toBe(JsonSemantics::canonical(json_encode($payload)));
+    }
+    Storage::disk('public')->assertExists($paths);
+})->with([false, true]);
+
+it('round one stores long canonical upload bindings on fresh and upgraded schemas without truncation', function ($upgrade) {
+    $migration = require __DIR__.'/../../../database/migrations/2026_10_31_000001_add_row_context_to_brume_uploads_table.php';
+    if ($upgrade) {
+        DB::usingConnection('nested_uploads', function () use ($migration) {
+            $migration->down();
+            Schema::table('brume_uploads', fn ($table) => $table->string('field')->change());
+        });
+    }
+    $root = NestedUploadRecord::create(['data' => []]);
+    if ($upgrade) {
+        DB::connection('nested_uploads')->table('brume_uploads')->insert([
+            'token' => str_repeat('z', 40), 'form' => 'nested-files', 'field' => 'file', 'user_id' => (string) auth('brume')->id(), 'guard' => 'brume',
+            'record' => (string) $root->id, 'disk' => 'local', 'path' => 'brume-tmp/legacy.txt', 'original_name' => 'legacy.txt', 'mime' => 'text/plain', 'size' => 1,
+            'created_at' => now(), 'expires_at' => now()->addHour(),
+        ]);
+        DB::usingConnection('nested_uploads', fn () => $migration->up());
+        expect(app(TempUploads::class)->claim(str_repeat('z', 40), nestedUploadForm($root), 'file'))->not->toBeNull();
+    }
+    $form = Form::make(NestedUploadRecord::class)->id('long-canonical')->forRecord($root)->urls(fn () => ['edit' => '/nested']);
+    $declare = function ($row, $depth) use (&$declare) {
+        if ($depth === 10) {
+            $row->file('file');
+
+            return;
+        }
+        $row->repeater($depth === 0 ? 'data' : 'attachment_collection_rows', 'Rows', fn ($child) => $declare($child, $depth + 1));
+    };
+    $declare($form, 0);
+    $template = $numeric = '';
+    $context = [];
+    for ($depth = 0; $depth < 10; $depth++) {
+        $name = $depth === 0 ? 'data' : 'attachment_collection_rows';
+        $template .= ($depth === 0 ? '' : '.*.').$name;
+        $numeric .= ($depth === 0 ? '' : '.0.').$name;
+        $context[] = ['path' => $template, 'key' => 'row-'.$depth];
+    }
+    $template .= '.*.file';
+    $numeric .= '.0.file';
+    expect(strlen($template))->toBeGreaterThan(255)->and(strlen(json_encode($context)))->toBeLessThan(65536);
+    $token = nestedUploadToken($form, $numeric, $context);
+    $claim = app(TempUploads::class)->claim($token['token'], $form, $template, $context);
+    expect($claim?->field)->toBe($template);
+    expect(app(TempUploads::class)->claim($token['token'], $form, substr($template, 0, 255), $context))->toBeNull();
+    DB::usingConnection('nested_uploads', fn () => $migration->down());
+    expect(DB::connection('nested_uploads')->table('brume_uploads')->where('token', $token['token'])->value('field'))->toBe($template);
+    DB::usingConnection('nested_uploads', fn () => $migration->up());
+    $token = nestedUploadToken($form, $numeric, $context);
+    $values = ['file' => ['token' => $token['token']]];
+    for ($depth = 9; $depth >= 0; $depth--) {
+        $name = $depth === 0 ? 'data' : 'attachment_collection_rows';
+        $values = [$name => [['_brume' => ['key' => 'row-'.$depth]] + $values]];
+    }
+    nestedUploadSave($form, $root, $values);
+    $path = data_get($root->fresh()->data, substr($numeric, strlen('data.')));
+    expect($path)->toBeString();
+    Storage::disk('public')->assertExists($path);
+})->with([false, true]);
+
+it('round one claims exact field spelling even under a case insensitive database collation', function () {
+    $root = NestedUploadRecord::create();
+    $form = nestedUploadForm($root);
+    $form->file('FILE')->attribute('scope');
+    $token = nestedUploadToken($form, 'file', []);
+    expect(app(TempUploads::class)->claim($token['token'], $form, 'file'))->not->toBeNull();
+    expect(app(TempUploads::class)->claim($token['token'], $form, 'FILE'))->toBeNull();
+    expect(TempUpload::on('nested_uploads')->where('token', $token['token'])->exists())->toBeTrue();
+});

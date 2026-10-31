@@ -104,6 +104,16 @@ class TempUploads
             ->where('record', $form->record()?->getKey() === null ? null : (string) $form->record()->getKey())
             ->where('expires_at', '>', now())->lockForUpdate()->first();
 
+        // SQL collations may fold case/trailing spaces; authority bindings remain byte-exact.
+        $bindings = ['token' => $token, 'form' => $form->formId(), 'field' => $field,
+            'guard' => $guard, 'user_id' => (string) Auth::guard($guard)->id(),
+            'record' => $form->record()?->getKey() === null ? null : (string) $form->record()->getKey()];
+        foreach ($bindings as $name => $expected) {
+            if ($row === null || $row->getAttribute($name) !== $expected) {
+                return null;
+            }
+        }
+
         // JSON databases may reorder object properties; row order and typed values stay exact.
         $storedContext = array_map(fn ($identity) => ['path' => $identity['path'], 'key' => $identity['key']] + (array_key_exists('id', $identity) ? ['id' => $identity['id']] : []), $row?->row_context ?? []);
 
