@@ -35,9 +35,89 @@ class GridShowcaseController extends Resource
             ->quickSearch('name', 'sku')
             ->quickSearchPlaceholder('搜尋品名或貨號');
 
+        if ($this->focusedGrid($grid, (string) request()->query('example', ''))) {
+            return;
+        }
+
         $this->columns($grid);
         $this->filters($grid);
 
+    }
+
+    /** Workbench-only focused examples; every condition uses the public Grid builder. */
+    private function focusedGrid(Grid $grid, string $example): bool
+    {
+        $operator = str_starts_with($example, 'grid.operator.') ? substr($example, strlen('grid.operator.')) : null;
+        $operators = ['equal', 'notEqual', 'like', 'ilike', 'startWith', 'endWith', 'gt', 'lt', 'ngt', 'nlt', 'in', 'notIn', 'findInSet', 'date', 'day', 'month', 'year', 'between', 'whereBetween', 'where', 'group', 'hidden'];
+        $queries = ['json', 'json-path', 'relation', 'defaults', 'driver-notes', 'sort-custom', 'export-values', 'row-id'];
+        $query = str_starts_with($example, 'grid.query.') ? substr($example, strlen('grid.query.')) : null;
+        if (! in_array($operator, $operators, true) && ! in_array($query, $queries, true)) {
+            return false;
+        }
+        $grid->title('Grid 聚焦：'.($operator ?? $query))->description('公開 Grid 宣告的資料庫查詢；清除篩選可核對完整集合。')
+            ->defaultSort('sku', 'asc')->exportable('grid-focused');
+        $grid->column('sku', '貨號')->primary()->sortable();
+        $grid->column('name', '品名')->sortable();
+        $grid->column('category', '分類')->label(ShowcaseItem::CATEGORIES);
+        $grid->column('stock', '庫存')->numeric()->sortable();
+        $grid->column('created_at', '建立時間');
+        $filters = $grid->filters()->columns(1);
+        if ($operator !== null) {
+            if (in_array($operator, ['where', 'whereBetween'], true)) {
+                if ($operator === 'where') {
+                    $filters->where('demo', '庫存相等（callback）', fn (Builder $q, $value) => $q->where('stock', $value)->orWhere('stock', -1))->number();
+                } else {
+                    $filters->whereBetween('demo', '庫存區間（callback）', fn (Builder $q, $start, $end) => $q->when($start !== null, fn (Builder $q) => $q->where('stock', '>=', $start))->when($end !== null, fn (Builder $q) => $q->where('stock', '<=', $end))->orWhere('stock', -1))->number();
+                }
+            } elseif ($operator === 'group') {
+                $filters->group('demo', '庫存條件', ['equal', 'notEqual', 'like', 'ilike', 'startWith', 'endWith', 'gt', 'lt', 'ngt', 'nlt'], 'stock')->number();
+            } elseif ($operator === 'hidden') {
+                $filters->hidden('demo', 'category');
+            } else {
+                $column = match (true) {
+                    in_array($operator, ['equal', 'notEqual', 'in', 'notIn'], true) => 'category',
+                    in_array($operator, ['like', 'ilike', 'startWith', 'endWith'], true) => 'name',
+                    in_array($operator, ['date', 'day', 'month', 'year'], true) => 'created_at',
+                    $operator === 'findInSet' => 'note',
+                    default => 'stock',
+                };
+                $filter = $filters->{$operator}('demo', '聚焦篩選', $column);
+                if (in_array($operator, ['equal', 'notEqual', 'in', 'notIn'], true)) {
+                    $filter->multipleSelect(ShowcaseItem::CATEGORIES);
+                } elseif (in_array($operator, ['gt', 'lt', 'ngt', 'nlt', 'between', 'year'], true)) {
+                    $filter->number();
+                } elseif ($operator === 'date') {
+                    $filter->date();
+                }
+            }
+        } elseif ($query === 'json') {
+            $filters->in('demo', '包含標籤', 'tags')->json()->multipleSelect(ShowcaseItem::TAGS);
+            $filters->notIn('exclude', '排除標籤', 'tags')->json()->multipleSelect(ShowcaseItem::TAGS);
+            $grid->column('tags', '標籤')->label(ShowcaseItem::TAGS);
+        } elseif ($query === 'json-path') {
+            $filters->equal('demo', 'JSON 顏色', 'meta->color')->select(array_map(fn ($color) => $color[0], ShowcaseItem::COLORS));
+            $grid->column('meta.color', '顏色');
+        } elseif ($query === 'relation') {
+            $filters->like('demo', '負責人名稱', 'owner.name');
+            $grid->column('owner.name', '負責人');
+        } elseif ($query === 'defaults') {
+            $filters->equal('demo', '預設廚房分類', 'category')->select(ShowcaseItem::CATEGORIES)->default('kitchen');
+        } elseif ($query === 'driver-notes') {
+            $filters->ilike('demo', '大小寫包含', 'name');
+            $filters->between('minute', '完整結束分鐘', 'created_at')->date(withTime: true);
+            $filters->between('day', '完整結束日期', 'created_at')->date();
+        } elseif ($query === 'sort-custom') {
+            $grid->column('price', '售價反向排序')->sortable(fn (Builder $q, string $direction) => $q->orderBy('price', $direction === 'asc' ? 'desc' : 'asc'));
+        } elseif ($query === 'export-values') {
+            $grid->column('price', '原始金額')->numeric();
+            $grid->column('formatted_price', '格式化金額')->display(fn ($value, ShowcaseItem $item) => number_format((float) $item->price, 2));
+            $grid->column('note', '匯出註記')->exportUsing(fn ($value, ShowcaseItem $item) => $item->sku.'：'.$value);
+            $grid->column('secret_note', '不匯出的秘密')->exportable(false)->display(fn () => '隱藏');
+        } elseif ($query === 'row-id') {
+            $grid->column('id', '原始列身份');
+        }
+
+        return true;
     }
 
     protected function form(Form $form): void
