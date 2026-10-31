@@ -422,3 +422,18 @@ it('fills ordinary validated values containing preserved semantic nested rows', 
     $outer->fill($record, $validated['tags']);
     expect($record->getAttributes()['tags'])->toBe('[{"_brume":{"key":"one"},"name":"changed","inner":[{"unknown":"retain","payload":{}}]}]');
 });
+
+it('keeps the prepared evaluation tree separate from nested submitted allowlists', function () {
+    $record = new CellItem(['tags' => [['_brume' => ['key' => 'outer'], 'inner' => [['_brume' => ['key' => 'inner'], 'name' => 'yes']]]]]);
+    $form = Form::make(CellItem::class);
+    $form->repeater('tags', 'Rows', function (Form $row) {
+        $row->repeater('inner', 'Inner', fn (Form $child) => $child->text('name')->readOnly());
+        $row->text('note')->required()->showWhen(Conditions::eq(Conditions::row('inner.0.name'), 'yes'));
+    });
+    try {
+        FormValidator::validate($form, ['tags' => [['_brume' => ['key' => 'outer'], 'inner' => [['_brume' => ['key' => 'inner'], 'name' => 'no']]]]], $record);
+        test()->fail('Expected authoritative descendant to require the note');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('tags.0.note');
+    }
+});

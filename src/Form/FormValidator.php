@@ -63,10 +63,9 @@ class FormValidator
                 Arr::set($authoritative, $path, $storedValues !== null ? $field->valueFromJson($storedValues) : $field->valueFor($record));
             }
         }
+        // Recursive calls share the prepared authoritative tree. The current submitted row is
+        // only the editable allowlist input; replacing its subtree would revive forged descendants.
         $evaluation = $rootValues ?? $authoritative;
-        if ($rowPath !== null) {
-            Arr::set($evaluation, $rowPath, $authoritative);
-        }
         $evaluationDefs = $rowPath === null ? $definitions : array_combine(array_map(fn ($p) => $rowPath.'.'.$p, array_keys($definitions)), $definitions);
         $evaluationDefs = array_replace($rootDefinitions, $evaluationDefs);
         if ($rowPath === null) {

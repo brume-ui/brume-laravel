@@ -5,6 +5,7 @@ use Brume\Form\Form;
 use Brume\Form\FormSaver;
 use Brume\Tests\Support\Models\CellItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Route;
 
 function jsonValueRoute(Closure $fields, ?CellItem $record = null, ?Closure $saving = null): void
@@ -199,3 +200,53 @@ it('resolves legacy descendants inside authoritative readonly containers for eva
     $this->postJson('/json-value', ['values' => ['tags' => [['_brume' => ['key' => 'outer'], 'inner' => []]]]])->assertUnprocessable()->assertJsonValidationErrors('note');
     expect($record->fresh()->tags)->toBe($original);
 });
+
+it('retains prepared readonly descendants during recursive HTTP row validation', function ($scope, $levels, $noteLevel, $move) {
+    $index = $move ? 1 : 0;
+    $rootPath = 'tags.'.$index.str_repeat('.inner.'.$index, $levels - 1).'.name';
+    $relativePath = implode('.', array_fill(0, $levels - $noteLevel, 'inner.'.$index)).'.name';
+    $errorPath = 'tags.'.$index.str_repeat('.inner.'.$index, $noteLevel - 1).'.note';
+    $rows = function ($level, $submitted, $mainBranch = true) use (&$rows, $levels, $noteLevel, $move) {
+        $result = [];
+        foreach (['main', 'other'] as $kind) {
+            $main = $mainBranch && $kind === 'main';
+            $row = ['_brume' => ['key' => 'level-'.$level.'-'.$kind]];
+            if ($level === $levels) {
+                $row['name'] = $main && ! $submitted ? 'yes' : 'no';
+            } else {
+                $row['inner'] = $rows($level + 1, $submitted, $main);
+            }
+            if ($level === $noteLevel && ! $main) {
+                $row['note'] = 'provided for other rows';
+            }
+            $result[] = $row;
+        }
+
+        return $submitted && $move ? array_reverse($result) : $result;
+    };
+    $record = CellItem::create(['shop_id' => 1, 'customer' => 'Ada', 'tags' => $rows(1, false)]);
+    $declare = function (Form $row, $level) use (&$declare, $levels, $noteLevel, $scope, $rootPath, $relativePath) {
+        if ($level === $levels) {
+            $row->text('name')->readOnly();
+        } else {
+            $row->repeater('inner', 'Inner', fn (Form $child) => $declare($child, $level + 1));
+        }
+        if ($level === $noteLevel) {
+            $path = $scope === 'root' ? Conditions::root($rootPath) : Conditions::row($relativePath);
+            $row->text('note')->required()->showWhen(Conditions::eq($path, 'yes'));
+        }
+    };
+    jsonValueRoute(fn (Form $form) => $form->repeater('tags', 'Rows', fn (Form $row) => $declare($row, 1)), $record);
+    $original = $record->getRawOriginal('tags');
+    $this->postJson('/json-value', ['values' => ['tags' => $rows(1, true)]])->assertUnprocessable()->assertJsonValidationErrors($errorPath);
+    expect($record->fresh()->getRawOriginal('tags'))->toBe($original);
+    $valid = ['tags' => $rows(1, true)];
+    Arr::set($valid, $errorPath, 'Accepted');
+    $this->postJson('/json-value', ['values' => $valid])->assertOk();
+    expect(data_get(['tags' => $record->fresh()->tags], $rootPath))->toBe('yes')
+        ->and(data_get(['tags' => $record->fresh()->tags], $errorPath))->toBe('Accepted');
+})->with(['root', 'row'])->with([
+    'grandchild controller' => [2, 1],
+    'deeper descendant controller' => [3, 1],
+    'nested note and deeper controller' => [4, 2],
+])->with(['original order' => false, 'moved at every level' => true]);
