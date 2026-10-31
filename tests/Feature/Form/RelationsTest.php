@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -100,49 +99,6 @@ class GraphGift extends Model
     public $timestamps = false;
 }
 
-beforeEach(function () {
-    Schema::create('graph_roots', function ($t) {
-        $t->id();
-        $t->string('name')->default('root');
-        $t->unsignedBigInteger('owner_id')->nullable();
-        $t->integer('sold')->default(0);
-        $t->string('code')->nullable();
-        $t->json('codes')->nullable();
-        $t->json('data')->nullable();
-    });
-    Schema::create('graph_children', function ($t) {
-        $t->id();
-        $t->unsignedBigInteger('root_id')->nullable();
-        $t->unsignedBigInteger('parent_id')->nullable();
-        $t->unsignedBigInteger('product_id')->nullable();
-        $t->string('name')->default('child');
-        $t->integer('sold')->default(0);
-        $t->integer('position')->default(0);
-        $t->json('data')->nullable();
-    });
-    Schema::create('graph_products', function ($t) {
-        $t->id();
-        $t->unsignedBigInteger('root_id')->nullable();
-        $t->string('name')->default('product');
-        $t->integer('tenant')->default(1);
-        $t->boolean('active')->default(true);
-    });
-    Schema::create('graph_gifts', function ($t) {
-        $t->id();
-        $t->unsignedBigInteger('root_id');
-        $t->unsignedBigInteger('product_id');
-        $t->integer('quantity')->default(1);
-        $t->integer('sold')->default(0);
-        $t->softDeletes();
-    });
-    Schema::create('graph_components', function ($t) {
-        $t->unsignedBigInteger('root_id');
-        $t->unsignedBigInteger('product_id');
-        $t->integer('quantity')->default(1);
-        $t->integer('sold')->default(0);
-        $t->primary(['root_id', 'product_id']);
-    });
-});
 function graphForm(): Form
 {
     return Form::make(GraphRoot::class)->urls(fn ($r) => ['edit' => '/roots/'.$r->id]);
@@ -531,10 +487,10 @@ it('does not update belongsTo extras before a later invalid sibling', function (
     expect($product->fresh()->name)->toBe('product')->and($root->fresh()->owner_id)->toBeNull();
 });
 
-it('rejects nested upload replacement until graph archival is installed', function () {
+it('rejects unclaimable nested upload replacement until graph archival is installed', function () {
     $root = GraphRoot::create();
     $child = $root->children()->create(['name' => 'files/old.png']);
-    $form = graphForm();
+    $form = graphForm()->id('nested-upload');
     $form->repeater('children', 'Children', fn ($row) => $row->file('name'))->relation('children');
     expect(fn () => graphSave($form, $root, ['children' => [graphRow($child, ['name' => ['token' => 'unarchived']])]]))->toThrow(ValidationException::class);
     expect($child->fresh()->name)->toBe('files/old.png');
@@ -545,7 +501,7 @@ it('rejects nested upload replacement until graph archival is installed', functi
 it('keeps a frozen plan despite caller mutations and exposes prehook raw removal inventory', function () {
     $root = GraphRoot::create(['name' => 'old']);
     $child = $root->children()->create(['name' => 'files/old.png']);
-    $form = graphForm();
+    $form = graphForm()->id('nested-upload');
     $form->text('name');
     $form->repeater('children', 'Children', fn ($row) => $row->file('name'))->relation('children');
     $root->getConnection()->transaction(function () use ($form, $root, $child) {
@@ -784,13 +740,6 @@ class GraphAlternateKeyRoot extends GraphRoot
 }
 
 it('round one persists alternate pivot keys independently from source primary identities', function () {
-    Schema::create('graph_alternate_components', function ($table) {
-        $table->unsignedBigInteger('root_id');
-        $table->string('product_code');
-        $table->integer('quantity')->default(1);
-        $table->integer('sold')->default(0);
-        $table->primary(['root_id', 'product_code']);
-    });
     $root = GraphAlternateKeyRoot::create();
     $product = GraphProduct::create(['name' => 'SKU-A']);
     $form = Form::make(GraphAlternateKeyRoot::class)->urls(fn ($r) => ['edit' => '/roots/'.$r->id]);
@@ -1016,13 +965,6 @@ class GraphStringKeyRoot extends GraphRoot
 }
 
 it('round one preserves exact string primary keys in pivot writes updates and detach', function () {
-    Schema::create('graph_string_components', function ($table) {
-        $table->unsignedBigInteger('root_id');
-        $table->string('product_code');
-        $table->integer('quantity')->default(1);
-        $table->integer('sold')->default(0);
-        $table->primary(['root_id', 'product_code']);
-    });
     $root = GraphStringKeyRoot::create();
     foreach (['02', '2'] as $code) {
         CodeItem::create(['code' => $code, 'name' => $code]);
@@ -1090,10 +1032,6 @@ class GraphReaderRoot extends GraphRoot
 }
 
 it('round two separates JSON container reader context from newly associated storage', function ($mode, $creating) {
-    Schema::table('graph_products', function ($table) {
-        $table->json('data')->nullable();
-        $table->json('stored')->nullable();
-    });
     $root = $creating ? null : GraphReaderRoot::create();
     $product = GraphReaderProduct::create(['data' => [], 'stored' => [['_brume' => ['key' => 'owned'], 'name' => 'authoritative', 'opaque' => (object) [], 'list' => []]]]);
     $readers = [];

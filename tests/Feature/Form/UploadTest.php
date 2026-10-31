@@ -318,6 +318,7 @@ it('uses an allowed secondary model connection for store save preview and cleanu
     $default = config('database.default');
     config(['database.default' => 'upload_secondary']);
     (require __DIR__.'/../../../database/migrations/2026_10_29_000000_create_brume_uploads_table.php')->up();
+    (require __DIR__.'/../../../database/migrations/2026_10_31_000001_add_row_context_to_brume_uploads_table.php')->up();
     config(['database.default' => $default]);
     $record = (new UploadRecord)->setConnection('upload_secondary');
     $record->save();
@@ -407,6 +408,7 @@ it('prevents two overlapping sqlite transactions consuming the same token', func
     });
     config(['database.default' => 'claim_a']);
     (require __DIR__.'/../../../database/migrations/2026_10_29_000000_create_brume_uploads_table.php')->up();
+    (require __DIR__.'/../../../database/migrations/2026_10_31_000001_add_row_context_to_brume_uploads_table.php')->up();
     config(['database.default' => $default]);
     $record = (new UploadRecord)->setConnection('claim_a');
     $record->save();
@@ -681,6 +683,7 @@ function physicalUploadRecord(mixed $values = []): UploadRecord
     });
     DB::usingConnection($name, function () {
         (require __DIR__.'/../../../database/migrations/2026_10_29_000000_create_brume_uploads_table.php')->up();
+        (require __DIR__.'/../../../database/migrations/2026_10_31_000001_add_row_context_to_brume_uploads_table.php')->up();
     });
     $record = (new UploadRecord)->setConnection($name);
     $record->images = $values;

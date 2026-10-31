@@ -15,7 +15,6 @@ use Brume\Tests\Support\Models\CellItem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 it('rejects noncanonical raw decimal grammar before persistence', function () {
@@ -255,12 +254,6 @@ class TaiwanAddressResource extends Brume\Resource\Resource
 }
 
 it('creates edits and returns nested 422 for the exact public TaiwanAddress mapping', function () {
-    Schema::create('taiwan_addresses', function ($table) {
-        $table->id();
-        foreach (['zipcode', 'county', 'district', 'address'] as $attribute) {
-            $table->string($attribute);
-        }
-    });
     $this->actingAs(brumeUser(), 'brume');
     Route::middleware(['web', 'brume.auth', HandleBrumeRequests::class])->group(fn () => Route::brumeResource('addresses', TaiwanAddressResource::class));
     Route::getRoutes()->refreshNameLookups();

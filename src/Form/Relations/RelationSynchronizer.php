@@ -2,14 +2,18 @@
 
 namespace Brume\Form\Relations;
 
+use Brume\Form\Fields\Repeater;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 
 final class RelationSynchronizer
 {
+    private ?Model $rootContext;
+
     public function save(RelationPlan $plan): void
     {
         $tree = $plan->operations();
+        $this->rootContext = $tree['model']->exists ? $tree['model'] : null;
         $this->node($tree);
         $plan->acceptSavedRoot($tree['model']);
     }
@@ -19,7 +23,11 @@ final class RelationSynchronizer
         $model = $node['model'];
         foreach ($node['fields'] as $path => $field) {
             if (Arr::has($node['values'], $path)) {
-                $field->fill($model, Arr::get($node['values'], $path));
+                if ($field instanceof Repeater && isset($node['jsonOriginals'][$path])) {
+                    $field->fillWithOriginal($model, Arr::get($node['values'], $path), $node['jsonOriginals'][$path], $this->rootContext, $node['jsonTemplates'][$path], $node['jsonContexts'][$path]);
+                } else {
+                    $field->fill($model, Arr::get($node['values'], $path));
+                }
             }
         }
         if ($binding !== null) {

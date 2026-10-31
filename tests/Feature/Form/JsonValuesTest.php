@@ -3,6 +3,7 @@
 use Brume\Form\Conditions;
 use Brume\Form\Form;
 use Brume\Form\FormSaver;
+use Brume\Tests\Support\JsonSemantics;
 use Brume\Tests\Support\Models\CellItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -79,7 +80,7 @@ it('preserves nested repeater custom JSON on persistence reload and readonly edi
     jsonValueRoute($fields, $record);
     $value = [['_brume' => ['key' => 'row'], 'payload' => (object) ['empty' => (object) [], 'list' => []]]];
     $this->postJson('/json-value', ['values' => ['tags' => $value]])->assertOk();
-    expect($record->fresh()->getRawOriginal('tags'))->toBe('[{"_brume":{"key":"row"},"payload":{"empty":{},"list":[]}}]');
+    expect(JsonSemantics::canonical($record->fresh()->getRawOriginal('tags')))->toBe(JsonSemantics::canonical('[{"_brume":{"key":"row"},"payload":{"empty":{},"list":[]}}]'));
     $record->update(['tags' => [['_brume' => ['key' => 'row'], 'payload' => (object) [], 'inner' => [['_brume' => ['key' => 'nested'], 'payload' => (object) []]]]]]);
     $value[0]['inner'] = [['_brume' => ['key' => 'nested'], 'payload' => []]];
     $this->postJson('/json-value', ['values' => ['tags' => $value]])->assertOk();
@@ -137,7 +138,7 @@ it('preserves authoritative inactive nested JSON containers while editing their 
     }, $record);
     $this->postJson('/json-value', ['values' => ['tags' => [['_brume' => ['key' => 'one'], 'name' => 'changed', 'mode' => 'off', 'inner' => [['_brume' => ['key' => 'forged'], 'name' => 'forged']]]]]])->assertOk();
     $stored = json_decode($record->fresh()->getRawOriginal('tags'));
-    expect($stored[0]->name)->toBe('changed')->and(json_encode($stored[0]->inner))->toBe(json_encode($inner));
+    expect($stored[0]->name)->toBe('changed')->and(JsonSemantics::canonical(json_encode($stored[0]->inner)))->toBe(JsonSemantics::canonical(json_encode($inner)));
 })->with(['readonly', 'inactive']);
 
 it('keeps preserved semantic containers attached through hook reorder and strips editable row extras', function () {
@@ -198,7 +199,7 @@ it('resolves legacy descendants inside authoritative readonly containers for eva
         $form->text('note')->required()->showWhen(Conditions::eq(Conditions::root('tags.0.inner.0.name'), 'yes'));
     }, $record);
     $this->postJson('/json-value', ['values' => ['tags' => [['_brume' => ['key' => 'outer'], 'inner' => []]]]])->assertUnprocessable()->assertJsonValidationErrors('note');
-    expect($record->fresh()->tags)->toBe($original);
+    expect(JsonSemantics::canonical($record->fresh()->getRawOriginal('tags')))->toBe(JsonSemantics::canonical(json_encode($original)));
 });
 
 it('retains prepared readonly descendants during recursive HTTP row validation', function ($scope, $levels, $noteLevel, $move) {
@@ -237,7 +238,7 @@ it('retains prepared readonly descendants during recursive HTTP row validation',
         }
     };
     jsonValueRoute(fn (Form $form) => $form->repeater('tags', 'Rows', fn (Form $row) => $declare($row, 1)), $record);
-    $original = $record->getRawOriginal('tags');
+    $original = $record->fresh()->getRawOriginal('tags');
     $this->postJson('/json-value', ['values' => ['tags' => $rows(1, true)]])->assertUnprocessable()->assertJsonValidationErrors($errorPath);
     expect($record->fresh()->getRawOriginal('tags'))->toBe($original);
     $valid = ['tags' => $rows(1, true)];

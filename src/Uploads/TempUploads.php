@@ -40,9 +40,10 @@ class TempUploads
         return $name;
     }
 
-    public function store(UploadedFile $file, Form $form, string $field, Upload $definition): array
+    public function store(UploadedFile $file, Form $form, string $field, Upload $definition, array $rowContext = [], array $ancestorSources = []): array
     {
-        if (($form->fields()[$field] ?? null) !== $definition || ! $definition->isEditable($form->record())) {
+        $resolved = UploadContext::resolve($form, $field, $rowContext, $ancestorSources);
+        if ($resolved['field'] !== $definition) {
             throw ValidationException::withMessages(['field' => 'Invalid upload field.']);
         }
         $form->formId();
@@ -66,7 +67,7 @@ class TempUploads
         }
         try {
             $row = TempUpload::on($connection)->create([
-                'token' => $token, 'form' => $form->formId(), 'field' => $field,
+                'token' => $token, 'form' => $form->formId(), 'field' => $resolved['template'], 'row_context' => $resolved['rowContext'] ?: null,
                 'user_id' => (string) Auth::guard($guard)->id(), 'guard' => $guard,
                 'record' => $form->record()?->getKey() === null ? null : (string) $form->record()->getKey(),
                 'disk' => $disk, 'path' => $path, 'original_name' => basename($file->getClientOriginalName()),
@@ -87,7 +88,7 @@ class TempUploads
     }
 
     /** Lock and inspect on the model connection; archival consumes the row in that transaction. */
-    public function claim(string $token, Form $form, string $field): ?TempUpload
+    public function claim(string $token, Form $form, string $field, array $rowContext = []): ?TempUpload
     {
         if (! preg_match('/^[A-Za-z0-9]{40}$/D', $token)) {
             return null;
@@ -97,10 +98,15 @@ class TempUploads
             return null;
         }
 
-        return TempUpload::on(self::connection($form))
+        $row = TempUpload::on(self::connection($form))
             ->where('token', $token)->where('form', $form->formId())->where('field', $field)
             ->where('guard', $guard)->where('user_id', (string) Auth::guard($guard)->id())
             ->where('record', $form->record()?->getKey() === null ? null : (string) $form->record()->getKey())
             ->where('expires_at', '>', now())->lockForUpdate()->first();
+
+        // JSON databases may reorder object properties; row order and typed values stay exact.
+        $storedContext = array_map(fn ($identity) => ['path' => $identity['path'], 'key' => $identity['key']] + (array_key_exists('id', $identity) ? ['id' => $identity['id']] : []), $row?->row_context ?? []);
+
+        return $row !== null && $storedContext === $rowContext ? $row : null;
     }
 }

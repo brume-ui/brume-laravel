@@ -62,8 +62,8 @@ class FormSaver
             }
             $plan = $planner->plan($form, $record, $values, $context)->withOriginalInventory($before->inventory()['original']);
             $values = $plan->values();
-            // Complete graph validation precedes even the existing root-only upload archiver.
-            app(UploadArchiver::class)->archive($archiveForm, $record, $values);
+            // Complete graph validation precedes one whole-graph upload preflight.
+            app(UploadArchiver::class)->archivePlan($archiveForm, $record, $values, $plan);
             (new RelationSynchronizer)->save($plan->withArchivedValues($values));
             $feedback = $form->fire('saved', $record);
             $urls = $form->saveUrls($record);

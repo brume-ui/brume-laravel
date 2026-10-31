@@ -7,7 +7,6 @@ use Brume\Form\DeclarationRegistry;
 use Brume\Form\Fields\CustomField;
 use Brume\Form\Fields\RelationPicker;
 use Brume\Form\Fields\Repeater;
-use Brume\Form\Fields\Upload;
 use Brume\Form\Form;
 use Brume\Form\FormValidator;
 use Brume\Form\JsonRows;
@@ -145,7 +144,7 @@ final class RelationPlanner
             $stored = $json !== null ? $field->valueFromJson($json) : (($field instanceof Repeater || $field instanceof RelationPicker) ? null : $field->valueForContext($model->exists ? $model : null, $callback));
             $this->entries[$path] = ['field' => $field, 'node' => $prefix, 'relative' => $relative, 'stored' => $stored, 'children' => [], 'existing' => [], 'relation' => null];
             $this->definitions[$path] = ['type' => $field->type()] + $field->settings();
-            $this->inventory['fields'][$path] = ['field' => $field, 'path' => $path, 'template' => $template.$relative, 'rowContext' => $context, 'owner' => $model->exists ? clone $model : null, 'stored' => $stored, 'submitted' => Arr::has($input, $relative), 'validated' => false];
+            $this->inventory['fields'][$path] = ['field' => $field, 'path' => $path, 'template' => $template.$relative, 'rowContext' => $context, 'storageContext' => $storageContext, 'callback' => $callback, 'json' => $json !== null, 'model' => clone $model, 'owner' => $model->exists ? clone $model : null, 'stored' => $stored, 'submitted' => Arr::has($input, $relative), 'validated' => false];
         }
         foreach ($form->fields() as $relative => $field) {
             if ($field instanceof Repeater || $field instanceof RelationPicker) {
@@ -613,19 +612,6 @@ final class RelationPlanner
             $entry = $this->entries[$path];
             $this->inventory['fields'][$path] += ['value' => $value, 'active' => $field->isEditable($node['callback']) && ! $this->locked($prefix) && $this->active($path)];
             $this->inventory['fields'][$path]['validated'] = true;
-            if ($field instanceof Upload && $prefix !== '') {
-                $stored = $entry['stored'];
-                $items = $field->settings()['multiple'] ? ($value ?? []) : ($value === null ? [] : [$value]);
-                $old = $field->settings()['multiple'] ? ($stored ?? []) : ($stored === null ? [] : [$stored]);
-                $paths = array_map(fn ($item) => is_string($item) ? $item : data_get($item, 'path'), $old);
-                $submittedPaths = array_map(fn ($item) => is_array($item) && ! isset($item['token']) ? ($item['path'] ?? null) : null, $items);
-                if ($submittedPaths !== $paths || in_array(null, $submittedPaths, true)) {
-                    $this->invalid($path, 'Nested upload changes require graph archival.');
-                }
-                Arr::set($values, $relative, $stored);
-
-                continue;
-            }
             if (method_exists($field, 'optionSource') && $field->optionSource() !== null && $field->type() !== 'tags' && $field->isEditable($node['callback']) && ! $this->locked($prefix) && $this->active($path)) {
                 $ids = $field instanceof RelationPicker ? array_map(fn ($child) => $this->nodes[$child]['selected'], $entry['children']) : ($field->type() === 'multipleSelect' ? ($value ?? []) : ($value === null || $value === '' ? [] : [$value]));
                 $selectedModels = $this->eligible($path, $ids);
@@ -690,12 +676,12 @@ final class RelationPlanner
             }
             $removed = array_values(array_filter($entry['existing'], fn ($existing) => ! in_array((string) $existing->getKey(), $kept, true)));
             foreach ($removed as $removedModel) {
-                $this->inventory['removed'][] = ['path' => $path, 'rowContext' => $node['context'], 'owner' => clone $removedModel, 'form' => $field->rowForm()];
+                $this->inventory['removed'][] = ['path' => $path, 'template' => $node['template'].$relative, 'rowContext' => $node['storageContext'], 'kind' => $kind, 'identity' => $field instanceof RelationPicker ? (string) ($field->associationAttribute() !== null ? $removedModel->getAttribute($field->associationAttribute()) : $removedModel->getKey()) : (string) $removedModel->getKey(), 'owner' => clone $removedModel, 'form' => $field->rowForm()];
             }
             $relations[] = ['kind' => $kind, 'name' => $name, 'rows' => $rows, 'removed' => $kind === 'pivot' ? array_map(fn ($row) => $row->getRelation($relation->getPivotAccessor())->getAttribute($relation->getRelatedPivotKeyName()), $removed) : $removed, 'foreign' => $kind !== 'pivot' ? $relation->getForeignKeyName() : null];
         }
 
-        return ['model' => $node['model'], 'fields' => $fields, 'values' => $values, 'relations' => $relations, 'restore' => false];
+        return ['prefix' => $prefix, 'model' => $node['model'], 'fields' => $fields, 'values' => $values, 'relations' => $relations, 'restore' => false];
     }
 
     private function invalid(string $path, string $message = 'Invalid relation graph.'): never

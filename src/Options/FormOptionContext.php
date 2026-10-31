@@ -13,7 +13,9 @@ use Brume\Form\JsonRows;
 use Brume\Form\JsonValues;
 use Brume\Grid\RowLookup;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use stdClass;
@@ -77,7 +79,7 @@ final class FormOptionContext
     private function value(string $path, mixed $chain, mixed $submitted, string $error): mixed
     {
         $entry = $this->registry->entries[$path];
-        [$record, $json, $locked] = $this->row($this->form, $this->registry, $entry, $chain);
+        [$record, $json, $locked, $storage] = $this->row($this->form, $this->registry, $entry, $chain);
         $field = $entry['field'];
         if ($entry['model'] !== null && $field->hasHiddenAttributes($entry['model'])) {
             throw new \InvalidArgumentException('Option dependency uses a hidden attribute: '.$path);
@@ -85,7 +87,7 @@ final class FormOptionContext
         $locked = $locked || ! $field->isEditable($record);
         $collection = $field instanceof Repeater || $field instanceof RelationPicker;
         $value = $locked
-            ? ($collection ? (new FormSnapshot)->value($field, $record, $json, $chain, $path, $this->form->record()) : ($json !== null ? $field->valueFromJson($json) : $field->valueFor($record)))
+            ? ($collection ? (new FormSnapshot)->value($field, $record, $json, $chain, $path, $this->form->record(), $storage) : ($json !== null ? $field->valueFromJson($json) : $field->valueForContext($storage, $record)))
             : $submitted;
         [$valid, $canonical] = Conditions::canonical(['type' => $field->type()] + $field->settings(), $value);
         if (! $valid) {
@@ -175,13 +177,19 @@ final class FormOptionContext
         return $this->resolved[$key] = $context;
     }
 
-    /** @return array{?Model, ?array, bool} */
+    /** Internal upload authorization uses the same declared ancestor authority as options. */
+    public function uploadContext(array $entry, array $chain): array
+    {
+        return $this->row($this->form, $this->registry, $entry, $chain);
+    }
+
+    /** @return array{?Model, ?array, bool, ?Model} */
     private function row(Form $form, DeclarationRegistry $registry, array $entry, mixed $chain): array
     {
         if (! is_array($chain) || ! array_is_list($chain) || count($chain) !== count($entry['parents'])) {
             $this->invalid('rowContext');
         }
-        $record = $root = $form->record();
+        $storage = $record = $root = $form->record();
         $json = null;
         $locked = false;
         $ancestors = $storageAncestors = [];
@@ -199,13 +207,13 @@ final class FormOptionContext
                 if (array_key_exists('id', $identity)) {
                     $this->invalid('rowContext');
                 }
-                $stored = $json !== null ? data_get($json, $container->attributeName(), []) : ($record !== null ? $container->storedJsonRows($record) : []);
+                $stored = $json !== null ? data_get($json, $container->attributeName(), []) : ($storage !== null ? $container->storedJsonRowsForContext($storage, $record) : []);
                 $rows = JsonRows::hydrate($stored ?? [], $root, $path, $storageAncestors);
                 $json = collect($rows)->first(fn ($row) => $row['_brume']['key'] === $identity['key']) ?? [];
                 $record = $root; // JSON callbacks retain the global nullable root.
             } else {
-                $parent = $record;
-                $record = null;
+                $parent = $storage;
+                $storage = $record = null;
                 $json = null;
                 if ($container instanceof RelationPicker) {
                     if (! isset($identity['id']) || $identity['key'] !== $identity['id']) {
@@ -229,8 +237,16 @@ final class FormOptionContext
                             $record = $record->getRelation($relation->getPivotAccessor());
                         }
                     }
-                    if ($record === null && $lookup->find([$id])?->first() === null) {
-                        $this->invalid('rowContext');
+                    $storage = $record;
+                    if ($record === null) {
+                        $selected = $lookup->find([$id])?->first();
+                        if ($selected === null) {
+                            $this->invalid('rowContext');
+                        }
+                        $relationship = $container->relationship($parent ?? $registry->entries[$path]['model']);
+                        if ($relationship instanceof BelongsTo || ($relationship instanceof HasMany && $container->associationAttribute() === null)) {
+                            $storage = $selected;
+                        }
                     }
                     // Source identity is never used as the intermediary callback model.
                 } elseif (isset($identity['id'])) {
@@ -240,9 +256,10 @@ final class FormOptionContext
                     $lookup = new RowLookup($container->relationship($parent)->getQuery());
                     $id = $lookup->normalizeId($identity['id']);
                     $record = $id === null ? null : $lookup->find([$id])?->first();
-                    if ($record === null) {
+                    if ($record === null || (string) $id !== $identity['id']) {
                         $this->invalid('rowContext');
                     }
+                    $storage = $record;
                 }
             }
             $ancestors[] = ['path' => $identity['path'], 'key' => $identity['key']] + (isset($identity['id']) ? ['id' => $identity['id']] : []);
@@ -251,7 +268,7 @@ final class FormOptionContext
                 : end($ancestors);
         }
 
-        return [$record, $json, $locked];
+        return [$record, $json, $locked, $storage];
     }
 
     public function chain(mixed $chain): array

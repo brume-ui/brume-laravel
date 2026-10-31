@@ -15,13 +15,34 @@ class UploadController
     public function store(Form $form, Request $request): JsonResponse
     {
         $field = $request->input('field');
-        $definition = is_string($field) ? ($form->fields()[$field] ?? null) : null;
+        $rowContext = $this->json($request, 'rowContext', []);
+        $ancestors = $this->json($request, 'ancestorSources', []);
+        if (! is_array($rowContext) || ! is_array($ancestors)) {
+            throw ValidationException::withMessages(['rowContext' => 'Invalid upload context.']);
+        }
+        $rowContext = array_map(fn ($row) => $row instanceof \stdClass ? get_object_vars($row) : $row, $rowContext);
+        $definition = is_string($field) ? UploadContext::resolve($form, $field, $rowContext, $ancestors)['field'] : null;
         if (! $definition instanceof Upload) {
             throw ValidationException::withMessages(['field' => 'Invalid upload field.']);
         }
         $request->validate(['file' => 'required|file']);
 
-        return response()->json(app(TempUploads::class)->store($request->file('file'), $form, $field, $definition));
+        return response()->json(app(TempUploads::class)->store($request->file('file'), $form, $field, $definition, $rowContext, $ancestors));
+    }
+
+    private function json(Request $request, string $key, mixed $default): mixed
+    {
+        if (! $request->exists($key)) {
+            return $default;
+        }
+        $raw = $request->input($key);
+        if (is_string($raw) && strlen($raw) <= 65536) {
+            try {
+                return json_decode($raw, false, 64, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+            }
+        }
+        throw ValidationException::withMessages([$key => 'Invalid upload context.']);
     }
 
     public function preview(string $token)

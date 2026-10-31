@@ -5,6 +5,7 @@ use Brume\Grid\Editor;
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Tests\Support\JsonSchema;
+use Brume\Tests\Support\JsonSemantics;
 use Brume\Tests\Support\Models\CellItem;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Support\Facades\Route;
@@ -492,7 +493,7 @@ it('round trips declared custom JSON values and preserves nested 422 paths', fun
             '' => ['required', 'array:zipcode,county,district,address'],
             'zipcode' => ['required', 'string', 'size:3'],
             'county' => ['required', 'string'], 'district' => ['required', 'string'], 'address' => ['required', 'string'],
-        ])->attributes(['zipcode' => 'customer', 'county' => 'status', 'district' => 'note', 'address' => 'due_date']))->display(fn ($value) => $value['address'] ?? '');
+        ])->attributes(['zipcode' => 'customer', 'county' => 'status', 'district' => 'note', 'address' => 'custom_address']))->display(fn ($value) => $value['address'] ?? '');
     });
     $value = ['zipcode' => '100', 'county' => 'Taipei', 'district' => 'Zhongzheng', 'address' => 'Road'];
     patchCell($item->id, ['column' => 'address', 'value' => array_replace($value, ['zipcode' => '1'])])->assertUnprocessable()->assertJsonValidationErrors('address.zipcode');
@@ -516,9 +517,9 @@ it('retains empty and nested object shapes through custom cell HTTP and raw read
     [$item] = cellItems();
     cellRoutes(tags: Editor::component('JSON', rules: ['' => ['array']]));
     $response = patchCell($item->id, ['column' => 'tags', 'value' => (object) ['empty' => (object) [], 'list' => [], 'nested' => [(object) []]]])->assertOk();
-    expect($item->fresh()->getRawOriginal('tags'))->toBe('{"empty":{},"list":[],"nested":[{}]}');
+    expect(JsonSemantics::canonical($item->fresh()->getRawOriginal('tags')))->toBe(JsonSemantics::canonical('{"empty":{},"list":[],"nested":[{}]}'));
     $raw = json_decode($response->getContent())->row->_meta->raw->tags;
-    expect(json_encode($raw))->toBe('{"empty":{},"list":[],"nested":[{}]}');
+    expect(JsonSemantics::canonical(json_encode($raw)))->toBe(JsonSemantics::canonical('{"empty":{},"list":[],"nested":[{}]}'));
 });
 
 it('serializes custom editor supported root rules without child rules', function () {

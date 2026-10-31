@@ -4,6 +4,7 @@ namespace Brume\Form\Fields;
 
 use Brume\Form\Form;
 use Brume\Form\FormSnapshot;
+use Brume\Form\JsonRows;
 use Brume\Form\JsonValues;
 use Brume\Options\OptionSource;
 use Illuminate\Database\Eloquent\Model;
@@ -143,9 +144,16 @@ class Repeater extends Field
 
     public function fill(Model $record, mixed $value): void
     {
+        $this->fillWithOriginal($record, $value, []);
+    }
+
+    /** Internal graph writer: original rows are locked raw storage, never client dictionaries. */
+    public function fillWithOriginal(Model $record, mixed $value, array $original, ?Model $root = null, string $template = '', array $context = []): void
+    {
         if ($this->relationName !== null) {
             throw new LogicException('Relation persistence requires the relation graph planner.');
         }
+        $original = collect(JsonRows::hydrate($original, $root, $template, $context))->keyBy(fn ($row) => $row['_brume']['key'])->all();
         $stored = [];
         foreach ($value ?? [] as $row) {
             // This writer consumes validated/trusted values. Validation rebuilds every editable
@@ -157,7 +165,15 @@ class Repeater extends Field
                 continue;
             }
             // Conversion carrier only; validation already used the original nullable root.
+            $raw = $original[$row['_brume']['key']] ?? [];
             $carrier = new class extends Model {};
+            // Seed only persisted raw attributes, preserving unknown and omitted values.
+            foreach ($raw as $attribute => $storedValue) {
+                if (is_array($storedValue) || $storedValue instanceof \stdClass) {
+                    $carrier->mergeCasts([$attribute => 'json']);
+                }
+                $carrier->setAttribute($attribute, $storedValue);
+            }
             foreach ($this->rowForm->fields() as $path => $field) {
                 if (! Arr::has($row, $path) || $field->type() === 'display' || ($field->settings()['displayOnly'] ?? false)) {
                     continue;
@@ -167,9 +183,22 @@ class Repeater extends Field
                         $carrier->mergeCasts([explode('.', $attribute, 2)[0] => 'array']);
                     }
                 }
-                $field->fill($carrier, data_get($row, $path));
+                if ($field instanceof Repeater) {
+                    $field->fillWithOriginal($carrier, data_get($row, $path), data_get($raw, $field->attributeName(), []), $root, $template.'.*.'.$path, [...$context, ['path' => $template, 'key' => $row['_brume']['key']]]);
+                } else {
+                    if ($field instanceof Upload && ($field->settings()['multiple'] || $field->extraFields() !== [])) {
+                        $carrier->mergeCasts([explode('.', $field->attributeName())[0] => 'json']);
+                    }
+                    $field->fill($carrier, data_get($row, $path));
+                }
             }
-            $stored[] = ['_brume' => $row['_brume']] + $carrier->attributesToArray();
+            $converted = $carrier->attributesToArray();
+            foreach ($carrier->getCasts() as $attribute => $cast) {
+                if (in_array($cast, ['array', 'json'], true) && is_string($carrier->getAttributes()[$attribute] ?? null)) {
+                    $converted[$attribute] = json_decode($carrier->getAttributes()[$attribute], false, 512, JSON_THROW_ON_ERROR);
+                }
+            }
+            $stored[] = ['_brume' => $row['_brume']] + $converted;
         }
         parent::fill($record, $stored);
     }

@@ -15,14 +15,14 @@ final class FormSnapshot
 
     private array $contexts = [];
 
-    public function values(Form $form, ?Model $record, ?array $json = null, array $context = [], string $template = '', ?Model $root = null): array
+    public function values(Form $form, ?Model $record, ?array $json = null, array $context = [], string $template = '', ?Model $root = null, ?Model $storage = null): array
     {
         $values = $capabilities = [];
         foreach ($form->fields() as $path => $field) {
             if ($context !== []) {
                 $capabilities[$path] = ['readOnly' => $field->isReadOnly($record), 'rules' => ClientRules::for($field, $path, $record)];
             }
-            data_set($values, $path, $this->value($field, $record, $json, $context, $template.$path, $root));
+            data_set($values, $path, $this->value($field, $record, $json, $context, $template.$path, $root, $storage));
         }
         if ($context !== []) {
             $key = json_encode($context, JSON_THROW_ON_ERROR);
@@ -36,10 +36,11 @@ final class FormSnapshot
         return $values;
     }
 
-    public function value(Field $field, ?Model $record, ?array $json = null, array $context = [], ?string $containerPath = null, ?Model $root = null): mixed
+    public function value(Field $field, ?Model $record, ?array $json = null, array $context = [], ?string $containerPath = null, ?Model $root = null, ?Model $storage = null): mixed
     {
+        $storage ??= $record;
         if (! $field instanceof Repeater && ! $field instanceof RelationPicker) {
-            return $json !== null ? $field->valueFromJson($json) : $field->valueFor($record);
+            return $json !== null ? $field->valueFromJson($json) : $field->valueForContext($storage, $record);
         }
         $containerPath ??= $field->path();
         $rows = [];
@@ -48,13 +49,13 @@ final class FormSnapshot
             if ($record !== null && in_array($field->relationName(), $record->getHidden(), true)) {
                 return $field instanceof RelationPicker && ! $field->settings()['multiple'] ? null : [];
             }
-            $query = $record !== null ? $field->relationship($record) : null;
+            $query = $storage !== null ? $field->relationship($storage) : null;
             if ($field instanceof Repeater && $field->orderAttribute() !== null) {
                 $query?->orderBy($field->orderAttribute());
             }
             $stored = $query?->get()->all() ?? [];
         } else {
-            $stored = $json !== null ? data_get($json, $field->attributeName(), []) : ($record !== null ? $field->storedJsonRows($record) : []);
+            $stored = $json !== null ? data_get($json, $field->attributeName(), []) : ($storage !== null ? $field->storedJsonRowsForContext($storage, $record) : []);
             $stored = JsonRows::hydrate($stored ?? [], $root, $containerPath, $context);
         }
         foreach ($stored as $row) {
@@ -69,7 +70,7 @@ final class FormSnapshot
             $rowContext = [...$context, ['path' => $containerPath] + $identity];
             $childTemplate = $containerPath.($field instanceof Repeater || $field->settings()['multiple'] ? '.*.' : '.');
             $callback = $relation && $query instanceof BelongsToMany ? $row->getRelation($query->getPivotAccessor()) : ($relation ? $row : $root);
-            $rows[] = $metadata + $this->values($field->rowForm(), $callback, $relation ? null : $row, $rowContext, $childTemplate, $root);
+            $rows[] = $metadata + $this->values($field->rowForm(), $callback, $relation ? null : $row, $rowContext, $childTemplate, $root, $relation ? $callback : $storage);
         }
 
         return $field instanceof RelationPicker && ! $field->settings()['multiple'] ? ($rows[0] ?? null) : $rows;

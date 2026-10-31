@@ -14,6 +14,6 @@ class TempUpload extends Model
 
     protected function casts(): array
     {
-        return ['expires_at' => 'datetime', 'created_at' => 'datetime', 'size' => 'integer'];
+        return ['row_context' => 'array', 'expires_at' => 'datetime', 'created_at' => 'datetime', 'size' => 'integer'];
     }
 }

@@ -2,7 +2,9 @@
 
 namespace Brume\Form\Relations;
 
+use Brume\Form\Fields\Repeater;
 use Brume\Form\Fields\Upload;
+use Brume\Uploads\UploadInventory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 
@@ -35,6 +37,19 @@ final readonly class RelationPlan
 
     public function withOriginalInventory(array $original): self
     {
+        $known = [];
+        foreach ($original as $entry) {
+            if (($owner = UploadInventory::owner($entry['owner'])) !== null) {
+                $known[$owner] = true;
+            }
+        }
+        foreach ($this->inventory['original'] as $entry) {
+            $owner = UploadInventory::owner($entry['owner']);
+            if ($owner !== null && ! isset($known[$owner])) {
+                $original[] = $entry;
+            }
+        }
+
         return new self($this->tree, $this->validated, array_replace($this->inventory, ['original' => $original]), $this->target);
     }
 
@@ -53,19 +68,44 @@ final readonly class RelationPlan
         return self::copy($this->tree);
     }
 
-    /** Only the trusted archiver may replace validated root Upload leaves. No graph reconstruction. */
+    /** Compose archived leaves into frozen operations, including JSON aggregates, without replanning. */
     public function withArchivedValues(array $values): self
     {
-        $tree = $this->tree;
         $validated = $this->validated;
-        foreach ($tree['fields'] as $path => $field) {
-            if ($field instanceof Upload && Arr::has($validated, $path)) {
-                Arr::set($tree['values'], $path, Arr::get($values, $path));
+        foreach ($this->inventory['fields'] ?? [] as $path => $entry) {
+            if ($entry['field'] instanceof Upload && ($entry['validated'] ?? false) && Arr::has($validated, $path) && Arr::has($values, $path)) {
                 Arr::set($validated, $path, Arr::get($values, $path));
             }
         }
+        $values = $validated;
+        $original = UploadInventory::originals($this->inventory);
+        $compose = function (array $tree) use (&$compose, $values, $original): array {
+            foreach ($tree['fields'] as $relative => $field) {
+                $path = ($tree['prefix'] ?? '').$relative;
+                if (($field instanceof Upload || $field instanceof Repeater) && Arr::has($values, $path)) {
+                    Arr::set($tree['values'], $relative, Arr::get($values, $path));
+                }
+                if ($field instanceof Repeater && $field->relationName() === null) {
+                    $entry = $this->inventory['fields'][$path] ?? null;
+                    $tree['jsonOriginals'][$relative] = $entry === null ? [] : ($original[UploadInventory::key($entry)]['stored'] ?? []);
+                    $tree['jsonContexts'][$relative] = $entry['storageContext'] ?? [];
+                    $tree['jsonTemplates'][$relative] = $entry['template'] ?? $path;
+                }
+            }
+            foreach ($tree['relations'] as &$relation) {
+                if ($relation['kind'] === 'belongsTo') {
+                    if ($relation['row'] !== null) {
+                        $relation['row'] = $compose($relation['row']);
+                    }
+                } else {
+                    $relation['rows'] = array_map($compose, $relation['rows']);
+                }
+            }
 
-        return new self($tree, $validated, $this->inventory, $this->target);
+            return $tree;
+        };
+
+        return new self($compose($this->tree), $values, $this->inventory, $this->target);
     }
 
     private static function copy(mixed $value): mixed

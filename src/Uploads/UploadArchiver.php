@@ -5,6 +5,8 @@ namespace Brume\Uploads;
 use Brume\Form\Fields\Upload;
 use Brume\Form\Form;
 use Brume\Form\FormValidator;
+use Brume\Form\JsonValues;
+use Brume\Form\Relations\RelationPlan;
 use Brume\Uploads\Support\UploadTransactions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
@@ -14,28 +16,63 @@ use Illuminate\Validation\ValidationException;
 
 class UploadArchiver
 {
+    private ?RelationPlan $relationPlan = null;
+
     public function archive(Form $form, Model $record, array &$values): void
     {
+        $this->process($form, $record, $values, $this->relationPlan);
+    }
+
+    public function archivePlan(Form $form, Model $record, array &$values, RelationPlan $plan): void
+    {
+        // Keep existing host archive() overrides on the Form compatibility binding callable.
+        $previous = $this->relationPlan;
+        $this->relationPlan = $plan;
+        try {
+            $this->archive($form, $record, $values);
+        } finally {
+            $this->relationPlan = $previous;
+        }
+    }
+
+    private function process(Form $form, Model $record, array &$values, ?RelationPlan $plan): void
+    {
+        $inventory = $plan?->inventory();
+        $original = $inventory === null ? [] : UploadInventory::originals($inventory);
         $plans = [];
         $tokens = [];
-        foreach (FormValidator::editableFields($form, $form->record()) as $path => $field) {
+        foreach ($inventory['fields'] ?? [] as $path => $entry) {
+            if ($entry['field'] instanceof Upload && ($entry['validated'] ?? false) && ! ($entry['active'] ?? false) && Arr::has($values, $path)) {
+                Arr::set($values, $path, $original[UploadInventory::key($entry)]['stored'] ?? null);
+            }
+        }
+        $fields = $inventory === null ? FormValidator::editableFields($form, $form->record()) : array_map(fn ($entry) => $entry['field'], array_filter($inventory['fields'] ?? [], fn ($entry) => ($entry['validated'] ?? false) && ($entry['active'] ?? false)));
+        foreach ($fields as $path => $field) {
             if (! $field instanceof Upload || ! Arr::has($values, $path)) {
                 continue;
             }
             $form->formId();
-            $field->assertStorage($record);
+            $entry = $inventory['fields'][$path] ?? null;
+            $callback = $entry === null ? $form->record() : $entry['callback'];
+            if (! ($entry['json'] ?? false)) {
+                $field->assertStorage($entry['model'] ?? $record);
+            }
             if (TempUploads::connection($form) !== $record->getConnection()->getName()) {
                 throw new \LogicException('Upload form and record must use the same model connection.');
             }
-            $old = data_get($form->record(), $field->attributeName());
+            $old = $entry === null ? data_get($form->record(), $field->attributeName()) : ($original[UploadInventory::key($entry)]['stored'] ?? null);
             $oldItems = $field->settings()['multiple'] ? (is_array($old) ? $old : []) : [$old];
             $owned = [];
             $storedExtras = [];
             foreach ($oldItems as $item) {
+                if ($item instanceof \stdClass) {
+                    $item = get_object_vars($item);
+                }
                 $oldPath = is_string($item) ? $item : ($item['path'] ?? null);
                 if (is_string($oldPath) && $this->safePath($oldPath)) {
                     $owned[] = $oldPath;
-                    $storedExtras[$oldPath] = is_array($item) && is_array($item['extra'] ?? null) ? $item['extra'] : [];
+                    $storedExtra = is_array($item) ? ($item['extra'] ?? []) : [];
+                    $storedExtras[$oldPath] = $storedExtra instanceof \stdClass ? get_object_vars($storedExtra) : (is_array($storedExtra) ? $storedExtra : []);
                 }
             }
             $input = Arr::get($values, $path);
@@ -53,7 +90,7 @@ class UploadArchiver
                 }
                 if (isset($item['token'])) {
                     $token = $item['token'];
-                    if (! is_string($token) || isset($tokens[$token]) || ! ($row = app(TempUploads::class)->claim($token, $form, $path))) {
+                    if (! is_string($token) || isset($tokens[$token]) || ! ($row = app(TempUploads::class)->claim($token, $form, $entry['template'] ?? $path, $entry['rowContext'] ?? []))) {
                         $this->invalid($key);
                     }
                     $tokens[$token] = true;
@@ -80,7 +117,7 @@ class UploadArchiver
                     }
                     $extraFields = $extraInput = [];
                     foreach ($field->extraFields() as $extraField) {
-                        if (! $extraField->isEditable($form->record())) {
+                        if (! $extraField->isEditable($callback)) {
                             continue;
                         }
                         $name = $extraField->name();
@@ -90,11 +127,11 @@ class UploadArchiver
                             Arr::set($extraInput, $extraPath, $item['extra'][$name]);
                         }
                     }
-                    $validated = FormValidator::validateFields($extraFields, $extraInput, $form->record(), $record);
+                    $validated = FormValidator::validateFields($extraFields, $extraInput, $callback, $entry['model'] ?? $record);
                     foreach ($extraFields as $extraPath => $extraField) {
                         if (Arr::has($validated, $extraPath)) {
                             $name = $extraField->name();
-                            $extra[$name] = $extraField->storeExtraValue(Arr::get($validated, $extraPath), $extra[$name] ?? null);
+                            $extra[$name] = $extraField->storeExtraValue(Arr::get($validated, $extraPath), $extraField->type() === 'custom' ? ($extra[$name] ?? null) : JsonValues::validationView($extra[$name] ?? null));
                         }
                     }
                 }
@@ -103,13 +140,13 @@ class UploadArchiver
             $kept = array_map(fn ($item) => is_string($item) ? $item : $item['path'], $result);
             $plans[] = [$path, $field, $multiple ? $result : ($result[0] ?? null), $rows, array_values(array_diff($owned, $kept))];
         }
-        if ($plans === []) {
+        $removed = $inventory === null ? [] : app(StoredUploadCleanup::class)->removed($inventory);
+        if ($plans === [] && $removed === []) {
             return;
         }
         $connection = $record->getConnection();
         $new = [];
         $temporary = [];
-        $removed = [];
         app(UploadTransactions::class)->register($connection,
             function () use (&$temporary, &$removed) {
                 $this->cleanup(array_merge($temporary, $removed));
