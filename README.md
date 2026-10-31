@@ -815,7 +815,7 @@ acceptance must run against the same graph before delivery.
 切換分支會保留成功儲存前的草稿；儲存只驗證及更新 active 分支。inactive 的既存 scalar／relation 不變；
 重新開啟採用伺服器完整資料，隱藏未存草稿不會被永久保留。`gift_type` 僅允許 `product|coupon|points`。
 舊資料在升級時預設為 product。新門檻 schema 宣告 defaultValue=product，model 也有 product 預設，
-但目前 published alpha14 的新增列不會初始化 editable draft；新增門檻後請明確點選合法類型，再填欄位與儲存。
+但目前 published alpha15 的新增列不會初始化 editable draft；新增門檻後請明確點選合法類型，再填欄位與儲存。
 缺少類型或無效類型的新增請求會回 422。隔離 fresh seed 額外提供 IDs 9、10 的兩門檻範例；既有資料可直接切換，**不用重新 seed**。
 
 升級既有 workbench 時，由部署管理者先確認正在使用的 checkout、DB connection／實體路徑、
