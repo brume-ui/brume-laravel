@@ -83,6 +83,11 @@ class GraphProduct extends Model
     protected $guarded = [];
 
     public $timestamps = false;
+
+    public function parts()
+    {
+        return $this->hasMany(GraphChild::class, 'product_id');
+    }
 }
 class GraphGift extends Model
 {
@@ -109,6 +114,7 @@ beforeEach(function () {
         $t->id();
         $t->unsignedBigInteger('root_id')->nullable();
         $t->unsignedBigInteger('parent_id')->nullable();
+        $t->unsignedBigInteger('product_id')->nullable();
         $t->string('name')->default('child');
         $t->integer('sold')->default(0);
         $t->integer('position')->default(0);
@@ -768,3 +774,300 @@ it('keeps explicit remote choice validation rules in addition to source eligibil
     expect(fn () => graphSave($form, $root, ['code' => (string) $two->id]))->toThrow(ValidationException::class);
     expect($root->fresh()->code)->toBeNull();
 });
+
+class GraphAlternateKeyRoot extends GraphRoot
+{
+    public function components()
+    {
+        return $this->belongsToMany(GraphProduct::class, 'graph_alternate_components', 'root_id', 'product_code', 'id', 'name')->withPivot(['quantity', 'sold']);
+    }
+}
+
+it('round one persists alternate pivot keys independently from source primary identities', function () {
+    Schema::create('graph_alternate_components', function ($table) {
+        $table->unsignedBigInteger('root_id');
+        $table->string('product_code');
+        $table->integer('quantity')->default(1);
+        $table->integer('sold')->default(0);
+        $table->primary(['root_id', 'product_code']);
+    });
+    $root = GraphAlternateKeyRoot::create();
+    $product = GraphProduct::create(['name' => 'SKU-A']);
+    $form = Form::make(GraphAlternateKeyRoot::class)->urls(fn ($r) => ['edit' => '/roots/'.$r->id]);
+    $field = $form->relationPicker('components', 'Components', graphSource())->relation('components')->extra(fn ($row) => $row->number('quantity'));
+    graphSave($form, $root, ['components' => [['id' => (string) $product->id, 'quantity' => 3]]]);
+    expect($root->components()->first()?->id)->toBe($product->id)->and($field->valueFor($root))->toBe([['id' => (string) $product->id, 'quantity' => 3]]);
+    $root->components()->updateExistingPivot('SKU-A', ['sold' => 17]);
+    graphSave($form, $root, ['components' => [['id' => (string) $product->id, 'quantity' => 9]]]);
+    expect($root->components()->first()->pivot->quantity)->toBe(9)->and($root->components()->first()->pivot->sold)->toBe(17);
+    graphSave($form, $root, ['components' => []]);
+    expect($root->getConnection()->table('graph_alternate_components')->count())->toBe(0);
+});
+
+function graphNewOwnerForm(string $mode, array &$contexts): Form
+{
+    $form = graphForm();
+    $form->relationPicker($mode, 'Selected owner', graphSource())->relation($mode)->multiple($mode === 'products')->extra(function ($row) use (&$contexts) {
+        $row->text('name')->readOnly(function ($record) use (&$contexts) {
+            $contexts['owner'][] = $record;
+
+            return false;
+        });
+        $row->repeater('parts', 'Parts', function ($part) use (&$contexts) {
+            $part->text('name')->readOnly(function ($record) use (&$contexts) {
+                $contexts['part'][] = $record;
+
+                return false;
+            });
+        })->relation('parts');
+    });
+
+    return $form;
+}
+function graphSelectedOwnerValues(string $mode, GraphProduct $product, array $parts): array
+{
+    $selection = ['id' => (string) $product->id, 'name' => 'selected', 'parts' => $parts];
+
+    return [$mode => $mode === 'products' ? [$selection] : $selection];
+}
+
+it('round one resolves descendants of newly associated existing storage owners', function ($mode) {
+    $root = GraphRoot::create();
+    $previous = GraphRoot::create();
+    $product = GraphProduct::create(['root_id' => $previous->id]);
+    $retained = $product->parts()->create(['name' => 'old', 'sold' => 23]);
+    $removed = $product->parts()->create(['name' => 'removed']);
+    $contexts = [];
+    $form = graphNewOwnerForm($mode, $contexts);
+    graphSave($form, $root, graphSelectedOwnerValues($mode, $product, [graphRow($retained, ['name' => 'updated'])]));
+    expect($retained->fresh()->name)->toBe('updated')->and($retained->fresh()->sold)->toBe(23)->and($retained->fresh()->product_id)->toBe($product->id)->and($removed->fresh())->toBeNull();
+    expect($mode === 'owner' ? $root->fresh()->owner_id : $product->fresh()->root_id)->toBe($mode === 'owner' ? $product->id : $root->id);
+    expect(collect($contexts['owner'])->every(fn ($record) => $record === null))->toBeTrue();
+    expect(collect($contexts['part'])->every(fn ($record) => $record instanceof GraphChild && $record->id === $retained->id))->toBeTrue();
+})->with(['owner', 'products']);
+
+it('round one rejects foreign descendants before new owner or sibling mutations', function ($mode) {
+    $root = GraphRoot::create();
+    $product = GraphProduct::create();
+    $retained = $product->parts()->create(['name' => 'old']);
+    $foreign = GraphProduct::create()->parts()->create();
+    $contexts = [];
+    $writes = [];
+    GraphProduct::saving(function ($record) use (&$writes) {
+        $writes[] = 'product';
+    });
+    GraphChild::saving(function ($record) use (&$writes) {
+        $writes[] = 'part';
+    });
+    try {
+        expect(fn () => graphSave(graphNewOwnerForm($mode, $contexts), $root, graphSelectedOwnerValues($mode, $product, [graphRow($retained, ['name' => 'bad']), graphRow($foreign)])))->toThrow(ValidationException::class);
+        expect($writes)->toBe([])->and($root->fresh()->owner_id)->toBeNull()->and($product->fresh()->root_id)->toBeNull()->and($retained->fresh()->name)->toBe('old');
+    } finally {
+        GraphProduct::flushEventListeners();
+        GraphChild::flushEventListeners();
+    }
+})->with(['owner', 'products']);
+
+it('round one inventories old descendant files of newly associated storage owners', function ($mode) {
+    $root = GraphRoot::create();
+    $product = GraphProduct::create();
+    $part = $product->parts()->create(['name' => 'files/old.png']);
+    $form = graphForm();
+    $form->relationPicker($mode, 'Owner', graphSource())->relation($mode)->multiple($mode === 'products')->extra(fn ($row) => $row->repeater('parts', 'Parts', fn ($part) => $part->file('name'))->relation('parts'));
+    $root->getConnection()->transaction(function () use ($form, $root, $product, $mode, $part) {
+        $plan = (new RelationPlanner)->plan($form, $root, graphSelectedOwnerValues($mode, $product, []), $root);
+        expect(collect($plan->inventory()['original'])->contains(fn ($entry) => $entry['owner']?->is($part) && $entry['stored'] === 'files/old.png'))->toBeTrue();
+    });
+    expect($part->fresh()->name)->toBe('files/old.png');
+})->with(['owner', 'products']);
+
+it('round one projects active and inactive scalar dependencies in raw and hook adjusted passes', function ($nested, $active, $hook) {
+    $root = GraphRoot::create(['name' => 'disabled', 'sold' => 1]);
+    $child = $nested ? $root->children()->create(['name' => 'disabled', 'sold' => 1]) : null;
+    $one = GraphProduct::create(['tenant' => 1]);
+    $two = GraphProduct::create(['tenant' => 2]);
+    $seen = [];
+    $form = graphForm();
+    $fields = function ($row) use ($nested) {
+        $row->text('name');
+        $row->number('sold')->enableWhen(Conditions::eq($nested ? Conditions::row('name') : Conditions::root('name'), 'enabled'));
+    };
+    if ($nested) {
+        $form->repeater('children', 'Children', $fields)->relation('children');
+    } else {
+        $fields($form);
+    }
+    $form->select('code')->remote(OptionSource::make(function ($context) use (&$seen) {
+        $seen[] = $context->dependencies['tenant'];
+
+        return GraphProduct::where('tenant', $context->dependencies['tenant']);
+    })->label('name'), ['tenant' => Conditions::root($nested ? 'children.0.sold' : 'sold')]);
+    $submitted = ['name' => $active && ! $hook ? 'enabled' : 'disabled', 'sold' => 2];
+    $values = ($nested ? ['children' => [graphRow($child, $submitted)]] : $submitted) + ['code' => (string) ($active && ! $hook ? $two->id : $one->id)];
+    if ($hook) {
+        $form->saving(function ($record, &$values) use ($nested, $active, $one, $two) {
+            $target = ['name' => $active ? 'enabled' : 'disabled', 'sold' => 2];
+            if ($nested) {
+                $values['children'][0] = array_replace($values['children'][0], $target);
+            } else {
+                $values = array_replace($values, $target);
+            }
+            $values['code'] = (string) ($active ? $two->id : $one->id);
+        });
+    }
+    graphSave($form, $root, $values);
+    expect($seen)->toBe($hook && $active ? [1, 2] : [$active ? 2 : 1, $active ? 2 : 1]);
+    expect(($child ?? $root)->fresh()->sold)->toBe($active ? 2 : 1)->and($root->fresh()->code)->toBe((string) ($active ? $two->id : $one->id));
+})->with([false, true])->with([false, true])->with([false, true]);
+
+it('round one keeps new association readonly storage authority with null evaluation contexts', function ($mode) {
+    $root = GraphRoot::create();
+    $product = GraphProduct::create(['name' => 'files/owned.png', 'tenant' => 2]);
+    $part = $product->parts()->create(['sold' => 8]);
+    $contexts = [];
+    $form = graphForm();
+    $source = OptionSource::make(GraphProduct::class)->label('name');
+    $form->relationPicker($mode, 'Owner', $source)->relation($mode)->multiple($mode === 'products')->extra(function ($row) use (&$contexts, $mode) {
+        $row->number('tenant')->readOnly(function ($record) use (&$contexts) {
+            $contexts[] = $record;
+
+            return true;
+        });
+        $row->file('name')->readOnly();
+        $row->repeater('parts', 'Parts', fn ($part) => $part->text('name')->required()->showWhen(Conditions::eq(Conditions::root($mode.($mode === 'products' ? '.0' : '').'.tenant'), 2)))->relation('parts');
+    });
+    $form->select('code')->remote(OptionSource::make(fn ($context) => GraphProduct::where('tenant', $context->dependencies['tenant']))->label('name'), ['tenant' => Conditions::root($mode.($mode === 'products' ? '.0' : '').'.tenant')]);
+    $selected = ['id' => (string) $product->id, 'tenant' => 1, 'name' => ['path' => 'foreign.png'], 'parts' => [graphRow($part)]];
+    expect(fn () => graphSave($form, $root, [$mode => $mode === 'products' ? [$selected] : $selected, 'code' => (string) $product->id]))->toThrow(ValidationException::class);
+    $selected['parts'][0]['name'] = 'part saved';
+    graphSave($form, $root, [$mode => $mode === 'products' ? [$selected] : $selected, 'code' => (string) $product->id]);
+    expect($product->fresh()->tenant)->toBe(2)->and($product->fresh()->name)->toBe('files/owned.png')->and($part->fresh()->sold)->toBe(8)->and($root->fresh()->code)->toBe((string) $product->id);
+    expect($contexts)->not->toBeEmpty()->and(collect($contexts)->every(fn ($record) => $record === null))->toBeTrue();
+})->with(['owner', 'products']);
+
+it('round one gives mutating writers real pivot source and JSON carrier targets', function ($create) {
+    $root = $create ? null : GraphRoot::create();
+    $product = GraphProduct::create();
+    $direct = GraphProduct::create();
+    $writers = [];
+    $evaluations = [];
+    $form = graphForm();
+    $form->relationPicker('components', 'Components', graphSource())->relation('components')->extra(function ($row) use (&$writers, &$evaluations) {
+        $row->number('quantity')->readOnly(function ($record) use (&$evaluations) {
+            $evaluations['pivot'][] = $record;
+
+            return false;
+        })->saveUsing(function (Model $target, $value) use (&$writers) {
+            $writers['pivot'] = [$target::class, $target->exists, $target->getTable()];
+            $target->quantity = $value;
+        });
+    });
+    foreach (['owner', 'products'] as $mode) {
+        $form->relationPicker($mode, 'Source', graphSource())->relation($mode)->multiple($mode === 'products')->extra(function ($row) use (&$writers, &$evaluations, $mode) {
+            $row->text('name')->readOnly(function ($record) use (&$evaluations, $mode) {
+                $evaluations[$mode][] = $record;
+
+                return false;
+            })->saveUsing(function (Model $target, $value) use (&$writers, $mode) {
+                $writers[$mode] = [$target::class, $target->exists, $target->getKey()];
+                $target->name = $value;
+            });
+        });
+    }
+    $form->repeater('data', 'JSON', function ($row) use (&$writers, &$evaluations) {
+        $row->text('name')->readOnly(function ($record) use (&$evaluations) {
+            $evaluations['json'][] = $record;
+
+            return false;
+        })->saveUsing(function (Model $target, $value) use (&$writers) {
+            $writers['json'] = [$target::class, $target->exists, $target instanceof GraphRoot];
+            $target->name = $value;
+        });
+    });
+    $result = graphSave($form, $root, ['components' => [['id' => (string) $product->id, 'quantity' => 6]], 'owner' => ['id' => (string) $product->id, 'name' => 'owner writer'], 'products' => [['id' => (string) $direct->id, 'name' => 'direct writer']], 'data' => [['_brume' => ['key' => 'json'], 'name' => 'json writer']]]);
+    $saved = GraphRoot::findOrFail($result['id']);
+    expect($writers['pivot'])->toBe([Pivot::class, false, 'graph_components'])->and($writers['owner'])->toBe([GraphProduct::class, true, $product->id])->and($writers['products'])->toBe([GraphProduct::class, true, $direct->id]);
+    expect($writers['json'][1])->toBeFalse()->and($writers['json'][2])->toBeFalse();
+    expect($saved->components()->first()->pivot->quantity)->toBe(6)->and($product->fresh()->name)->toBe('owner writer')->and($direct->fresh()->name)->toBe('direct writer')->and($saved->data[0]['name'])->toBe('json writer');
+    foreach (['pivot', 'owner', 'products'] as $mode) {
+        expect(collect($evaluations[$mode])->every(fn ($record) => $record === null))->toBeTrue();
+    }
+    expect(collect($evaluations['json'])->every(fn ($record) => $create ? $record === null : $record === $root))->toBeTrue();
+})->with([false, true]);
+
+it('round one resolves newly associated descendant storage before cross row source projection', function () {
+    $root = GraphRoot::create();
+    $owner = GraphProduct::create(['tenant' => 2]);
+    $direct = GraphProduct::create(['tenant' => 1]);
+    $part = $direct->parts()->create(['sold' => 2]);
+    $form = graphForm();
+    $form->relationPicker('owner', 'Owner', OptionSource::make(fn ($context) => GraphProduct::where('tenant', $context->dependencies['tenant']))->label('name'))->relation('owner')->multiple(false)->remote(OptionSource::make(fn ($context) => GraphProduct::where('tenant', $context->dependencies['tenant']))->label('name'), ['tenant' => Conditions::root('products.0.parts.0.sold')]);
+    $form->relationPicker('products', 'Products', graphSource())->relation('products')->extra(fn ($row) => $row->repeater('parts', 'Parts', fn ($part) => $part->number('sold')->readOnly())->relation('parts'));
+    graphSave($form, $root, ['owner' => ['id' => (string) $owner->id], 'products' => [['id' => (string) $direct->id, 'parts' => [graphRow($part, ['sold' => 1])]]]]);
+    expect($root->fresh()->owner_id)->toBe($owner->id)->and($direct->fresh()->root_id)->toBe($root->id)->and($part->fresh()->sold)->toBe(2);
+});
+
+class GraphStringKeyRoot extends GraphRoot
+{
+    public function components()
+    {
+        return $this->belongsToMany(CodeItem::class, 'graph_string_components', 'root_id', 'product_code')->withPivot(['quantity', 'sold']);
+    }
+}
+
+it('round one preserves exact string primary keys in pivot writes updates and detach', function () {
+    Schema::create('graph_string_components', function ($table) {
+        $table->unsignedBigInteger('root_id');
+        $table->string('product_code');
+        $table->integer('quantity')->default(1);
+        $table->integer('sold')->default(0);
+        $table->primary(['root_id', 'product_code']);
+    });
+    $root = GraphStringKeyRoot::create();
+    foreach (['02', '2'] as $code) {
+        CodeItem::create(['code' => $code, 'name' => $code]);
+    }
+    $form = Form::make(GraphStringKeyRoot::class)->urls(fn ($r) => ['edit' => '/roots/'.$r->id]);
+    $field = $form->relationPicker('components', 'Components', OptionSource::make(CodeItem::class)->label('name'))->relation('components')->extra(fn ($row) => $row->number('quantity'));
+    graphSave($form, $root, ['components' => [['id' => '02', 'quantity' => 3], ['id' => '2', 'quantity' => 5]]]);
+    expect(collect($field->valueFor($root))->keyBy('id')->get('02')['quantity'])->toBe(3)->and($root->components()->count())->toBe(2);
+    $root->components()->updateExistingPivot('02', ['sold' => 17]);
+    graphSave($form, $root, ['components' => [['id' => '02', 'quantity' => 7]]]);
+    expect($field->valueFor($root))->toBe([['id' => '02', 'quantity' => 7]])->and($root->components()->first()->pivot->sold)->toBe(17);
+    graphSave($form, $root, ['components' => []]);
+    expect($root->getConnection()->table('graph_string_components')->count())->toBe(0);
+});
+
+it('round one restores inactive authority when the saving hook disables an active scalar', function ($nested) {
+    $root = GraphRoot::create(['name' => 'disabled', 'sold' => 1]);
+    $child = $nested ? $root->children()->create(['name' => 'disabled', 'sold' => 1]) : null;
+    $one = GraphProduct::create(['tenant' => 1]);
+    $two = GraphProduct::create(['tenant' => 2]);
+    $seen = [];
+    $form = graphForm();
+    $fields = function ($row) use ($nested) {
+        $row->text('name');
+        $row->number('sold')->enableWhen(Conditions::eq($nested ? Conditions::row('name') : Conditions::root('name'), 'enabled'));
+    };
+    if ($nested) {
+        $form->repeater('children', 'Children', $fields)->relation('children');
+    } else {
+        $fields($form);
+    }
+    $form->select('code')->remote(OptionSource::make(function ($context) use (&$seen) {
+        $seen[] = $context->dependencies['tenant'];
+
+        return GraphProduct::where('tenant', $context->dependencies['tenant']);
+    })->label('name'), ['tenant' => Conditions::root($nested ? 'children.0.sold' : 'sold')]);
+    $form->saving(function ($record, &$values) use ($nested, $one) {
+        if ($nested) {
+            $values['children'][0]['name'] = 'disabled';
+        } else {
+            $values['name'] = 'disabled';
+        }
+        $values['code'] = (string) $one->id;
+    });
+    $draft = ['name' => 'enabled', 'sold' => 2];
+    graphSave($form, $root, ($nested ? ['children' => [graphRow($child, $draft)]] : $draft) + ['code' => (string) $two->id]);
+    expect($seen)->toBe([2, 1])->and(($child ?? $root)->fresh()->sold)->toBe(1)->and($root->fresh()->code)->toBe((string) $one->id);
+})->with([false, true]);

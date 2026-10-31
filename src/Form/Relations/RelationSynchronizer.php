@@ -58,7 +58,7 @@ final class RelationSynchronizer
                     $pivot = $row['model'];
                     // Keep every undeclared pivot attribute, while binding identities server-side.
                     $pivot->setAttribute($relation->getForeignPivotKeyName(), $model->getAttribute($relation->getParentKeyName()));
-                    $pivot->setAttribute($relation->getRelatedPivotKeyName(), $row['selected']);
+                    $pivot->setAttribute($relation->getRelatedPivotKeyName(), $row['relatedKey']);
                     $this->node($row);
                 }
 

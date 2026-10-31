@@ -523,6 +523,12 @@ class Field
         return $this->normalizeValue(data_get($stored, $this->attributeName(), $this->defaultValue));
     }
 
+    /** Storage authority and existing-association evaluation context can differ for a picker. */
+    public function valueForContext(?Model $storage, ?Model $context): mixed
+    {
+        return $this->valueFor($this->reader === null ? $storage : $context);
+    }
+
     public function valueFor(?Model $record): mixed
     {
         if ($this->attributeMap !== [] && $this->reader === null) {

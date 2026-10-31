@@ -17,6 +17,7 @@ use Brume\Options\OptionContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -74,6 +75,13 @@ final class RelationPlanner
             $original->setRawAttributes($context->getRawOriginal(), true);
         }
         $this->original($form, $original, null, '', '', []);
+        foreach ($this->nodes as $node) {
+            if ($node['storageResolved'] ?? false) {
+                $stored = clone $node['model'];
+                $stored->setRawAttributes($stored->getRawOriginal(), true);
+                $this->original($node['form'], $stored, null, $node['prefix'], $node['template'], $node['storageContext']);
+            }
+        }
         $validated = $this->validateNode('');
         // Membership applies only to fields that survive final activity/allowlist validation.
         $tree = $this->operations('', $validated);
@@ -134,10 +142,10 @@ final class RelationPlanner
         // First register siblings; source dependency resolution must not depend on declaration order.
         foreach ($form->fields() as $relative => $field) {
             $path = $prefix.$relative;
-            $stored = $json !== null ? $field->valueFromJson($json) : (($field instanceof Repeater || $field instanceof RelationPicker) ? null : $field->valueFor($callback));
+            $stored = $json !== null ? $field->valueFromJson($json) : (($field instanceof Repeater || $field instanceof RelationPicker) ? null : $field->valueForContext($model->exists ? $model : null, $callback));
             $this->entries[$path] = ['field' => $field, 'node' => $prefix, 'relative' => $relative, 'stored' => $stored, 'children' => [], 'existing' => [], 'relation' => null];
             $this->definitions[$path] = ['type' => $field->type()] + $field->settings();
-            $this->inventory['fields'][$path] = ['field' => $field, 'path' => $path, 'template' => $template.$relative, 'rowContext' => $context, 'owner' => $callback === null ? null : clone $callback, 'stored' => $stored, 'submitted' => Arr::has($input, $relative), 'validated' => false];
+            $this->inventory['fields'][$path] = ['field' => $field, 'path' => $path, 'template' => $template.$relative, 'rowContext' => $context, 'owner' => $model->exists ? clone $model : null, 'stored' => $stored, 'submitted' => Arr::has($input, $relative), 'validated' => false];
         }
         foreach ($form->fields() as $relative => $field) {
             if ($field instanceof Repeater || $field instanceof RelationPicker) {
@@ -157,9 +165,9 @@ final class RelationPlanner
             $this->sameConnection($relation->getRelated());
         }
         $existing = [];
-        if ($isRelation && $callback !== null && $callback->exists) {
+        if ($isRelation && $model->exists) {
             // Relation constraints always use immutable persisted keys, never hook-dirty identity attributes.
-            $owner = clone $callback;
+            $owner = clone $model;
             foreach ([$owner->getKeyName(), ...array_keys($owner->getDirty())] as $attribute) {
                 if (array_key_exists($attribute, $owner->getRawOriginal())) {
                     $owner->setAttribute($attribute, $owner->getRawOriginal($attribute));
@@ -175,7 +183,7 @@ final class RelationPlanner
         $this->entries[$path]['existing'] = $existing;
         $storedRows = [];
         if (! $isRelation) {
-            $storedRows = $json !== null ? data_get($json, $field->attributeName(), []) : ($callback !== null ? $field->storedJsonRows($callback) : []);
+            $storedRows = $json !== null ? data_get($json, $field->attributeName(), []) : ($model->exists ? $field->storedJsonRows($model) : []);
             $this->entries[$path]['stored'] = $storedRows;
             $storedRows = JsonRows::hydrate($storedRows ?? [], $this->root, $template.$relative, $storageContext);
         }
@@ -283,7 +291,7 @@ final class RelationPlanner
             $this->entries[$path]['children'][] = $childPrefix;
             $this->prepare($field->rowForm(), $childModel, $childCallback, $row, $childJson, $childPrefix, $childTemplate, $childContext, [...$storageContext, ['path' => $template.$relative] + $storageIdentity], $path);
             $this->nodes[$childPrefix] += compact('metadata', 'selected', 'matched');
-            $this->inventory['rows'][$childPrefix] = ['path' => $rowPath, 'rowContext' => $childContext, 'owner' => $childCallback === null ? null : clone $childCallback];
+            $this->inventory['rows'][$childPrefix] = ['path' => $rowPath, 'rowContext' => $childContext, 'owner' => $childModel->exists ? clone $childModel : null];
         }
     }
 
@@ -302,10 +310,52 @@ final class RelationPlanner
             if ($id === null || (string) $id !== $node['selected']) {
                 $this->invalid($parent);
             }
-            if ($node['matched'] === null && (new RowLookup($query->lockForUpdate()))->find([$id])?->first() === null) {
-                $this->invalid($parent);
+            if ($node['matched'] === null) {
+                $selected = (new RowLookup($query->lockForUpdate()))->find([$id])?->first();
+                if ($selected === null || (string) $selected->getKey() !== $node['selected']) {
+                    $this->invalid($parent);
+                }
+                $relation = $entry['relation'];
+                if (! ($node['storageResolved'] ?? false) && ($relation instanceof BelongsTo || ($relation instanceof HasMany && $entry['field']->associationAttribute() === null))) {
+                    // Existing source storage is distinct from a new association's null evaluation context.
+                    $this->sameConnection($selected);
+                    $this->forgetDescendants($prefix);
+                    $this->prepare($node['form'], $selected, null, $node['input'], $node['json'], $prefix, $node['template'], $node['context'], $node['storageContext'], $parent);
+                    $this->nodes[$prefix] += ['metadata' => $node['metadata'], 'selected' => $node['selected'], 'matched' => null, 'storageResolved' => true];
+                    $this->inventory['rows'][$prefix]['owner'] = clone $selected;
+                }
             }
         }
+    }
+
+    private function forgetDescendants(string $prefix): void
+    {
+        foreach (array_keys($this->entries) as $path) {
+            if (str_starts_with($path, $prefix)) {
+                unset($this->entries[$path], $this->definitions[$path], $this->evaluated[$path], $this->shapeErrors[$path], $this->sources[$path], $this->inventory['fields'][$path]);
+            }
+        }
+        foreach (array_keys($this->nodes) as $path) {
+            if ($path !== $prefix && str_starts_with($path, $prefix)) {
+                unset($this->nodes[$path], $this->inventory['rows'][$path]);
+            }
+        }
+    }
+
+    /** A numeric dependency can reach descendants not prepared until their selected owner is resolved. */
+    private function resolveStoragePath(string $path): void
+    {
+        $resolved = [];
+        do {
+            $pending = array_values(array_filter(array_keys($this->nodes), fn ($prefix) => $prefix !== '' && str_starts_with($path.'.', $prefix) && ! isset($resolved[$prefix])));
+            usort($pending, fn ($a, $b) => strlen($a) <=> strlen($b));
+            foreach ($pending as $prefix) {
+                if (isset($this->nodes[$prefix])) {
+                    $this->owner($prefix);
+                }
+                $resolved[$prefix] = true;
+            }
+        } while ($pending !== []);
     }
 
     private function locked(string $prefix): bool
@@ -335,6 +385,7 @@ final class RelationPlanner
             $invalid = [];
             foreach ($condition->paths() as $dependency) {
                 $target = $dependency->resolve($rowPath);
+                $this->resolveStoragePath($target);
                 $pattern = '~^'.str_replace('\\*', '[0-9]+', preg_quote($target, '~')).'$~D';
                 foreach (array_keys($this->entries) as $candidate) {
                     if (preg_match($pattern, $candidate)) {
@@ -370,6 +421,8 @@ final class RelationPlanner
         $node = $this->nodes[$entry['node']];
         $field = $entry['field'];
         $this->owner($entry['node']);
+        $entry = $this->entries[$path];
+        $node = $this->nodes[$entry['node']];
         $readonly = $this->locked($entry['node']) || ! $field->isEditable($node['callback']);
         if ($field instanceof Repeater || $field instanceof RelationPicker) {
             if (($readonly || ! $this->active($path)) && ! ($entry['authoritative'] ?? false)) {
@@ -400,7 +453,7 @@ final class RelationPlanner
             }
             $value = $field instanceof RelationPicker && ! $field->settings()['multiple'] ? ($rows[0] ?? null) : $rows;
         } else {
-            $value = $readonly || ! Arr::has($node['input'], $entry['relative']) ? $entry['stored'] : Arr::get($node['input'], $entry['relative']);
+            $value = $readonly || ! $this->active($path) || ! Arr::has($node['input'], $entry['relative']) ? $entry['stored'] : Arr::get($node['input'], $entry['relative']);
         }
         unset($this->visiting['value:'.$path]);
 
@@ -433,6 +486,7 @@ final class RelationPlanner
 
     private function dependency(string $path): mixed
     {
+        $this->resolveStoragePath($path);
         $entry = $this->entries[$path] ?? null;
         if ($entry === null) {
             return null;
@@ -441,6 +495,7 @@ final class RelationPlanner
         $node = $this->nodes[$entry['node']];
         $value = $this->value($path);
         $entry = $this->entries[$path];
+        $node = $this->nodes[$entry['node']];
         if (isset($this->shapeErrors[$path]) && $this->active($path)) {
             $this->invalid($this->shapeErrors[$path]);
         }
@@ -603,7 +658,6 @@ final class RelationPlanner
                 if ($entry['children'] !== []) {
                     $child = $entry['children'][0];
                     $childOperation = $this->operations($child, $value);
-                    $childOperation['model'] = $selectedModels[$this->nodes[$child]['selected']];
                 }
                 $relations[] = ['kind' => 'belongsTo', 'foreign' => $relation->getForeignKeyName(), 'selected' => $selected, 'row' => $childOperation];
 
@@ -615,10 +669,10 @@ final class RelationPlanner
                 $childNode = $this->nodes[$child];
                 $rowValue = $field instanceof RelationPicker && ! $field->settings()['multiple'] ? $value : $value[$index];
                 $operation = $this->operations($child, $rowValue);
-                if ($kind === 'direct' && $childNode['matched'] === null) {
-                    $operation['model'] = $selectedModels[$childNode['selected']];
-                }
                 $operation['selected'] = $childNode['selected'];
+                if ($kind === 'pivot') {
+                    $operation['relatedKey'] = $selectedModels[$childNode['selected']]->getAttribute($relation->getRelatedKeyName());
+                }
                 $operation['restore'] = $field instanceof RelationPicker && $field->restoresRemoved() && $childNode['matched'] !== null && $childNode['matched']->trashed();
                 if ($kind !== 'pivot') {
                     $operation['binding'] = ['foreign' => $relation->getForeignKeyName(), 'local' => $relation->getLocalKeyName()];
@@ -638,7 +692,7 @@ final class RelationPlanner
             foreach ($removed as $removedModel) {
                 $this->inventory['removed'][] = ['path' => $path, 'rowContext' => $node['context'], 'owner' => clone $removedModel, 'form' => $field->rowForm()];
             }
-            $relations[] = ['kind' => $kind, 'name' => $name, 'rows' => $rows, 'removed' => $kind === 'pivot' ? array_map(fn ($row) => $row->getKey(), $removed) : $removed, 'foreign' => $kind !== 'pivot' ? $relation->getForeignKeyName() : null];
+            $relations[] = ['kind' => $kind, 'name' => $name, 'rows' => $rows, 'removed' => $kind === 'pivot' ? array_map(fn ($row) => $row->getRelation($relation->getPivotAccessor())->getAttribute($relation->getRelatedPivotKeyName()), $removed) : $removed, 'foreign' => $kind !== 'pivot' ? $relation->getForeignKeyName() : null];
         }
 
         return ['model' => $node['model'], 'fields' => $fields, 'values' => $values, 'relations' => $relations, 'restore' => false];
