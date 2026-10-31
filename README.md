@@ -800,9 +800,9 @@ The workbench `/admin/compositions` resource demonstrates model-owned tiers → 
 pivot extras, BelongsTo extras, direct HasMany selection, JSON-in-JSON notes, conditional required
 values, dependent sources, mapped addresses, custom inline editing and nested Uploads. It uses
 separate deterministic tables/seeds so existing Order/GridShowcase examples retain their data.
-Playground `/#/form-composition` supplements the focused relation/repeater routes. Ordinary browser
-acceptance, precompiled distribution and install checks all use the actual published alpha.14
-packages.
+Playground `/#/form-composition` supplements the focused relation/repeater routes. Precompiled
+distribution and install checks use the actual published alpha.15 packages; ordinary browser
+acceptance must run against the same graph before delivery.
 
 ### 資料庫贈品示範與安全升級
 
@@ -895,7 +895,7 @@ frontend installation. Both install modes continue to be checked using actual pu
 
 ### Published frontend verification (maintainers)
 
-All five `@brume-ui/brume-*` dependencies pin `0.1.0-alpha.14` with registry integrity in the
+All five `@brume-ui/brume-*` dependencies pin `0.1.0-alpha.15` with registry integrity in the
 frozen frontend lockfile. `check-package-origins.mjs` rejects source links before the distribution
 and ordinary workbench E2E gates. All 51 browser cases, including composition, run in ordinary E2E.
 Linux baseline generation remains opt-in; inspect every changed PNG and run ordinary non-update CI
