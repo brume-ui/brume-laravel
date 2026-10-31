@@ -39,6 +39,9 @@ final class RelationSynchronizer
                 $model->setAttribute($binding['order'], $binding['position']);
             }
         }
+        if (isset($node['ordering'])) {
+            $model->setAttribute($node['ordering']['attribute'], $node['ordering']['position']);
+        }
         foreach ($node['relations'] as $operation) {
             if ($operation['kind'] === 'belongsTo') {
                 if ($operation['row'] !== null && ($operation['row']['fields'] !== [] || $operation['row']['relations'] !== [])) {

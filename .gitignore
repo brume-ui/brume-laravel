@@ -10,3 +10,6 @@
 /.env
 /workbench/database/*.sqlite
 /frontend/node_modules/
+
+# Immutable nested checkout used only by explicit source E2E.
+/.ci/ui-source/

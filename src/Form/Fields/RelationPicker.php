@@ -26,6 +26,8 @@ class RelationPicker extends Field
 
     protected bool $restore = false;
 
+    protected ?string $orderAttribute = null;
+
     public function __construct(string $name, string $label, OptionSource $source, protected Form $extraForm)
     {
         parent::__construct($name, $label);
@@ -80,6 +82,20 @@ class RelationPicker extends Field
         return $this->association;
     }
 
+    /** Persist selection order on owned intermediary/pivot storage, never on source models. */
+    public function orderColumn(string $attribute): static
+    {
+        OptionSource::assertAttribute($attribute);
+        $this->orderAttribute = $attribute;
+
+        return $this;
+    }
+
+    public function orderAttribute(): ?string
+    {
+        return $this->orderAttribute;
+    }
+
     public function restoreRemoved(bool $on = true): static
     {
         $this->restore = $on;
@@ -115,6 +131,26 @@ class RelationPicker extends Field
         if ($relation instanceof BelongsTo && $this->schema['multiple']) {
             throw new InvalidArgumentException('BelongsTo picker requires multiple(false).');
         }
+        if ($this->orderAttribute !== null) {
+            if (! $this->schema['multiple'] || (! $relation instanceof BelongsToMany && ! ($relation instanceof HasMany && $this->association !== null))) {
+                throw new InvalidArgumentException('Picker ordering requires multiple owned intermediary or pivot selections.');
+            }
+            $identity = $relation instanceof BelongsToMany
+                ? [$relation->getForeignPivotKeyName(), $relation->getRelatedPivotKeyName(), $relation->newPivot()->getKeyName(), $relation->createdAt(), $relation->updatedAt()]
+                : [$relation->getRelated()->getKeyName(), $relation->getForeignKeyName(), $this->association];
+            if (in_array($this->orderAttribute, $identity, true)) {
+                throw new InvalidArgumentException('Picker ordering cannot replace relation identity.');
+            }
+            foreach ($this->extraForm->fields() as $field) {
+                foreach ($field->mappedAttributes() ?: [$field->attributeName()] as $attribute) {
+                    if (explode('.', $attribute)[0] === $this->orderAttribute) {
+                        throw new InvalidArgumentException('Picker ordering is metadata, not an editable extra.');
+                    }
+                }
+            }
+            $column = $relation instanceof BelongsToMany ? $relation->qualifyPivotColumn($this->orderAttribute) : $relation->getRelated()->qualifyColumn($this->orderAttribute);
+            $relation->reorder($column)->orderBy($relation->getRelated()->getQualifiedKeyName());
+        }
         if ($relation instanceof BelongsToMany) {
             $protected = [$relation->getForeignPivotKeyName(), $relation->getRelatedPivotKeyName(), $relation->newPivot()->getKeyName(), $relation->createdAt(), $relation->updatedAt()];
             foreach ($this->extraForm->fields() as $field) {
@@ -128,7 +164,7 @@ class RelationPicker extends Field
             foreach ($this->extraForm->fields() as $field) {
                 $columns = [...$columns, ...($field->mappedAttributes() ?: [$field->attributeName()])];
             }
-            $relation->withPivot($columns);
+            $relation->withPivot($this->orderAttribute === null ? $columns : [...$columns, $this->orderAttribute]);
         }
         if ($relation instanceof HasMany && $this->association === null) {
             $column = collect($relation->getRelated()->getConnection()->getSchemaBuilder()->getColumns($relation->getRelated()->getTable()))->firstWhere('name', $relation->getForeignKeyName());

@@ -10,6 +10,7 @@ All submitted active editable source selections must belong to the current base 
 | Picker with direct HasMany | Reassign selected children to the parent; null the nullable foreign key of removed children. |
 | Picker with BelongsToMany | Preserve selected pivot rows and undeclared columns; extras read/write pivot columns. Source primary IDs remain wire identities; insert/update and detach use separately frozen relationship keys, including non-primary related keys. |
 | Picker with intermediary HasMany and `associateBy('product_id')` | Match the parent's intermediary by source ID; update its declared fields, preserving its primary key and counters. |
+| Multiple owned intermediary/BTM picker with `orderColumn('position')` | Persist zero-based selection positions on intermediary/pivot storage; fresh snapshots order by that qualified column and a stable source/row identity tie-breaker. Retained identities/counters survive; without this mapping database relation ordering governs fresh reads. |
 | Intermediary with `restoreRemoved()` | Include the parent's soft-deleted rows when matching; restore the same row on reselection. Multiple historical matches reject atomically. |
 | `repeater(...)->relation('children')->orderColumn('position')` | Create/update/delete children recursively; retained rows keep their identities and undeclared attributes. Order is zero-based. |
 
@@ -47,3 +48,15 @@ Upgrade installed connections with the package's additive `2026_10_31_000001_add
 SQLite and MySQL tests exercise validation, persistence and actual outer commit/rollback on isolated connections. Specific concurrent locking behavior and normal CI/browser/release acceptance remain separate gates; ordinary transaction tests do not prove contention safety.
 
 The renderer checks live upload ownership immediately before accepting a result and before emitting its draft value, including form/reset identity, endpoint, stable row lifetime and ancestor source values/contexts/private ownership. It follows the stable owner through movement, writing to its current path even before React renders; removed/re-added rows and changed dependencies cannot receive stale responses. Private lifetimes are never sent to the server.
+
+
+`RelationPicker::orderColumn(string)` is an optional server storage mapping; `orderAttribute()` returns
+it. It adds no schema or submitted metadata. Only multiple owned intermediary HasMany (`associateBy`)
+and BelongsToMany pivot selections support it. Single/BelongsTo and direct source-owned HasMany
+configurations reject: an association's selection order must not update a shared source model.
+The host owns the configured column and its migration; the package creates no implicit ordering column.
+The configured column cannot collide with identity/FK/association/pivot timestamp columns or declared
+editable/mapped extras. Submitted undeclared `position` values do not control it. Positions are frozen
+with the validated whole graph and written to the actual owned target, including restored rows;
+omitted, readonly and inactive selections retain their exact stored order metadata. A later invalid
+relation prevents every earlier reorder. The workbench maps nested gifts and featured pivots this way.

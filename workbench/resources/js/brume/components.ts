@@ -1,7 +1,7 @@
-import { ChartCard } from './components/ChartCard';
-import { ComponentShowcase } from './components/ComponentShowcase';
-import { KpiRow } from './components/KpiRow';
-import { OrderStatus } from './components/OrderStatus';
+import { ChartCard } from "./components/ChartCard";
+import { ComponentShowcase } from "./components/ComponentShowcase";
+import { KpiRow } from "./components/KpiRow";
+import { OrderStatus } from "./components/OrderStatus";
 
 /**
  * The workbench's custom components, registered the way a `--frontend` project registers its own
@@ -13,3 +13,5 @@ export const components = {
   ComponentShowcase,
   OrderStatus,
 };
+
+export { AddressField, AddressDisplay } from "./components/TaiwanAddress";

@@ -27,6 +27,7 @@ return [
         ['title' => 'brume::menu.dashboard', 'icon' => 'layout-dashboard', 'url' => '/'],
         ['title' => 'workbench::menu.orders', 'icon' => 'receipt', 'url' => '/orders'],
         ['title' => 'workbench::menu.grid_showcase', 'icon' => 'table-properties', 'url' => '/grid-showcase'],
+        ['title' => 'workbench::menu.compositions', 'icon' => 'layers', 'url' => '/compositions'],
         ['title' => 'workbench::menu.components', 'icon' => 'blocks', 'url' => '/components'],
         ['title' => 'workbench::menu.system', 'icon' => 'settings', 'children' => [
             ['title' => 'workbench::menu.admins', 'icon' => 'users', 'url' => '/users'],

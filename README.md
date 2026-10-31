@@ -430,12 +430,6 @@ to the login page; paths outside the prefix are left to Laravel.
 
 These are planned for later sub-plans and phases:
 
-- **The SelectTable / MultipleSelectTable picker dialog** for filters: sub-plan 3. Until then, use
-  the remote-search `select` / `multipleSelect` filters, which do the same job.
-- **Custom inline editors**: need the custom registry of sub-plan 3.
-- **Relation pickers, Repeater/Nested forms, declarative dependent fields, dependent/remote form
-  options, generic one-value/multiple-column fields (addresses), and custom React field/display
-  registration**: sub-plan 3.
 - **Rich text, color picker and Show pages**: phase 3; use `textarea` until then.
 - **Custom calendars**: native `date` / `datetime-local` inputs are retained; revisit after user trials.
 - **Orderable, Tree and DialogTree**: phase 3.
@@ -767,11 +761,15 @@ All JSON child readonly/rules callbacks receive the original nullable **root For
 JSON is nested inside a related row. A conversion carrier is never passed to these callbacks.
 
 Relation repeaters use `->relation('children')->orderColumn('position')`. `relationPicker()` takes an
-`OptionSource`, supports `multiple(bool)`, `relation()`, `associateBy()`, `restoreRemoved()` and
+`OptionSource`, supports `multiple(bool)`, `relation()`, `associateBy()`, `restoreRemoved()`, optional `orderColumn()` and
 `extra(fn (Form $extra) => ...)`. Selected values are `{id, ...declaredFields}`, without an `extra`
 wrapper. The selected id is distinct from any intermediary child id. Direct HasMany picker
 foreign keys must be nullable; restoration requires a soft-deletable intermediary relation.
-Related-row callbacks receive the parent-scoped related model; new-row templates receive null.
+Related-row evaluation callbacks receive the parent-owned model (the actual pivot for BTM extras);
+new associations receive null even if their source model already exists. JSON evaluation retains the
+original nullable global root. Mutating `fill`/`saveUsing` callbacks always receive the real execution
+storage target; this is distinct from evaluation authority. Explicit Eloquent bindings cannot live
+under a JSON-row storage owner; use relation-mode rows or JSON remote choice IDs instead.
 
 `FormDef.rowFields` contains resolved readonly/client-rule snapshots for initial rows, keyed by the
 ordered stable `RowContext`. These are presentation metadata outside `values`; the server never
@@ -790,10 +788,21 @@ $form->relationPicker('freebies', 'Freebies', $source)->relation('freebies')
 
 `OptionSource` also accepts a Closure receiving `OptionContext` (readonly `record`, `dependencies`,
 `rowContext`) and returning a scoped Builder; `sections(labels, scope)` declares section metadata.
-At this source checkpoint, query/response execution and generated source routes belong to Task 8.
-A remote declaration without a bound endpoint throws; no placeholder response is emitted.
-Relation graph writes remain explicitly unsupported until Task 9 and never reach scalar fill.
-Nested upload ownership/archival is Task 10. These intermediate declarations are not a release claim.
+Resource routes generate the options and temporary-upload endpoints and inherit the resource's
+route modifiers, authentication and scoped record lookup. No application AJAX endpoint or relation
+saving hook is needed. A remote declaration without a bound endpoint throws. Form saves validate
+and lock the complete graph on the root connection before executing any write or upload copy.
+See [Transactional form relations](docs/relations.md) for eligibility, callback/storage contexts,
+source-owned file boundaries, token binding, physical transaction cleanup and the additive nested
+upload migration (including its intentionally nonshrinking rollback).
+
+The workbench `/admin/compositions` resource demonstrates model-owned tiers → thresholds → gifts,
+pivot extras, BelongsTo extras, direct HasMany selection, JSON-in-JSON notes, conditional required
+values, dependent sources, mapped addresses, custom inline editing and nested Uploads. It uses
+separate deterministic tables/seeds so existing Order/GridShowcase examples retain their data.
+Playground `/#/form-composition` supplements the focused relation/repeater routes. Source acceptance
+uses the reviewed immutable UI checkout; ordinary dist/install checks still use actual published
+packages until the alpha.13 release gate.
 
 Custom inline cells use `Editor::component('TaiwanAddress', props: [], rules: [...])` and optional
 `->attributes([...])` with the same safe mapping. The server rule map uses `''` for the entire value
@@ -811,3 +820,33 @@ JSON `values`/Action `input` envelopes must be objects, not lists. Programmatic 
 retain their PHP representation. Custom stored readback restores shapes only for ordinary declared
 `array`/`json`/`object` casts, using current raw attributes; application accessors/readers own their
 returned semantics. This does not decode arbitrary text columns or change Laravel globally.
+
+
+### Register fields and displays in a custom frontend
+
+```tsx
+createBrumeApp({
+  mode: 'vite',
+  components, // Existing dashboard/ComponentSlot registrations remain independent.
+  fields: { TaiwanAddress: { component: AddressField, inlineEditable: true } },
+  displays: { TaiwanAddress: AddressDisplay },
+  pages: import.meta.glob('./pages/**/*.tsx'),
+});
+```
+
+`fields` and `displays` use the renderer's existing `createRegistry` types. Inline eligibility is
+explicit per field; form-only registrations stay form-only. `FieldProps.errors` uses relative child
+paths and `onChange` receives one semantic value in root forms, nested rows and picker drafts.
+Precompiled mode retains unknown-component guidance; application React code requires the custom
+frontend installation. Both install modes continue to be checked using actual published packages.
+
+### Temporary source integration (maintainers)
+
+`.ci/ui-integration.json` pins a reviewed 40-hex UI commit. The separately named source E2E job
+checks out that exact commit with persisted credentials disabled, installs its frozen graph, builds
+it and verifies all five linked package origins. `BRUME_UI_INTEGRATION=1` and `BRUME_UI_SOURCE` are
+both required; modified checkouts and moving refs reject. Only source workbench acceptance enables
+substitution. The published E2E job, precompiled frontend byte check and four install-smoke jobs
+retain registry-origin checks and frozen package graphs. After actual alpha.13 publication, remove
+the temporary source job/script/pin and enable composition tests in ordinary published E2E. Linux
+baseline generation is opt-in; inspect every changed PNG and run ordinary non-update CI afterward.

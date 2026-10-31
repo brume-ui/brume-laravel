@@ -659,6 +659,9 @@ final class RelationPlanner
                 if ($kind === 'pivot') {
                     $operation['relatedKey'] = $selectedModels[$childNode['selected']]->getAttribute($relation->getRelatedKeyName());
                 }
+                if ($field instanceof RelationPicker && $field->orderAttribute() !== null && $this->inventory['fields'][$path]['active']) {
+                    $operation['ordering'] = ['attribute' => $field->orderAttribute(), 'position' => $index];
+                }
                 $operation['restore'] = $field instanceof RelationPicker && $field->restoresRemoved() && $childNode['matched'] !== null && $childNode['matched']->trashed();
                 if ($kind !== 'pivot') {
                     $operation['binding'] = ['foreign' => $relation->getForeignKeyName(), 'local' => $relation->getLocalKeyName()];

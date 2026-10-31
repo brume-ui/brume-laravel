@@ -8,11 +8,13 @@ use Brume\Facades\Brume;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Workbench\App\Http\Controllers\AdminUserController;
+use Workbench\App\Http\Controllers\CompositionController;
 use Workbench\App\Http\Controllers\GridShowcaseController;
 use Workbench\App\Http\Controllers\OrderController;
 use Workbench\App\Models\ShowcaseItem;
 
 Route::get('users', AdminUserController::class)->name('brume.users.index');
+Route::brumeResource('compositions', CompositionController::class)->names('brume.compositions');
 Route::brumeResource('orders', OrderController::class)->names('brume.orders');
 Route::brumeResource('grid-showcase', GridShowcaseController::class)->names('brume.grid-showcase');
 

@@ -59,6 +59,7 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
+        $this->call(CompositionSeeder::class);
         $this->seedOrders();
         $this->seedShowcaseItems();
     }
