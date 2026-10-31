@@ -6,6 +6,7 @@ use Brume\Form\Fields\Field;
 use Brume\Form\Fields\RelationPicker;
 use Brume\Form\Fields\Repeater;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /** Read-only traversal. Every callback receives the scoped model, never a JSON storage carrier. */
 final class FormSnapshot
@@ -67,7 +68,8 @@ final class FormSnapshot
             }
             $rowContext = [...$context, ['path' => $containerPath] + $identity];
             $childTemplate = $containerPath.($field instanceof Repeater || $field->settings()['multiple'] ? '.*.' : '.');
-            $rows[] = $metadata + $this->values($field->rowForm(), $relation ? $row : $root, $relation ? null : $row, $rowContext, $childTemplate, $root);
+            $callback = $relation && $query instanceof BelongsToMany ? $row->getRelation($query->getPivotAccessor()) : ($relation ? $row : $root);
+            $rows[] = $metadata + $this->values($field->rowForm(), $callback, $relation ? null : $row, $rowContext, $childTemplate, $root);
         }
 
         return $field instanceof RelationPicker && ! $field->settings()['multiple'] ? ($rows[0] ?? null) : $rows;

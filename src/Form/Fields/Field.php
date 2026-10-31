@@ -131,7 +131,7 @@ class Field
         $rules = match ($this->type()) {
             'email' => ['email'], 'url' => ['url:http,https'], 'number' => ['integer'],
             'decimal', 'currency' => ['string', 'numeric'],
-            'select', 'radio' => ['string', $this->choiceRule()],
+            'select', 'radio' => ['string', ...(method_exists($this, 'optionSource') && $this->optionSource() !== null ? [] : [$this->choiceRule()])],
             'multipleSelect', 'checkbox', 'tags' => ['array', 'list'],
             'upload' => ($this->schema['multiple'] ?? false) ? ['array', 'list'] : [],
             'date' => ['date_format:Y-m-d'], 'datetime' => ['date_format:Y-m-d\\TH:i'],

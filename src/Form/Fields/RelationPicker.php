@@ -7,6 +7,7 @@ use Brume\Form\FormSnapshot;
 use Brume\Options\OptionSource;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -29,6 +30,11 @@ class RelationPicker extends Field
     {
         parent::__construct($name, $label);
         $this->remote($source);
+    }
+
+    public function __clone()
+    {
+        $this->extraForm = clone $this->extraForm;
     }
 
     public function type(): string
@@ -94,17 +100,35 @@ class RelationPicker extends Field
         return $this;
     }
 
-    public function relationship(Model $parent): HasMany|BelongsToMany
+    public function relationship(Model $parent): HasMany|BelongsToMany|BelongsTo
     {
         if ($this->relationName === null || ! method_exists($parent, $this->relationName)) {
             throw new InvalidArgumentException('Unknown picker relation.');
         }
         $relation = $parent->{$this->relationName}();
-        if (! $relation instanceof HasMany && ! $relation instanceof BelongsToMany) {
-            throw new InvalidArgumentException('Picker requires HasMany or BelongsToMany.');
+        if (! $relation instanceof HasMany && ! $relation instanceof BelongsToMany && ! $relation instanceof BelongsTo) {
+            throw new InvalidArgumentException('Picker requires BelongsTo, HasMany or BelongsToMany.');
         }
-        if ($relation instanceof BelongsToMany && $this->association !== null) {
+        if (! $relation instanceof HasMany && $this->association !== null) {
             throw new InvalidArgumentException('associateBy requires an intermediary HasMany.');
+        }
+        if ($relation instanceof BelongsTo && $this->schema['multiple']) {
+            throw new InvalidArgumentException('BelongsTo picker requires multiple(false).');
+        }
+        if ($relation instanceof BelongsToMany) {
+            $protected = [$relation->getForeignPivotKeyName(), $relation->getRelatedPivotKeyName(), $relation->newPivot()->getKeyName(), $relation->createdAt(), $relation->updatedAt()];
+            foreach ($this->extraForm->fields() as $field) {
+                foreach ($field->mappedAttributes() ?: [$field->attributeName()] as $attribute) {
+                    if (in_array($attribute, $protected, true)) {
+                        throw new InvalidArgumentException('Pivot identity and timestamps cannot be editable extras.');
+                    }
+                }
+            }
+            $columns = [];
+            foreach ($this->extraForm->fields() as $field) {
+                $columns = [...$columns, ...($field->mappedAttributes() ?: [$field->attributeName()])];
+            }
+            $relation->withPivot($columns);
         }
         if ($relation instanceof HasMany && $this->association === null) {
             $column = collect($relation->getRelated()->getConnection()->getSchemaBuilder()->getColumns($relation->getRelated()->getTable()))->firstWhere('name', $relation->getForeignKeyName());

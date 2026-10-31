@@ -2,6 +2,8 @@
 
 namespace Brume\Form;
 
+use Brume\Form\Relations\RelationPlanner;
+use Brume\Form\Relations\RelationSynchronizer;
 use Brume\Grid\Actions\Feedback;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -12,7 +14,6 @@ class FormSaver
 {
     public function save(Form $form, ?Model $record, Request $request): array
     {
-        $form->forRecord($record)->initialize();
         $raw = JsonValues::requestValue($request, 'values', []);
         if ($raw instanceof \stdClass) {
             $raw = get_object_vars($raw);
@@ -22,38 +23,48 @@ class FormSaver
         if (! is_array($raw)) {
             throw ValidationException::withMessages(['values' => 'Values must be an object.']);
         }
-        $feedback = $form->fire('submitted', $raw);
-        if ($feedback instanceof Feedback) {
-            return ['cancelled' => true, 'feedback' => $feedback->toArray() ?: (object) []];
-        }
-        $form->assertSaveUrls();
-        $values = FormValidator::validate($form, $raw, $record);
-        // Retain the nullable create/edit context used by validation.
-        $fields = FormValidator::editableFields($form, $record);
-        $archiveForm = clone $form;
-        if ($record !== null) {
-            $stored = clone $record;
-            $stored->setRawAttributes($record->getRawOriginal(), true);
-            $archiveForm->forRecord($stored);
-        }
         $creating = $record === null;
         $record ??= $form->query()->getModel()->newInstance();
         $connection = $record->getConnection();
+        if ($form->query()->getModel()->getConnection()->getName() !== $connection->getName()) {
+            throw ValidationException::withMessages(['record' => 'Form and root must use the same connection.']);
+        }
         $connection->beginTransaction();
         try {
+            if (! $creating) {
+                $locked = (clone $form->query())->whereKey($record->getKey())->lockForUpdate()->firstOrFail();
+                $record->setRawAttributes($locked->getAttributes(), true);
+                $record->unsetRelations();
+            }
+            $context = $creating ? null : $record;
+            $form->forRecord($context)->initializeForSave();
+            $feedback = $form->fire('submitted', $raw);
+            if ($feedback instanceof Feedback) {
+                $connection->rollBack();
+
+                return ['cancelled' => true, 'feedback' => $feedback->toArray() ?: (object) []];
+            }
+            $form->assertSaveUrls();
+            $planner = new RelationPlanner;
+            $before = $planner->plan($form, $record, $raw, $context);
+            $values = $before->values();
+            $archiveForm = clone $form;
+            $archiveForm->forRecord($creating ? null : clone $record);
+            $identity = $record->getKey();
             $feedback = $form->fireSaving($record, $values);
             if ($feedback instanceof Feedback) {
                 $connection->rollBack();
 
                 return ['cancelled' => true, 'feedback' => $feedback->toArray() ?: (object) []];
             }
-            // Archive transforms upload values before any model writer sees them.
-            // A new record is intentionally unsaved here; Task 19 binds create context.
-            app(UploadArchiver::class)->archive($archiveForm, $record, $values);
-            $this->fill($fields, $record, $values);
-            if (! $record->save()) {
-                throw new \LogicException('The model refused form persistence.');
+            if ($record->getKey() !== $identity || $record->getConnection()->getName() !== $connection->getName()) {
+                throw ValidationException::withMessages(['record' => 'Saving hooks cannot change root identity or connection.']);
             }
+            $plan = $planner->plan($form, $record, $values, $context)->withOriginalInventory($before->inventory()['original']);
+            $values = $plan->values();
+            // Complete graph validation precedes even the existing root-only upload archiver.
+            app(UploadArchiver::class)->archive($archiveForm, $record, $values);
+            (new RelationSynchronizer)->save($plan->withArchivedValues($values));
             $feedback = $form->fire('saved', $record);
             $urls = $form->saveUrls($record);
             $result = $feedback instanceof Feedback ? $feedback->toArray() : [];

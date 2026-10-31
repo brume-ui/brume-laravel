@@ -88,3 +88,5 @@ for string source models `"02"` remains an exact string key. This policy also ap
 target chains and ancestor-instance owner prefixes. Ordinary source hydration retains its documented
 numeric normalization. Existing parent-owned associations still provide readonly authority even when
 the source is no longer newly selectable; genuinely new selections must pass the source query.
+
+Form persistence eligibility and the pivot callback contract are documented in [transactional form relations](relations.md). Explicit active editable submissions, including unchanged selections, must pass the current base query; omitted/readonly/inactive selections do not acquire a new-source eligibility requirement. BelongsToMany extra-field read contexts use the authoritative pivot model or null for a new association, consistently with snapshot and persistence.

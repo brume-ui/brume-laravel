@@ -25,6 +25,11 @@ class Repeater extends Field
         parent::__construct($name, $label);
     }
 
+    public function __clone()
+    {
+        $this->rowForm = clone $this->rowForm;
+    }
+
     public function type(): string
     {
         return 'repeater';

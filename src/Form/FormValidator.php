@@ -39,7 +39,7 @@ class FormValidator
     }
 
     /** Validate full-path declarations identically for root fields and upload metadata. */
-    public static function validateFields(array $fields, array $values, ?Model $record = null, ?Model $model = null, ?array $rootValues = null, ?string $rowPath = null, ?array $storedValues = null, array $rowContext = [], string $templatePrefix = '', array $rootDefinitions = [], array $invalidPaths = [], array $conditionControllers = []): array
+    public static function validateFields(array $fields, array $values, ?Model $record = null, ?Model $model = null, ?array $rootValues = null, ?string $rowPath = null, ?array $storedValues = null, array $rowContext = [], string $templatePrefix = '', array $rootDefinitions = [], array $invalidPaths = [], array $conditionControllers = [], ?\Closure $collections = null): array
     {
         self::translations();
         $values = self::structuralValues($fields, $values);
@@ -68,7 +68,7 @@ class FormValidator
         $evaluation = $rootValues ?? $authoritative;
         $evaluationDefs = $rowPath === null ? $definitions : array_combine(array_map(fn ($p) => $rowPath.'.'.$p, array_keys($definitions)), $definitions);
         $evaluationDefs = array_replace($rootDefinitions, $evaluationDefs);
-        if ($rowPath === null) {
+        if ($rowPath === null && $rootValues === null) {
             [$evaluation, $evaluationDefs] = self::jsonEvaluation($fields, $authoritative, $record);
         }
         $resolvedRules = [];
@@ -172,10 +172,10 @@ class FormValidator
                 }
             }
         });
-        $validator->after(function ($validator) use ($fields, $values, $evaluation, $rowPath) {
+        $validator->after(function ($validator) use ($fields, $values, $evaluation, $rowPath, $evaluationDefs) {
             foreach ($fields as $path => $field) {
                 $own = Arr::get($values, $path);
-                $own = is_array($own) ? $own : [$own];
+                $own = self::selectionIds($own, ['type' => $field->type()] + $field->settings());
                 foreach ($field->settings()['excludeSelectedIn'] ?? [] as $dependency) {
                     $target = (new ConditionPath($dependency['scope'], $dependency['path']))->resolve($rowPath);
                     $candidates = self::expandPath($evaluation, explode('.', $target));
@@ -183,7 +183,7 @@ class FormValidator
                         if ($candidatePath === ($rowPath !== null ? $rowPath.'.' : '').$path) {
                             continue;
                         }
-                        $others = is_array($value) ? $value : [$value];
+                        $others = self::selectionIds($value, $evaluationDefs[$candidatePath] ?? []);
                         foreach ($own as $selected) {
                             if ($selected !== null && $selected !== '' && in_array($selected, $others, true)) {
                                 $validator->addFailure($path, 'Distinct');
@@ -196,6 +196,11 @@ class FormValidator
         $validator->validate();
         foreach ($fields as $path => $field) {
             if (! Arr::has($values, $path)) {
+                continue;
+            }
+            if ($collections !== null && ($field instanceof RelationPicker || $field instanceof Repeater)) {
+                Arr::set($values, $path, $collections($path, $field, Arr::get($values, $path)));
+
                 continue;
             }
             if ($field instanceof RelationPicker || ($field instanceof Repeater && $field->relationName() !== null)) {
@@ -276,6 +281,17 @@ class FormValidator
         }
 
         return $values;
+    }
+
+    private static function selectionIds(mixed $value, array $definition): array
+    {
+        if (($definition['type'] ?? null) === 'relation') {
+            $rows = ($definition['multiple'] ?? true) ? ($value ?? []) : ($value === null ? [] : [$value]);
+
+            return is_array($rows) ? array_map(fn ($row) => data_get($row, 'id'), $rows) : [];
+        }
+
+        return is_array($value) ? $value : [$value];
     }
 
     private static function structuralValues(array $fields, array $values): array

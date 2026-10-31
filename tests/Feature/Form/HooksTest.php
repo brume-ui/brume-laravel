@@ -23,7 +23,7 @@ class FormSaveRecord extends Model
     protected $casts = ['meta' => 'array'];
 }
 
-it('initializes editing once across repeated rendering and save', function () {
+it('initializes editing once for rendering and again with the locked root for save', function () {
     $record = brumeUser();
     $count = 0;
     $form = Form::make(User::class)->forRecord($record)->submitTo('put', '/users/1')->urls(fn () => ['edit' => '/users/1']);
@@ -33,8 +33,9 @@ it('initializes editing once across repeated rendering and save', function () {
     });
     $form->toSchema(Request::create('/'));
     $form->toSchema(Request::create('/'));
-    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => (object) []]));
     expect($count)->toBe(1);
+    (new FormSaver)->save($form, $record, Request::create('/', 'PUT', ['values' => (object) []]));
+    expect($count)->toBe(2);
 });
 
 it('preserves embedded siblings and fixed point strings and maps date ranges', function () {

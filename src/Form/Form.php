@@ -113,6 +113,22 @@ class Form implements Renderable, Responsable
 
     protected bool $initialized = false;
 
+    /** Declarations before a model-aware lifecycle hook; never reuse stale hook additions. */
+    protected ?array $initialDeclarations = null;
+
+    private function declarationCopy(): array
+    {
+        $fields = array_map(fn ($field) => clone $field, $this->fields);
+        $nodes = array_map(fn ($node) => $node instanceof Field ? $fields[$node->path()] : $node->mapFields(fn ($field) => $fields[$field->path()]), $this->nodes);
+
+        return [$fields, $nodes, $this->embeds, $this->sectionSequence];
+    }
+
+    public function __clone()
+    {
+        [$this->fields, $this->nodes, $this->embeds, $this->sectionSequence] = $this->declarationCopy();
+    }
+
     protected ?Closure $urlResolver = null;
 
     protected ?Closure $viewResolver = null;
@@ -231,10 +247,25 @@ class Form implements Renderable, Responsable
         }
     }
 
+    /** Re-run model-aware declarations only after the caller has locked/refreshed the root. */
+    public function initializeForSave(): void
+    {
+        if ($this->record !== null) {
+            $this->initialized = false;
+        }
+        $this->initialize();
+    }
+
     public function initialize(): void
     {
         if ($this->initialized) {
             return;
+        }
+        if ($this->initialDeclarations !== null) {
+            [$this->fields, $this->nodes, $this->embeds, $this->sectionSequence] = $this->initialDeclarations;
+        }
+        if (isset($this->hooks[$this->record === null ? 'creating' : 'editing'])) {
+            $this->initialDeclarations = $this->declarationCopy();
         }
         $this->initialized = true;
         if ($this->record === null) {

@@ -13,8 +13,8 @@ use Brume\Form\JsonRows;
 use Brume\Form\JsonValues;
 use Brume\Grid\RowLookup;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\Rules\In;
 use Illuminate\Validation\ValidationException;
 use stdClass;
 
@@ -105,9 +105,6 @@ final class FormOptionContext
         }
         // Remote choices have no static choice allowlist; their source eligibility belongs to
         // the dependent source declaration and, for writes, the relation planner.
-        if (method_exists($field, 'optionSource') && $field->optionSource() !== null) {
-            $rules['value'] = array_filter($rules['value'], fn ($rule) => ! $rule instanceof In);
-        }
         $validator = Validator::make(['value' => JsonValues::validationView($value)], $rules);
         if ($validator->fails()) {
             throw ValidationException::withMessages([$error => $validator->errors()->all()]);
@@ -228,6 +225,9 @@ final class FormOptionContext
                         $attribute = $container->associationAttribute() ?? $relation->getRelated()->getKeyName();
                         $matches = $relation->where($relation->getRelated()->qualifyColumn($attribute), $identity['id'])->get();
                         $record = $matches->first(fn ($row) => (string) $row->getAttribute($attribute) === $identity['id']);
+                        if ($record !== null && $relation instanceof BelongsToMany) {
+                            $record = $record->getRelation($relation->getPivotAccessor());
+                        }
                     }
                     if ($record === null && $lookup->find([$id])?->first() === null) {
                         $this->invalid('rowContext');

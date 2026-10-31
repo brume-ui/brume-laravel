@@ -12,6 +12,11 @@ class FormNode
     /** @param list<Field|FormNode> $children */
     public function __construct(public readonly string $type, protected array $attributes = [], protected array $children = []) {}
 
+    public function mapFields(\Closure $map): self
+    {
+        return new self($this->type, $this->attributes, array_map(fn ($node) => $node instanceof Field ? $map($node) : $node->mapFields($map), $this->children));
+    }
+
     public function toSchema(?Model $record = null, ?Model $root = null): array
     {
         if ($this->type === 'row' && app()->environment('local')) {
