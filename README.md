@@ -825,10 +825,16 @@ SQLite 使用 SQLite 的 `.backup` 或等效一致性備份，勿在寫入中直
 
 ```sh
 # 在目標 brume-laravel checkout 根目錄；沿用服務的 DB 設定。
-php vendor/bin/testbench migrate:status --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php
-php vendor/bin/testbench migrate --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php --pretend --no-interaction
-php vendor/bin/testbench migrate --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php --force --no-interaction
+gift_migration="$(realpath workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php)"
+test -f "$gift_migration" || exit 1
+php vendor/bin/testbench migrate:status --realpath --path="$gift_migration"
+php vendor/bin/testbench migrate --realpath --path="$gift_migration" --pretend --no-interaction
+php vendor/bin/testbench migrate --realpath --path="$gift_migration" --force --no-interaction
+php vendor/bin/testbench migrate:status --realpath --path="$gift_migration"
 ```
+
+Testbench 會以內部 Laravel app 為相對路徑基準；必須使用上面解析完成的絕對路徑並加 `--realpath`，
+否則相對 `--path=workbench/...` 會尋找錯誤目錄而失敗。已驗證此版本的 `migrate:status` 也支援 `--realpath`。
 
 這次只新增 `gift_type`（default product）、nullable `coupon_code`、`coupon_amount`（decimal 12,2）、
 `coupon_expires_at`（datetime）、`points`（integer）、`points_note`（text），不更新原有關聯或上傳檔案。
@@ -841,8 +847,9 @@ php vendor/bin/testbench migrate --path=workbench/database/migrations/2026_11_01
 以下 rollback／重套命令只在隔離 fixture 中驗證，不得對使用中的資料庫執行：
 
 ```sh
-php vendor/bin/testbench migrate:rollback --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php --step=1 --force --no-interaction
-php vendor/bin/testbench migrate --path=workbench/database/migrations/2026_11_01_000001_add_gift_demo_types_to_composition_nodes.php --force --no-interaction
+# 僅限隔離 fixture，沿用上面解析完成的 gift_migration。
+php vendor/bin/testbench migrate:rollback --realpath --path="$gift_migration" --step=1 --force --no-interaction
+php vendor/bin/testbench migrate --realpath --path="$gift_migration" --force --no-interaction
 ```
 
 `tests/Feature/Form/CompositionUpgradeTest.php` 用獨立 SQLite 實體檔建構舊 schema，保存既有 gift IDs、
