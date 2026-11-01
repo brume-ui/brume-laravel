@@ -78,7 +78,8 @@ for (const scheme of ['light', 'dark'] as const) {
       }
       await accessible(page);
       await capture(page, info, `composition-edit-${scheme}-${width}`);
-      await page.goto('/admin/orders');
+      // Exclude timestamped rows created by earlier persistence tests from the modal backdrop.
+      await page.goto('/admin/orders?q=BR-202609');
       await page.getByRole('button',{name:'新增訂單',exact:true}).click();
       await page.getByRole('dialog').getByRole('button',{name:'儲存',exact:true}).click();
       if (!baseline) {
