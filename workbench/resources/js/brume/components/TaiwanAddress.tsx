@@ -50,7 +50,7 @@ export function AddressField({
   };
   const part = (key: keyof AddressValue) => (
     <Field label={labels[key]} error={errors[key]?.[0]}>
-      <TextInput id={`${id}-${key}`} value={address[key]} readOnly={readOnly}
+      <TextInput data-brume-field-part={key} id={`${id}-${key}`} value={address[key]} readOnly={readOnly}
         onBlur={onBlur} placeholder={key === "zipcode" ? String(def.component.props?.zipcode ?? "") : undefined}
         onChange={(event) => onChange({ ...address, [key]: event.target.value })} />
     </Field>

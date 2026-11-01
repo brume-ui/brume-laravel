@@ -82,6 +82,42 @@ for (const scheme of ['light', 'dark'] as const) {
       }
       await accessible(page);
       await capture(page, info, `order-modal-${scheme}-${width}`, false);
+      if (!baseline) {
+        await page.getByRole('dialog').getByRole('button', {name:'取消',exact:true}).click();
+        await page.goto('/admin/grid-showcase/create');
+        for (const [label,value] of [['品名','Focus test'],['貨號','focus-test'],['標語','Test'],['售價（NT$）','100'],['庫存','2'],['評分','4']]) {
+          await page.getByLabel(label,{exact:true}).fill(value);
+        }
+        await page.route('**/grid-showcase', route => route.request().method() === 'POST'
+          ? route.fulfill({status:422,json:{errors:{status:['請重新選擇狀態'],secret_note:['秘密備註無法使用']}}}) : route.continue());
+        await page.getByRole('button',{name:'儲存',exact:true}).click();
+        const radio = page.getByRole('radio').first();
+        await radio.focus();
+        const radioFocus = await radio.evaluate(el => ({outline:getComputedStyle(el).outlineColor,danger:getComputedStyle(el).getPropertyValue('--br-color-danger').trim()}));
+        // Compare with another invalid input's computed border; CSS custom colors may be hex.
+        const secret = page.getByLabel('秘密備註',{exact:true});
+        expect(radioFocus.outline).toBe(await secret.evaluate(el => getComputedStyle(el).borderColor));
+        const lastLink = page.getByRole('alert').getByRole('link').filter({hasText:'秘密備註'});
+        await lastLink.focus();
+        await page.keyboard.press('Enter');
+        await expect(secret).toBeFocused();
+        const field = await secret.locator('xpath=ancestor::*[@data-field-layout][1]').boundingBox();
+        const footer = await page.locator('[data-form-content] > div').last().boundingBox();
+        expect(field!.y).toBeGreaterThanOrEqual(0);
+        expect(field!.y+field!.height).toBeLessThanOrEqual(footer!.y);
+        await accessible(page);
+        await page.goto('/admin/compositions/1/edit');
+        await page.getByRole('textbox',{name:'地址',exact:true}).fill('街道測試');
+        await page.route('**/compositions/1', route => ['PATCH','PUT','POST'].includes(route.request().method())
+          ? route.fulfill({status:422,json:{errors:{'address.address':['請檢查街道地址']}}}) : route.continue());
+        await page.getByRole('button',{name:'儲存',exact:true}).click();
+        const addressLink = page.getByRole('alert').getByRole('link').filter({hasText:'請檢查街道地址'});
+        await addressLink.focus();
+        await page.keyboard.press('Enter');
+        await expect(page.getByRole('textbox',{name:'地址',exact:true})).toBeFocused();
+        await accessible(page);
+      }
+
     });
   }
 }
