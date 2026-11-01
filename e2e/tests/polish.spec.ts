@@ -92,6 +92,7 @@ for (const scheme of ['light', 'dark'] as const) {
           ? route.fulfill({status:422,json:{errors:{status:['請重新選擇狀態'],secret_note:['秘密備註無法使用']}}}) : route.continue());
         await page.getByRole('button',{name:'儲存',exact:true}).click();
         const radio = page.getByRole('radio').first();
+        await page.keyboard.press('Tab');
         await radio.focus();
         const radioFocus = await radio.evaluate(el => ({outline:getComputedStyle(el).outlineColor,danger:getComputedStyle(el).getPropertyValue('--br-color-danger').trim()}));
         // Compare with another invalid input's computed border; CSS custom colors may be hex.
