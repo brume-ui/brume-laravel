@@ -48,11 +48,15 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.route('**/grid-showcase/_brume/upload', async route => { await held; await route.continue(); });
       const cover = page.getByRole('group', { name: '封面', exact: true });
       await cover.locator('input[type=file]').setInputFiles({name:'product-preview.png',mimeType:'image/png',buffer:png});
-      await expect(cover.getByRole('progressbar')).toBeVisible();
-      await cover.scrollIntoViewIfNeeded();
-      await capture(page, info, `product-uploading-${scheme}-${width}`, false);
-      await accessible(page);
-      release();
+      try {
+        await expect(cover.getByRole('progressbar')).toBeVisible();
+        await cover.scrollIntoViewIfNeeded();
+        await capture(page, info, `product-uploading-${scheme}-${width}`, false);
+        await accessible(page);
+      } finally {
+        // Never leave a paused network route pending during failure/teardown.
+        release();
+      }
       await expect(cover.getByRole('progressbar')).toHaveCount(0);
       await expect(cover.getByText('product-preview.png', {exact:true})).toBeVisible();
       await capture(page, info, `product-uploaded-${scheme}-${width}`, false);
@@ -86,7 +90,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.getByRole('dialog').getByRole('button', {name:'取消',exact:true}).click();
         await page.goto('/admin/grid-showcase/create');
         for (const [label,value] of [['品名','Focus test'],['貨號','focus-test'],['標語','Test'],['售價（NT$）','100'],['庫存','2'],['評分','4']]) {
-          await page.getByLabel(label,{exact:true}).fill(value);
+          await page.getByRole('textbox',{name:label,exact:true}).fill(value,{timeout:10000});
         }
         await page.route('**/grid-showcase', route => route.request().method() === 'POST'
           ? route.fulfill({status:422,json:{errors:{status:['請重新選擇狀態'],secret_note:['秘密備註無法使用']}}}) : route.continue());
@@ -96,7 +100,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await radio.focus();
         const radioFocus = await radio.evaluate(el => ({outline:getComputedStyle(el).outlineColor,danger:getComputedStyle(el).getPropertyValue('--br-color-danger').trim()}));
         // Compare with another invalid input's computed border; CSS custom colors may be hex.
-        const secret = page.getByLabel('秘密備註',{exact:true});
+        const secret = page.getByRole('textbox',{name:'秘密備註',exact:true});
         expect(radioFocus.outline).toBe(await secret.evaluate(el => getComputedStyle(el).borderColor));
         const lastLink = page.getByRole('alert').getByRole('link').filter({hasText:'秘密備註'});
         await lastLink.focus();
