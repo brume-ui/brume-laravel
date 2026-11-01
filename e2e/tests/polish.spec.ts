@@ -1,6 +1,7 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { axeViolations, login, useScheme } from './support';
 
+test.use({ actionTimeout: 15000 });
 const baseline = process.env.POLISH_BASELINE === '1';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAGUlEQVQokWPkK5nAQApgIkn1qIZRDUNKAwB4twEycPdKNAAAAABJRU5ErkJggg==', 'base64');
 async function capture(page: Page, info: TestInfo, name: string, fullPage = true) {
@@ -101,7 +102,7 @@ for (const scheme of ['light', 'dark'] as const) {
         const radioFocus = await radio.evaluate(el => ({outline:getComputedStyle(el).outlineColor,danger:getComputedStyle(el).getPropertyValue('--br-color-danger').trim()}));
         // Compare with another invalid input's computed border; CSS custom colors may be hex.
         const secret = page.getByRole('textbox',{name:'秘密備註',exact:true});
-        expect(radioFocus.outline).toBe(await secret.evaluate(el => getComputedStyle(el).borderColor));
+        await expect(secret).toHaveCSS('border-color', radioFocus.outline);
         const lastLink = page.getByRole('alert').getByRole('link').filter({hasText:'秘密備註'});
         await lastLink.focus();
         await page.keyboard.press('Enter');
@@ -110,6 +111,7 @@ for (const scheme of ['light', 'dark'] as const) {
         const footer = await page.locator('[data-form-content] > div').last().boundingBox();
         expect(field!.y).toBeGreaterThanOrEqual(0);
         expect(field!.y+field!.height).toBeLessThanOrEqual(footer!.y);
+        await capture(page, info, `product-error-focus-${scheme}-${width}`, false);
         await accessible(page);
         await page.goto('/admin/compositions/1/edit');
         await page.getByRole('textbox',{name:'地址',exact:true}).fill('街道測試');
