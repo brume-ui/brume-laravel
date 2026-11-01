@@ -103,6 +103,7 @@ for (const scheme of ['light', 'dark'] as const) {
         // Compare with another invalid input's computed border; CSS custom colors may be hex.
         const secret = page.getByRole('textbox',{name:'秘密備註',exact:true});
         await expect(secret).toHaveCSS('border-color', radioFocus.outline);
+        await expect(radio).toHaveCSS('border-color', radioFocus.outline);
         const lastLink = page.getByRole('alert').getByRole('link').filter({hasText:'秘密備註'});
         await lastLink.focus();
         await page.keyboard.press('Enter');
