@@ -19,6 +19,9 @@ async function fillProduct(page: Page, sku: string) {
   await page.getByRole('textbox', { name: '品名', exact: true }).fill('表單驗收新品');
   await page.getByRole('textbox', { name: '貨號', exact: true }).fill(sku);
   await page.getByRole('textbox', { name: '標語', exact: true }).fill('每天都用得到');
+  await page.getByRole('textbox', { name: '售價（NT$）', exact: true }).fill('100.00');
+  await page.getByRole('textbox', { name: '庫存', exact: true }).fill('2');
+  await page.getByRole('textbox', { name: '評分', exact: true }).fill('4.0');
 }
 async function assertErrorInsideDialog(input: Locator) {
   await expect(input).toBeFocused();
@@ -135,6 +138,7 @@ test('order modal validates locally, continues creating and preserves the shell'
   await assertErrorInsideDialog(dialog.getByRole('textbox', { name: '客戶', exact: true }));
   expect(writes).toBe(0);
   await dialog.getByRole('textbox', { name: '客戶', exact: true }).fill('驗收連續新增客戶');
+  await dialog.getByRole('textbox', { name: '金額', exact: true }).fill('100');
   await after(page, '繼續新增');
   await save(page);
   await expect(page.getByText('已新增訂單', { exact: true })).toBeVisible();

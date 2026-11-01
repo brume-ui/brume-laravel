@@ -133,9 +133,9 @@ class GridShowcaseController extends Resource
             $form->radio('status', '狀態')->options(ShowcaseItem::STATUSES)->required()->default('pending');
         });
         $form->section('銷售', function (Form $form) {
-            $form->currency('price', '售價（NT$）')->decimals(2)->min(0)->required()->default('0.00');
-            $form->number('stock', '庫存')->min(0)->required()->default(0);
-            $form->decimal('rating', '評分')->decimals(1)->min(0)->max(5)->required()->default('0.0');
+            $form->currency('price', '售價（NT$）')->decimals(2)->min(0)->required()->default(null);
+            $form->number('stock', '庫存')->min(0)->required()->default(null);
+            $form->decimal('rating', '評分')->decimals(1)->min(0)->max(5)->required()->default(null);
             $form->switch('is_active', '上架')->default(true);
             $form->tags('tags', '標籤')->options(ShowcaseItem::TAGS)->default([]);
             $form->date('released_at', '上市日')->required()->default('2026-10-31');

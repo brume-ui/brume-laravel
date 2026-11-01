@@ -37,13 +37,13 @@ class CompositionController extends Resource
 
     protected function form(Form $form): void
     {
-        $form->description('資料庫示範：各門檻可獨立選擇商品、優惠券或點數。切換前的草稿保留到儲存；儲存只更新目前分支，重新開啟後顯示完整既存值。可排序兩列再儲存，核對資料仍屬於原門檻。優惠券與點數僅保存設定，沒有發放、兌換或點數入帳。');
+        $form->description('編輯組合與各門檻的贈品設定。優惠券與點數不會實際發放。');
         $form->text('title', '名稱')->required();
         $form->select('category', '分類')->options(['A' => 'A 類', 'B' => 'B 類'])->default('A');
         $dependent = OptionSource::make(fn ($context) => CompositionCatalog::where('category', $context->dependencies['category'] ?? 'A'))->label('name')->columns(['sku' => '貨號']);
         $form->switch('delivery', '需要配送')->default(false);
         $form->text('delivery_note', '配送說明')->required()->showWhen(Conditions::eq(Conditions::root('delivery'), true));
-        $form->component('address', '配送地址', 'TaiwanAddress')->attributes(['zipcode' => 'zipcode', 'county' => 'county', 'district' => 'district', 'address' => 'address'])
+        $form->component('address', '配送地址', 'TaiwanAddress')->span('full')->attributes(['zipcode' => 'zipcode', 'county' => 'county', 'district' => 'district', 'address' => 'address'])
             ->childRules(['zipcode' => ['required', 'regex:/^[0-9]{3}$/D'], 'county' => ['required', 'string'], 'district' => ['required', 'string'], 'address' => ['required', 'string']]);
         $form->relationPicker('owner', '負責商品', self::source())->relation('owner')->multiple(false)->extra(fn (Form $row) => $row->text('note', '商品備註'));
         $form->relationPicker('candidates', '直接關聯商品', self::source())->relation('candidates');

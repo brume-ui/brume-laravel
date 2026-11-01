@@ -6,6 +6,14 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      ui-source:
+        description: Test the immutable prepublication UI pin instead of published workbench packages
+        type: boolean
+        default: false
+      capture-before:
+        description: Capture the original alpha.15 workbench with the polish screenshot harness
+        type: boolean
+        default: false
       update-snapshots:
         description: Generate Linux baselines; inspect PNGs and then require normal non-update CI
         type: boolean
@@ -154,6 +162,7 @@ jobs:
           retention-days: 7
 
   e2e:
+    if: ${{ inputs['ui-source'] != true }}
     name: e2e (published UI packages)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -227,6 +236,104 @@ jobs:
             e2e/test-results
           retention-days: 14
 
+  e2e-source:
+    if: ${{ inputs['ui-source'] == true }}
+    name: e2e (reviewed immutable UI source)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      BRUME_UI_INTEGRATION: '1'
+      BRUME_UI_SOURCE: ${{ github.workspace }}/.ci/ui-source
+      # PR text never opts into writes. The generated bot commit deliberately omits the marker.
+      UPDATE_SNAPSHOTS: ${{ (github.event_name == 'workflow_dispatch' && inputs['update-snapshots'] == true) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[update-snapshots]')) }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_sqlite, sqlite3, mbstring, intl
+          coverage: none
+          tools: composer:v2
+
+      - run: composer install --prefer-dist --no-interaction --no-progress
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: e2e/package.json
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            e2e/pnpm-lock.yaml
+            frontend/pnpm-lock.yaml
+
+      - run: pnpm --dir e2e install --frozen-lockfile
+
+      # The workbench runs in vite (--frontend) mode; e2e/serve.sh builds it from frontend/.
+      - run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Read immutable reviewed UI pin
+        id: ui-pin
+        run: |
+          node -e 'const p = require("./.ci/ui-integration.json"); if (p.repository !== "brume-ui/brume-ui" || !/^[0-9a-f]{40}$/.test(p.sha)) process.exit(1); require("node:fs").appendFileSync(process.env.GITHUB_OUTPUT, `sha=${p.sha}\n`);'
+
+      - uses: actions/checkout@v5
+        with:
+          repository: brume-ui/brume-ui
+          ref: ${{ steps.ui-pin.outputs.sha }}
+          path: .ci/ui-source
+          persist-credentials: false
+
+      - name: Build reviewed source and verify all five origins
+        run: |
+          pnpm --dir .ci/ui-source install --frozen-lockfile
+          pnpm --dir .ci/ui-source build
+          node --test e2e/ui-integration.test.mjs
+          node e2e/ui-integration.mjs --prepare
+          git rev-parse HEAD
+          git -C .ci/ui-source rev-parse HEAD
+
+      - name: Install Playwright Chromium
+        run: pnpm --dir e2e exec playwright install --with-deps chromium
+
+      - name: E2E (normal acceptance)
+        if: ${{ env.UPDATE_SNAPSHOTS != 'true' }}
+        run: pnpm --dir e2e exec playwright test
+
+      - name: E2E (explicit Linux snapshot generation)
+        if: ${{ env.UPDATE_SNAPSHOTS == 'true' }}
+        run: pnpm --dir e2e exec playwright test --update-snapshots
+
+      - name: Commit only generated Linux PNGs after the full browser suite
+        if: ${{ env.UPDATE_SNAPSHOTS == 'true' }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ':(glob)e2e/source-snapshots/**/*-linux.png'
+          if git diff --cached --quiet; then
+            echo 'No snapshot changes.'
+          else
+            git commit -m 'test(workbench): update Linux form polish cards, controls and upload states'
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            git push
+          fi
+
+      - name: Upload Playwright report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-source-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            e2e/source-snapshots
+          retention-days: 14
+
   smoke:
     name: install smoke (laravel ${{ matrix.laravel }} / ${{ matrix.mode }})
     runs-on: ubuntu-24.04
@@ -268,3 +375,45 @@ jobs:
           path: .ci-smoke-results/laravel-${{ matrix.laravel }}-${{ matrix.mode }}.log
           include-hidden-files: true
           retention-days: 14
+
+  before-capture:
+    if: ${{ inputs['capture-before'] == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: harness
+      - uses: actions/checkout@v5
+        with:
+          ref: 2991174643141ad5ef67d246787d44636f962cf6
+          path: before
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_sqlite, sqlite3, mbstring, intl
+          coverage: none
+          tools: composer:v2
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: before/e2e/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: composer install --prefer-dist --no-interaction --no-progress
+        working-directory: before
+      - run: pnpm --dir before/e2e install --frozen-lockfile
+      - run: pnpm --dir before/e2e exec playwright install --with-deps chromium
+      - name: Capture immutable before state, without new-behavior assertions
+        env:
+          POLISH_BASELINE: '1'
+        run: |
+          cp harness/e2e/tests/polish.spec.ts before/e2e/tests/polish.spec.ts
+          node --input-type=module -e 'import fs from "node:fs"; let p="before/e2e/playwright.config.ts"; let s=fs.readFileSync(p,"utf8"); s=s.replace("projects: [", "projects: [{name: \"before\", testMatch: \"polish.spec.ts\", use: {...devices[\"Desktop Chrome\"]}},"); fs.writeFileSync(p,s);'
+          pnpm --dir before/e2e exec playwright test --project=before
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: polish-before-alpha15
+          path: before/e2e/test-results
+          retention-days: 30

@@ -107,7 +107,7 @@ it('archives demo cover gallery and documents and reloads exact gallery order an
         $file = $field === 'documents' ? UploadedFile::fake()->createWithContent('readme.txt', 'demo document') : UploadedFile::fake()->image("image{$i}.png");
         $tokens[] = $this->post('/admin/grid-showcase/_brume/upload', ['field' => $field, 'file' => $file], ['Accept' => 'application/json'])->assertOk()->json('token');
     }
-    $values = array_replace($values, ['name' => '上傳商品', 'sku' => 'TASK22-UPLOAD', 'slogan' => '真實保存', 'cover' => ['token' => $tokens[0]], 'gallery' => [['token' => $tokens[2], 'extra' => ['link' => 'https://example.test/second']], ['token' => $tokens[1], 'extra' => ['link' => 'https://example.test/first']]], 'documents' => [['token' => $tokens[3]]]]);
+    $values = array_replace($values, ['price' => '100.00', 'stock' => 2, 'rating' => '4.0', 'name' => '上傳商品', 'sku' => 'TASK22-UPLOAD', 'slogan' => '真實保存', 'cover' => ['token' => $tokens[0]], 'gallery' => [['token' => $tokens[2], 'extra' => ['link' => 'https://example.test/second']], ['token' => $tokens[1], 'extra' => ['link' => 'https://example.test/first']]], 'documents' => [['token' => $tokens[3]]]]);
     $id = $this->postJson('/admin/grid-showcase', ['values' => $values])->assertOk()->json('id');
     $saved = ShowcaseItem::findOrFail($id);
     expect(array_column(array_column($saved->gallery, 'extra'), 'link'))->toBe(['https://example.test/second', 'https://example.test/first']);
@@ -124,7 +124,7 @@ it('returns a field error for a cleared showcase rating on a complete submission
     $item = $mode === 'edit' ? ShowcaseItem::factory()->create(['is_featured' => false, 'rating' => '3.5']) : null;
     $url = $item === null ? '/admin/grid-showcase/create' : "/admin/grid-showcase/{$item->id}/edit";
     $values = $this->getJson($url, ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
-    $values = array_replace($values, ['name' => '評分驗收商品', 'sku' => 'TASK22-NULL-RATING', 'slogan' => '完整表單', 'rating' => null]);
+    $values = array_replace($values, ['price' => '100.00', 'stock' => 2, 'name' => '評分驗收商品', 'sku' => 'TASK22-NULL-RATING', 'slogan' => '完整表單', 'rating' => null]);
     $before = ShowcaseItem::query()->count();
     $response = $item === null
         ? $this->postJson('/admin/grid-showcase', ['values' => $values])
@@ -141,7 +141,7 @@ it('saves an optional empty showcase color and serializes the actual grid reload
     $item = $mode === 'edit' ? ShowcaseItem::factory()->create(['is_featured' => false]) : null;
     $url = $item === null ? '/admin/grid-showcase/create' : "/admin/grid-showcase/{$item->id}/edit";
     $values = $this->getJson($url, ['X-Brume-Form' => '1'])->assertOk()->json('page.values');
-    $values = array_replace($values, ['name' => '無顏色驗收商品', 'sku' => 'TASK22-NULL-COLOR', 'slogan' => '完整表單']);
+    $values = array_replace($values, ['price' => '100.00', 'stock' => 2, 'rating' => '4.0', 'name' => '無顏色驗收商品', 'sku' => 'TASK22-NULL-COLOR', 'slogan' => '完整表單']);
     $values['meta']['color'] = null;
     $response = $item === null
         ? $this->postJson('/admin/grid-showcase', ['values' => $values])
@@ -165,4 +165,17 @@ it('supplies real row edit URLs and modal forms for order primary-cell links', f
     $this->getJson($page['rows'][0]['_meta']['editUrl'], ['X-Brume-Form' => '1'])->assertOk()
         ->assertJsonPath('page.presentation', 'modal')->assertJsonPath('page.record.id', $order->id)
         ->assertJsonPath('page.record.label', $order->number);
+});
+
+it('starts required numeric create fields empty while retaining stored zeros on edit', function () {
+    $product = $this->getJson('/admin/grid-showcase/create', ['X-Brume-Form' => '1'])->assertOk();
+    foreach (['price', 'stock', 'rating'] as $name) {
+        $product->assertJsonPath("page.values.$name", null);
+    }
+    $this->getJson('/admin/orders/create', ['X-Brume-Form' => '1'])->assertOk()->assertJsonPath('page.values.amount', null);
+    $item = ShowcaseItem::factory()->create(['price' => 0, 'stock' => 0, 'rating' => 0]);
+    $edit = $this->getJson("/admin/grid-showcase/{$item->id}/edit", ['X-Brume-Form' => '1'])->assertOk();
+    expect((float) $edit->json('page.values.price'))->toBe(0.0)
+        ->and($edit->json('page.values.stock'))->toBe(0)
+        ->and((float) $edit->json('page.values.rating'))->toBe(0.0);
 });

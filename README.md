@@ -900,3 +900,8 @@ frozen frontend lockfile. `check-package-origins.mjs` rejects source links befor
 and ordinary workbench E2E gates. All 51 browser cases, including composition, run in ordinary E2E.
 Linux baseline generation remains opt-in; inspect every changed PNG and run ordinary non-update CI
 afterward. The composition baselines retain the reviewed prepublication source PNG bytes.
+
+
+### 組合表單試用說明
+
+各門檻可獨立選商品、優惠券或點數。切換前的草稿保留到儲存；儲存只更新目前分支，重新開啟後顯示完整既存值。可排序兩列再儲存，核對資料仍屬於原門檻。優惠券與點數僅保存設定，沒有發放、兌換或點數入帳。

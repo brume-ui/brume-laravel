@@ -106,7 +106,7 @@ class OrderController extends Resource
     {
         $form->presentation('modal')->recordLabel(fn (Order $order) => $order->number);
         $form->text('customer', '客戶')->required()->maxLength(50);
-        $form->currency('amount', '金額')->required()->min(0)->default('0');
+        $form->currency('amount', '金額')->required()->min(0)->default(null);
         $form->select('status', '狀態')->options(Order::STATUS_LABELS)->required()->default('pending');
         $form->select('category', '分類')->options(array_combine(Order::CATEGORIES, Order::CATEGORIES))->required()->default('家居');
         $form->textarea('note', '備註')->maxLength(1000);
@@ -115,7 +115,7 @@ class OrderController extends Resource
     protected function quickCreate(Form $form): void
     {
         $form->text('customer', '客戶')->required()->maxLength(50);
-        $form->currency('amount', '金額')->required()->min(0)->default('0');
+        $form->currency('amount', '金額')->required()->min(0)->default(null);
     }
 
     private function filters(Grid $grid): void
