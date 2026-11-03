@@ -328,6 +328,10 @@ for (const viewport of [
         // Keep current-time/ULID rows from the persistence cases out of the screenshot backdrop.
         await page.goto('/admin/orders?q=BR-202609');
         await page.getByRole('button', { name: '新增訂單', exact: true }).click();
+        // Submit only once the loaded form owns focus; earlier key presses race the dialog load.
+        await expect(
+          page.getByRole('dialog').getByRole('textbox', { name: '金額', exact: true }),
+        ).toBeVisible();
         await page.keyboard.press('Meta+Enter');
         await assertErrorInsideDialog(
           page.getByRole('dialog').getByRole('textbox', { name: '客戶', exact: true }),
