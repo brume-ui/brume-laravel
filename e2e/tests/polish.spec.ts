@@ -59,7 +59,8 @@ for (const scheme of ['light', 'dark'] as const) {
         release();
       }
       await expect(cover.getByRole('progressbar')).toHaveCount(0);
-      await expect(cover.getByText('product-preview.png', {exact:true})).toBeVisible();
+      // Image uploads are tiles: the file is the thumbnail, named by its alt text.
+      await expect(cover.getByRole('img', {name:'product-preview.png', exact:true})).toBeVisible();
       await capture(page, info, `product-uploaded-${scheme}-${width}`, false);
       await accessible(page);
       await page.unroute('**/grid-showcase/_brume/upload');
@@ -98,6 +99,8 @@ for (const scheme of ['light', 'dark'] as const) {
           ? route.fulfill({status:422,json:{errors:{status:['請重新選擇狀態'],secret_note:['秘密備註無法使用']}}}) : route.continue());
         await page.getByRole('button',{name:'儲存',exact:true}).click();
         const radio = page.getByRole('radio').first();
+        // The 422 summary takes focus by script; wait for it so the Tab below is the last focus move.
+        await expect(page.getByRole('alert').getByRole('link').filter({hasText:'秘密備註'})).toBeVisible();
         await page.keyboard.press('Tab');
         await radio.focus();
         const radioFocus = await radio.evaluate(el => ({outline:getComputedStyle(el).outlineColor,danger:getComputedStyle(el).getPropertyValue('--br-color-danger').trim()}));
