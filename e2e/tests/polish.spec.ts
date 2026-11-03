@@ -120,7 +120,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.route('**/compositions/1', route => ['PATCH','PUT','POST'].includes(route.request().method())
           ? route.fulfill({status:422,json:{errors:{'address.address':['請檢查街道地址']}}}) : route.continue());
         await page.getByRole('button',{name:'儲存',exact:true}).click();
-        const addressLink = page.getByRole('alert').getByRole('link').filter({hasText:'請檢查街道地址'});
+        const addressLink = page.getByRole('alert').getByRole('link',{name:/請檢查街道地址/});
         await addressLink.focus();
         await page.keyboard.press('Enter');
         await expect(page.getByRole('textbox',{name:'地址',exact:true})).toBeFocused();
