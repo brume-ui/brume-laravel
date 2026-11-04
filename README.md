@@ -493,12 +493,17 @@ What's in it:
     sortable gallery with links, preorder fields shown on demand, a remote category select declared with
     `depth('tree_depth')`, and purchase limits with the computed remaining quantity.
   - **商品分類** (`/admin/product-categories`, `ProductCategoryController`): 服飾 › 外套 and
-    家居. The edit page assigns products with a remote picker. A product picked here moves out
-    of its old category; a deselected product becomes uncategorised and is not deleted.
+    家居, listed depth-first (each child indented under its parent, a stored `tree_path` gives the
+    order) in the grid and in both category selects. The parent select is `clearable()` with a
+    「無（頂層）」 empty choice. The edit page assigns products with a remote picker. A product
+    picked here moves out of its old category; a deselected product becomes uncategorised and is
+    not deleted. A category with sub-categories cannot be deleted; deleting one leaves its products
+    uncategorised. A product that is a bundle component or a live gift cannot be deleted.
   - **滿額贈** (`/admin/promotions`, `PromotionController`): one promotion with the thresholds
     NT$500 (all gifts) and NT$1,000 (choose 1 of 2 limited gifts with historical counters).
     Thresholds → actions → gifts save as one graph, with duplicate amounts (`500` and `500.00`)
-    rejected on client and server. 即時試算 is a registered React field
+    rejected on client and server. Removing a threshold or an action soft-deletes the rows under
+    it, so gift counters stay on the trashed rows. 即時試算 is a registered React field
     (`components/PromotionCalculator.tsx`) that previews the gifts for an order amount and saves
     nothing.
 
