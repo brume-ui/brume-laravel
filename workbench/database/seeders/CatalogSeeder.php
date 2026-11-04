@@ -79,7 +79,7 @@ class CatalogSeeder extends Seeder
         Promotion::query()->updateOrCreate(['id' => 1], [
             'name' => '滿額贈示範',
             'starts_at' => '2026-11-01 00:00:00',
-            'ends_at' => '2026-11-30 23:59:59',
+            'ends_at' => '2026-11-30 23:59:00', // datetimeRange stores minutes
             'is_enabled' => true,
         ]);
 

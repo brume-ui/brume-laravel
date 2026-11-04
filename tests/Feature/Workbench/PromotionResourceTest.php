@@ -270,3 +270,10 @@ it('removing a threshold or an action trashes the rows under it with their count
         // No live gift row is left under a trashed action or threshold.
         ->and(PromotionFreebie::query()->whereDoesntHave('action.condition')->count())->toBe(0);
 });
+
+it('saves the seeded promotion back with its period unchanged', function () {
+    $before = DB::table('promotions')->where('id', 1)->first(['starts_at', 'ends_at']);
+    $this->putJson('/admin/promotions/1', ['values' => promotionValues($this)])->assertOk();
+
+    expect((array) DB::table('promotions')->where('id', 1)->first(['starts_at', 'ends_at']))->toBe((array) $before);
+});
