@@ -13,6 +13,7 @@ use Workbench\App\Http\Controllers\GridShowcaseController;
 use Workbench\App\Http\Controllers\OrderController;
 use Workbench\App\Http\Controllers\ProductCategoryController;
 use Workbench\App\Http\Controllers\ProductController;
+use Workbench\App\Http\Controllers\PromotionController;
 use Workbench\App\Models\ShowcaseItem;
 
 Route::get('users', AdminUserController::class)->name('brume.users.index');
@@ -21,6 +22,7 @@ Route::brumeResource('orders', OrderController::class)->names('brume.orders');
 Route::brumeResource('grid-showcase', GridShowcaseController::class)->names('brume.grid-showcase');
 Route::brumeResource('products', ProductController::class)->names('brume.products');
 Route::brumeResource('product-categories', ProductCategoryController::class)->names('brume.product-categories');
+Route::brumeResource('promotions', PromotionController::class)->names('brume.promotions');
 
 // 元件展示: one registered component (ComponentShowcase.tsx) that renders the whole brume-react kit.
 Route::get('components', fn () => Dashboard::make('元件展示')
