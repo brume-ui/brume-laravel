@@ -91,7 +91,7 @@ it('rejects a bundle containing itself in search and on save', function () {
     $values = productValues($this, "/admin/products/{$bundle->id}/edit");
     $values['components'][] = ['id' => (string) $bundle->id, 'quantity' => 1];
     $before = DB::table('catalog_product_components')->where('bundle_id', $bundle->id)->count();
-    $this->putJson("/admin/products/{$bundle->id}", ['values' => $values])->assertUnprocessable();
+    $this->putJson("/admin/products/{$bundle->id}", ['values' => $values])->assertUnprocessable()->assertJsonValidationErrors('components');
     expect(DB::table('catalog_product_components')->where('bundle_id', $bundle->id)->count())->toBe($before);
 });
 
@@ -100,6 +100,9 @@ it('lists, toggles, batch publishes and exports products', function () {
     expect(array_column($page['columns'], 'key'))->toContain('identifier', 'name', 'is_published', 'price', 'stock', 'is_bundle', 'barcode', 'updated_at')
         ->and(collect($page['actions']['batch'])->pluck('key')->all())->toContain('publish', 'unpublish')
         ->and($page['rows'])->not->toBeEmpty();
+    $hidden = collect($page['columns'])->where('hiddenByDefault', true)->pluck('key')->all();
+    expect(array_column($page['filters']['items'], 'key'))->toBe(['is_published', 'category_id', 'is_bundle'])
+        ->and($hidden)->toBe(['barcode', 'updated_at']);
 
     $product = CatalogProduct::where('identifier', 'DEMO-001')->firstOrFail();
     $was = $product->is_published;
@@ -115,4 +118,12 @@ it('lists, toggles, batch publishes and exports products', function () {
     $export = $this->get('/admin/products/_brume/export')->assertOk();
     expect($export->headers->get('content-type'))->toContain('spreadsheetml')
         ->and($export->headers->get('content-disposition'))->toContain('products')->toContain('.xlsx');
+});
+
+it('saves a seeded preorder product back unchanged', function () {
+    $product = CatalogProduct::where('identifier', 'DEMO-020')->firstOrFail();
+    expect($product->is_preorder)->toBeTrue()->and($product->preorder_note)->not->toBeEmpty();
+    $values = productValues($this, "/admin/products/{$product->id}/edit");
+    $this->putJson("/admin/products/{$product->id}", ['values' => $values])->assertOk();
+    expect($product->fresh()->preorder_note)->toBe($product->preorder_note);
 });

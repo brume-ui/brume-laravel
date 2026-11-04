@@ -51,6 +51,7 @@ class CatalogSeeder extends Seeder
                 'stock' => 100 - $i,
                 'is_preorder' => $i % 10 === 0,
                 'preorder_ships_at' => $i % 10 === 0 ? '2026-12-01 09:00:00' : null,
+                'preorder_note' => $i % 10 === 0 ? '預購商品，預計 12 月出貨' : null,
                 'category_id' => $i % 4 === 0 ? null : [1, 2, 3][$i % 3],
                 'is_bundle' => $isBundle,
                 'per_order_limit' => $i % 7 === 0 ? 3 : null,
