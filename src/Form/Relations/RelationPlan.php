@@ -2,6 +2,7 @@
 
 namespace Brume\Form\Relations;
 
+use Brume\Form\Fields\RelationPicker;
 use Brume\Form\Fields\Repeater;
 use Brume\Form\Fields\Upload;
 use Brume\Uploads\UploadInventory;
@@ -82,10 +83,10 @@ final readonly class RelationPlan
         $compose = function (array $tree) use (&$compose, $values, $original): array {
             foreach ($tree['fields'] as $relative => $field) {
                 $path = ($tree['prefix'] ?? '').$relative;
-                if (($field instanceof Upload || $field instanceof Repeater) && Arr::has($values, $path)) {
+                if (($field instanceof Upload || $field instanceof Repeater || $field instanceof RelationPicker) && Arr::has($values, $path)) {
                     Arr::set($tree['values'], $relative, Arr::get($values, $path));
                 }
-                if ($field instanceof Repeater && $field->relationName() === null) {
+                if (($field instanceof Repeater || $field instanceof RelationPicker) && $field->relationName() === null) {
                     $entry = $this->inventory['fields'][$path] ?? null;
                     $tree['jsonOriginals'][$relative] = $entry === null ? [] : ($original[UploadInventory::key($entry)]['stored'] ?? []);
                     $tree['jsonContexts'][$relative] = $entry['storageContext'] ?? [];

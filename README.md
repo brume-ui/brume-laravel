@@ -771,6 +771,24 @@ original nullable global root. Mutating `fill`/`saveUsing` callbacks always rece
 storage target; this is distinct from evaluation authority. Explicit Eloquent bindings cannot live
 under a JSON-row storage owner; use relation-mode rows or JSON remote choice IDs instead.
 
+Without `relation()`, a picker stores JSON in its attribute, which needs an `array`/`json` cast:
+a list of `{id, ...declaredFields}` objects in the submitted order, or one object (or `null`) for
+`multiple(false)`. The selected id is the row identity, so there is no `_brume` key; ids are
+strings and unique. Every selection must still be eligible in the `OptionSource` when saved.
+Undeclared keys of a kept selection survive; a removed selection's uploaded files are cleaned up
+after commit. Extras callbacks receive the nullable root record, as in JSON repeaters.
+`associateBy()`, `orderColumn()` and `restoreRemoved()` need a relation. A JSON picker can sit
+inside a JSON repeater, but its extras cannot declare Eloquent relations.
+
+```php
+// compositions.picks: [{"id":"2","limited":true,"limit":5},{"id":"1","limited":false}]
+$form->relationPicker('picks', 'Gifts', $source)->extra(function (Form $row) {
+    $row->switch('limited', 'Limited')->default(false);
+    $row->number('limit', 'Limit')->min(1)->required()
+        ->showWhen(Conditions::eq(Conditions::row('limited'), true));
+});
+```
+
 `FormDef.rowFields` contains resolved readonly/client-rule snapshots for initial rows, keyed by the
 ordered stable `RowContext`. These are presentation metadata outside `values`; the server never
 uses submitted snapshots as authorization. An explicit empty rules list clears template rules.
@@ -797,7 +815,7 @@ source-owned file boundaries, token binding, physical transaction cleanup and th
 upload migration (including its intentionally nonshrinking rollback).
 
 The workbench `/admin/compositions` resource demonstrates model-owned tiers → thresholds → gifts,
-pivot extras, BelongsTo extras, direct HasMany selection, JSON-in-JSON notes, conditional required
+pivot extras, BelongsTo extras, direct HasMany selection, a JSON picker (`picks`), JSON-in-JSON notes, conditional required
 values, dependent sources, mapped addresses, custom inline editing and nested Uploads. It uses
 separate deterministic tables/seeds so existing Order/GridShowcase examples retain their data.
 Playground `/#/form-composition` supplements the focused relation/repeater routes. Precompiled

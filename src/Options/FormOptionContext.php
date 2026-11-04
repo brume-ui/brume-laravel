@@ -218,7 +218,25 @@ final class FormOptionContext
             }
             $container = $registry->entries[$path]['field'];
             $locked = $locked || ! $container->isEditable($record);
-            if ($container->relationName() === null) {
+            if ($container instanceof RelationPicker && $container->relationName() === null) {
+                // A JSON selection is identified by its canonical selected id.
+                if (! isset($identity['id']) || $identity['key'] !== $identity['id']) {
+                    $this->invalid('rowContext');
+                }
+                $lookup = new RowLookup($container->optionSource()->query($this->ancestor($path, $ancestors)));
+                $id = $lookup->normalizeId($identity['id']);
+                if ($id === null || (string) $id !== $identity['id']) {
+                    $this->invalid('rowContext');
+                }
+                $stored = $json !== null ? RelationPicker::jsonRows(data_get($json, $container->attributeName()), $container->settings()['multiple']) : ($storage !== null ? $container->storedJsonRowsForContext($storage, $record) : []);
+                $json = collect($stored)->first(fn ($row) => $row['id'] === $identity['id']);
+                // Only stored or currently eligible selections have a row context.
+                if ($json === null && $lookup->find([$id])?->first() === null) {
+                    $this->invalid('rowContext');
+                }
+                $json ??= [];
+                $record = $root; // JSON callbacks retain the global nullable root.
+            } elseif ($container->relationName() === null) {
                 if (array_key_exists('id', $identity)) {
                     $this->invalid('rowContext');
                 }

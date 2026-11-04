@@ -1100,3 +1100,112 @@ it('persists 101 eligible picker selections and hydrates them in bounded transpo
     }
     expect(array_column($labels, 'value'))->toBe($ids);
 });
+
+it('JSON picker stores selected ids with extras in an array cast and reads them back', function () {
+    $root = GraphRoot::create();
+    $a = GraphProduct::create();
+    $b = GraphProduct::create();
+    $form = graphForm();
+    $form->relationPicker('data', 'Gifts', graphSource())->extra(fn ($row) => $row->number('quantity')->required());
+    graphSave($form, $root, ['data' => [['id' => (string) $b->id, 'quantity' => 3], ['id' => (string) $a->id, 'quantity' => 2]]]);
+    expect(json_decode($root->fresh()->getRawOriginal('data'), true))->toBe([['id' => (string) $b->id, 'quantity' => 3], ['id' => (string) $a->id, 'quantity' => 2]]);
+    expect($form->fields()['data']->valueFor($root->fresh()))->toBe([['id' => (string) $b->id, 'quantity' => 3], ['id' => (string) $a->id, 'quantity' => 2]]);
+    graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'quantity' => 4]]]);
+    expect($root->fresh()->data)->toBe([['id' => (string) $a->id, 'quantity' => 4]]);
+    graphSave($form, $root, ['data' => []]);
+    expect($root->fresh()->data)->toBe([]);
+});
+
+it('JSON picker validates eligibility, extras and identity before writing', function () {
+    $root = GraphRoot::create(['data' => []]);
+    $a = GraphProduct::create();
+    $foreign = GraphProduct::create(['tenant' => 2]);
+    $form = graphForm();
+    $form->relationPicker('data', 'Gifts', graphSource())->extra(fn ($row) => $row->number('quantity')->required());
+    expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $foreign->id, 'quantity' => 1]]]))->toThrow(ValidationException::class);
+    expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $a->id]]]))->toThrow(ValidationException::class);
+    expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'quantity' => 1], ['id' => (string) $a->id, 'quantity' => 2]]]))->toThrow(ValidationException::class);
+    expect(fn () => graphSave($form, $root, ['data' => [['quantity' => 1]]]))->toThrow(ValidationException::class);
+    expect($root->fresh()->data)->toBe([]);
+});
+
+it('single JSON picker stores one object or null', function () {
+    $root = GraphRoot::create();
+    $a = GraphProduct::create();
+    $form = graphForm();
+    $form->relationPicker('data', 'Owner', graphSource())->multiple(false)->extra(fn ($row) => $row->text('note'));
+    graphSave($form, $root, ['data' => ['id' => (string) $a->id, 'note' => 'hi']]);
+    expect($root->fresh()->data)->toBe(['id' => (string) $a->id, 'note' => 'hi']);
+    expect($form->fields()['data']->valueFor($root->fresh()))->toBe(['id' => (string) $a->id, 'note' => 'hi']);
+    graphSave($form, $root, ['data' => null]);
+    expect($root->fresh()->data)->toBeNull();
+});
+
+it('JSON picker keeps undeclared stored keys of kept selections and readonly extras', function () {
+    $a = GraphProduct::create();
+    $b = GraphProduct::create();
+    $root = GraphRoot::create(['data' => [['id' => (string) $a->id, 'quantity' => 1, 'sold' => 9, 'locked' => 'x']]]);
+    $form = graphForm();
+    $form->relationPicker('data', 'Gifts', graphSource())->extra(function ($row) {
+        $row->number('quantity')->required();
+        $row->text('locked')->readOnly();
+    });
+    graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'quantity' => 5, 'locked' => 'changed'], ['id' => (string) $b->id, 'quantity' => 2]]]);
+    expect($root->fresh()->data)->toBe([
+        ['id' => (string) $a->id, 'quantity' => 5, 'sold' => 9, 'locked' => 'x'],
+        ['id' => (string) $b->id, 'quantity' => 2],
+    ]);
+});
+
+it('JSON picker nests inside a JSON repeater row', function () {
+    $root = GraphRoot::create();
+    $a = GraphProduct::create();
+    $form = graphForm();
+    $form->repeater('data', 'Tiers', function ($tier) {
+        $tier->text('name')->required();
+        $tier->relationPicker('gifts', 'Gifts', graphSource())->extra(fn ($gift) => $gift->number('quantity')->required());
+    });
+    graphSave($form, $root, ['data' => [['_brume' => ['key' => 'new-1'], 'name' => 'First', 'gifts' => [['id' => (string) $a->id, 'quantity' => 2]]]]]);
+    expect($root->fresh()->data)->toBe([['_brume' => ['key' => 'new-1'], 'name' => 'First', 'gifts' => [['id' => (string) $a->id, 'quantity' => 2]]]]);
+    expect($form->fields()['data']->valueFor($root->fresh()))->toBe([['_brume' => ['key' => 'new-1'], 'name' => 'First', 'gifts' => [['id' => (string) $a->id, 'quantity' => 2]]]]);
+});
+
+it('JSON picker rejects relation descendants and still requires a declared JSON owner shape', function () {
+    $form = graphForm();
+    $form->relationPicker('data', 'Gifts', graphSource())->extra(fn ($row) => $row->repeater('children', 'Children', fn ($child) => $child->text('name'))->relation('children'));
+    expect(fn () => new DeclarationRegistry($form->fields(), new GraphRoot))->toThrow(InvalidArgumentException::class, 'An Eloquent relation requires a model owner, not a JSON row.');
+});
+
+it('inactive or readonly JSON pickers keep their stored selections exactly', function (string $mode) {
+    $a = GraphProduct::create();
+    $b = GraphProduct::create();
+    $stored = [['id' => (string) $a->id, 'quantity' => 1, 'sold' => 9]];
+    $root = GraphRoot::create(['data' => $stored, 'sold' => 0]);
+    $form = graphForm();
+    $form->number('sold');
+    $picker = $form->relationPicker('data', 'Gifts', graphSource())->extra(fn ($row) => $row->number('quantity'));
+    match ($mode) {
+        'hidden' => $picker->showWhen(Conditions::eq(Conditions::root('sold'), 1)),
+        'disabled' => $picker->enableWhen(Conditions::eq(Conditions::root('sold'), 1)),
+        'readonly' => $picker->readOnly(),
+    };
+    graphSave($form, $root, ['sold' => 0, 'data' => [['id' => (string) $b->id, 'quantity' => 7]]]);
+    expect($root->fresh()->data)->toBe($stored);
+})->with(['hidden', 'disabled', 'readonly']);
+
+it('JSON picker selections drive row and root conditions', function () {
+    $a = GraphProduct::create();
+    $root = GraphRoot::create();
+    $form = graphForm();
+    $form->relationPicker('data', 'Gifts', graphSource())->extra(function ($row) {
+        $row->switch('limited')->default(false);
+        $row->number('limit')->required()->showWhen(Conditions::eq(Conditions::row('limited'), true));
+    });
+    $form->text('code')->required()->showWhen(Conditions::not(Conditions::empty(Conditions::root('data'))));
+    expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'limited' => true]], 'code' => 'x']))->toThrow(ValidationException::class);
+    expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'limited' => false]]]))->toThrow(ValidationException::class);
+    graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'limited' => false, 'limit' => 99]], 'code' => 'x']);
+    expect($root->fresh()->data)->toBe([['id' => (string) $a->id, 'limited' => false]])->and($root->fresh()->code)->toBe('x');
+    graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'limited' => true, 'limit' => 3]], 'code' => 'x']);
+    expect($root->fresh()->data)->toBe([['id' => (string) $a->id, 'limited' => true, 'limit' => 3]]);
+});

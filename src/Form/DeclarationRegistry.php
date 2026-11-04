@@ -31,11 +31,11 @@ final class DeclarationRegistry
                 if ($jsonOwner && $field->relationName() !== null) {
                     throw new InvalidArgumentException('An Eloquent relation requires a model owner, not a JSON row.');
                 }
-                if ($field instanceof RelationPicker && $field->relationName() === null) {
-                    throw new InvalidArgumentException('Picker requires a declared relation.');
+                if ($field instanceof RelationPicker && $field->relationName() === null && ($field->associationAttribute() !== null || $field->orderAttribute() !== null || $field->restoresRemoved())) {
+                    throw new InvalidArgumentException('associateBy, orderColumn and restoreRemoved require a picker relation; JSON selections keep their submitted order.');
                 }
                 $childModel = $field->relationName() !== null && $model !== null ? $field->relationship($model)->getRelated() : $model;
-                if ($field instanceof RelationPicker && $model !== null && ($relation = $field->relationship($model)) instanceof BelongsToMany) {
+                if ($field instanceof RelationPicker && $field->relationName() !== null && $model !== null && ($relation = $field->relationship($model)) instanceof BelongsToMany) {
                     $childModel = $relation->newPivot();
                 }
                 if ($field->relationName() !== null && $model !== null) {

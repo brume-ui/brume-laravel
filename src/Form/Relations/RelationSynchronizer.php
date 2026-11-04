@@ -2,6 +2,7 @@
 
 namespace Brume\Form\Relations;
 
+use Brume\Form\Fields\RelationPicker;
 use Brume\Form\Fields\Repeater;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
@@ -23,7 +24,7 @@ final class RelationSynchronizer
         $model = $node['model'];
         foreach ($node['fields'] as $path => $field) {
             if (Arr::has($node['values'], $path)) {
-                if ($field instanceof Repeater && isset($node['jsonOriginals'][$path])) {
+                if (($field instanceof Repeater || $field instanceof RelationPicker) && isset($node['jsonOriginals'][$path])) {
                     $field->fillWithOriginal($model, Arr::get($node['values'], $path), $node['jsonOriginals'][$path], $this->rootContext, $node['jsonTemplates'][$path], $node['jsonContexts'][$path]);
                 } else {
                     $field->fill($model, Arr::get($node['values'], $path));

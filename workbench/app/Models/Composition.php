@@ -17,7 +17,7 @@ class Composition extends Model
 
     protected function casts(): array
     {
-        return ['delivery' => 'boolean', 'notes' => 'array'];
+        return ['delivery' => 'boolean', 'notes' => 'array', 'picks' => 'array'];
     }
 
     public function tiers(): HasMany

@@ -9,12 +9,13 @@ use Brume\Form\JsonValues;
 use Brume\Options\OptionSource;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Arr;
 use InvalidArgumentException;
 use LogicException;
 
 class Repeater extends Field
 {
+    use WritesJsonRows;
+
     protected ?string $relationName = null;
 
     protected ?string $orderAttribute = null;
@@ -192,40 +193,8 @@ class Repeater extends Field
 
                 continue;
             }
-            // Conversion carrier only; validation already used the original nullable root.
             $raw = $original[$row['_brume']['key']] ?? [];
-            $carrier = new class extends Model {};
-            // Seed only persisted raw attributes, preserving unknown and omitted values.
-            foreach ($raw as $attribute => $storedValue) {
-                if (is_array($storedValue) || $storedValue instanceof \stdClass) {
-                    $carrier->mergeCasts([$attribute => 'json']);
-                }
-                $carrier->setAttribute($attribute, $storedValue);
-            }
-            foreach ($this->rowForm->fields() as $path => $field) {
-                if (! Arr::has($row, $path) || $field->type() === 'display' || ($field->settings()['displayOnly'] ?? false)) {
-                    continue;
-                }
-                foreach ($field->mappedAttributes() ?: [$field->attributeName()] as $attribute) {
-                    if (str_contains($attribute, '.')) {
-                        $carrier->mergeCasts([explode('.', $attribute, 2)[0] => 'array']);
-                    }
-                }
-                if ($field instanceof Repeater) {
-                    $field->fillWithOriginal($carrier, data_get($row, $path), data_get($raw, $field->attributeName(), []), $root, $template.'.*.'.$path, [...$context, ['path' => $template, 'key' => $row['_brume']['key']]]);
-                } else {
-                    if ($field instanceof Upload && ($field->settings()['multiple'] || $field->extraFields() !== [])) {
-                        $carrier->mergeCasts([explode('.', $field->attributeName())[0] => 'json']);
-                    }
-                    $field->fill($carrier, data_get($row, $path));
-                }
-            }
-            $converted = $carrier->attributesToArray();
-            foreach ($carrier->getCasts() as $attribute => $cast) {
-                if (in_array($cast, ['array', 'json'], true) && is_string($carrier->getAttributes()[$attribute] ?? null)) {
-                    $converted[$attribute] = json_decode($carrier->getAttributes()[$attribute], false, 512, JSON_THROW_ON_ERROR);
-                }
-            }
+            $converted = self::convertJsonRow($this->rowForm, $row, $raw, $root, $template.'.*', $context, ['path' => $template, 'key' => $row['_brume']['key']]);
             $stored[] = ['_brume' => $row['_brume']] + $converted;
         }
         parent::fill($record, $stored);

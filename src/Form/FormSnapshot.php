@@ -54,13 +54,15 @@ final class FormSnapshot
                 $query?->orderBy($field->orderAttribute());
             }
             $stored = $query?->get()->all() ?? [];
+        } elseif ($field instanceof RelationPicker) {
+            $stored = $json !== null ? RelationPicker::jsonRows(data_get($json, $field->attributeName()), $field->settings()['multiple']) : ($storage !== null ? $field->storedJsonRowsForContext($storage, $record) : []);
         } else {
             $stored = $json !== null ? data_get($json, $field->attributeName(), []) : ($storage !== null ? $field->storedJsonRowsForContext($storage, $record) : []);
             $stored = JsonRows::hydrate($stored ?? [], $root, $containerPath, $context);
         }
         foreach ($stored as $row) {
             if ($field instanceof RelationPicker) {
-                $id = (string) ($field->associationAttribute() !== null ? $row->getAttribute($field->associationAttribute()) : $row->getKey());
+                $id = ! $relation ? $row['id'] : (string) ($field->associationAttribute() !== null ? $row->getAttribute($field->associationAttribute()) : $row->getKey());
                 $identity = ['key' => $id, 'id' => $id];
                 $metadata = ['id' => $id];
             } else {

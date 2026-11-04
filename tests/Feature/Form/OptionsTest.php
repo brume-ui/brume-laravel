@@ -581,3 +581,36 @@ it('persists later-section picker selections with extras and hydrates their labe
         ->and(JsonSchema::errors($hydrated->json(), 'PickerSearchResponse'))->toBe([]);
     expect(formOptionsRequest($root->id, 'items', ['section' => 'current', 'value' => [(string) $later->id]])->assertOk()->json('data'))->toBe([]);
 });
+
+it('hydrates JSON picker authority and resolves extras row context from stored selections', function () {
+    $allowed = brumeUser(['username' => 'allowed', 'name' => 'Allowed']);
+    $other = brumeUser(['username' => 'other', 'name' => 'Other']);
+    $foreign = brumeUser(['username' => 'foreign', 'name' => 'Secret']);
+    $root = OptionsRecord::create(['shop_id' => 1, 'customer' => 'Root', 'status' => 'root', 'tags' => [['id' => (string) $allowed->id, 'note' => 'stored note']]]);
+    $seen = [];
+    formOptionsRoutes(function ($form) use ($allowed, $other, &$seen) {
+        $source = OptionSource::make(fn () => User::whereKey([$allowed->id, $other->id]))->label('name');
+        $form->relationPicker('tags', 'Picked', $source)->extra(function ($row) use (&$seen) {
+            $row->text('note')->default('new note');
+            $row->select('choice')->remote(OptionSource::make(function (OptionContext $context) use (&$seen) {
+                $seen[] = $context->dependencies['note'];
+
+                return OptionsRecord::query();
+            })->label('customer'), ['note' => ConditionPath::row('note')]);
+        });
+    });
+    $stored = formOptionsRequest($root->id, 'tags', ['value' => [(string) $allowed->id]])->assertOk();
+    expect($stored->json('data.0.authority.values.note'))->toBe('stored note')
+        ->and(JsonSchema::errors($stored->json(), 'PickerSearchResponse'))->toBe([]);
+    expect(formOptionsRequest($root->id, 'tags', ['value' => [(string) $other->id]])->assertOk()->json('data.0.authority.values.note'))->toBe('new note');
+    expect(formOptionsRequest($root->id, 'tags', ['value' => [(string) $foreign->id]])->assertOk()->json('data'))->toBe([]);
+    formOptionsRequest($root->id, 'tags.*.choice', [
+        'rowContext' => json_encode([['path' => 'tags', 'key' => (string) $allowed->id, 'id' => (string) $allowed->id]]),
+        'depends' => json_encode(['note' => 'stored note']),
+    ])->assertOk();
+    expect($seen)->toBe(['stored note']);
+    // A JSON row identity without the selected id, or a mismatched key, is not a picker selection.
+    formOptionsRequest($root->id, 'tags.*.choice', ['rowContext' => json_encode([['path' => 'tags', 'key' => (string) $allowed->id]]), 'depends' => json_encode(['note' => 'x'])])->assertUnprocessable();
+    formOptionsRequest($root->id, 'tags.*.choice', ['rowContext' => json_encode([['path' => 'tags', 'key' => 'other', 'id' => (string) $allowed->id]]), 'depends' => json_encode(['note' => 'x'])])->assertUnprocessable();
+    formOptionsRequest($root->id, 'tags.*.choice', ['rowContext' => json_encode([['path' => 'tags', 'key' => (string) $foreign->id, 'id' => (string) $foreign->id]]), 'depends' => json_encode(['note' => 'x'])])->assertUnprocessable();
+});

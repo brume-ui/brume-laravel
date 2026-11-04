@@ -704,3 +704,19 @@ it('round one claims exact field spelling even under a case insensitive database
     expect(app(TempUploads::class)->claim($token['token'], $form, 'FILE'))->toBeNull();
     expect(TempUpload::on('nested_uploads')->where('token', $token['token'])->exists())->toBeTrue();
 });
+
+it('JSON picker extras archive uploads by selected id and clean them when the selection is removed', function () {
+    $root = NestedUploadRecord::create();
+    $selected = NestedUploadRecord::create(['scope' => 'gift']);
+    $form = Form::make(NestedUploadRecord::class)->id('nested-files')->forRecord($root)->urls(fn ($r) => ['edit' => '/nested/'.$r->getKey()]);
+    $form->relationPicker('data', 'Gifts', OptionSource::make(fn () => NestedUploadRecord::query())->label('scope'))->extra(fn ($row) => $row->file('file'));
+    $id = (string) $selected->id;
+    $token = nestedUploadToken($form, 'data.0.file', [['path' => 'data', 'key' => $id, 'id' => $id]]);
+    nestedUploadSave($form, $root, ['data' => [['id' => $id, 'file' => ['token' => $token['token']]]]]);
+    $file = $root->fresh()->data[0]['file'];
+    expect($file)->toStartWith('brume/nested-files/')->and($root->fresh()->data[0]['id'])->toBe($id);
+    Storage::disk('public')->assertExists($file);
+    nestedUploadSave($form, $root, ['data' => []]);
+    expect($root->fresh()->data)->toBe([]);
+    Storage::disk('public')->assertMissing($file);
+});

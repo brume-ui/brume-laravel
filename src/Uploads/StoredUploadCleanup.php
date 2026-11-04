@@ -37,7 +37,8 @@ final class StoredUploadCleanup
                 continue;
             }
             if ($field->relationName() === null) {
-                foreach ($value ?? [] as $row) {
+                $rows = $field instanceof RelationPicker ? RelationPicker::jsonRows($value, $field->settings()['multiple']) : ($value ?? []);
+                foreach ($rows as $row) {
                     $files = [...$files, ...$this->walk($field->rowForm(), $owner, $row instanceof \stdClass ? get_object_vars($row) : $row)];
                 }
             } elseif ($owner !== null && $owner->exists) {
@@ -113,10 +114,12 @@ final class StoredUploadCleanup
             foreach ($entry['rowContext'] as $index => $row) {
                 $prefix = array_slice($entry['rowContext'], 0, $index);
                 foreach ($inventory['fields'] ?? [] as $container) {
-                    if (! $container['field'] instanceof Repeater || $container['field']->relationName() !== null || ! ($container['validated'] ?? false) || ! ($container['active'] ?? false) || $container['template'] !== $row['path'] || ($container['storageContext'] ?? $container['rowContext']) !== $prefix) {
+                    if (! ($container['field'] instanceof Repeater || $container['field'] instanceof RelationPicker) || $container['field']->relationName() !== null || ! ($container['validated'] ?? false) || ! ($container['active'] ?? false) || $container['template'] !== $row['path'] || ($container['storageContext'] ?? $container['rowContext']) !== $prefix) {
                         continue;
                     }
-                    $keys = array_map(fn ($item) => data_get($item, '_brume.key'), $container['value'] ?? []);
+                    $keys = $container['field'] instanceof RelationPicker
+                        ? array_map(fn ($item) => (string) data_get($item, 'id'), $container['field']->settings()['multiple'] ? ($container['value'] ?? []) : array_filter([$container['value'] ?? null]))
+                        : array_map(fn ($item) => data_get($item, '_brume.key'), $container['value'] ?? []);
                     if (! in_array($row['key'], $keys, true)) {
                         $remove = true;
                     }

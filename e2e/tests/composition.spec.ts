@@ -301,3 +301,22 @@ test("persistent gift threshold sorting preserves IDs and a newly added owner ch
   expect(fresh[2]._brume.id).not.toBe(before[1]._brume.id);
   expect(fresh[2].gifts).toEqual([]);
 });
+
+test("JSON picker keeps per-item settings in picks and reloads them under the trigger", async ({ page }) => {
+  await edit(page, 6);
+  await page.getByRole("button", { name: /^JSON 贈品 ·/ }).click();
+  const panel = page.getByRole("region", { name: "JSON 贈品", exact: true });
+  await panel.getByRole("checkbox", { name: /商品 02/ }).check();
+  await panel.getByRole("checkbox", { name: /商品 01/ }).check();
+  await panel.getByRole("switch", { name: "是否限量", exact: true }).first().click();
+  // A limited selection needs its limit before Apply commits the draft.
+  await panel.getByRole("textbox", { name: "贈送上限", exact: true }).fill("5");
+  await panel.getByRole("button", { name: "套用", exact: true }).click();
+  expect((await save(page, 6)).status()).toBe(200);
+  await page.reload();
+  const summary = page.getByRole("list", { name: "JSON 贈品", exact: true });
+  await expect(summary.getByRole("listitem")).toHaveCount(2);
+  await expect(summary.getByRole("listitem").first()).toContainText("商品 02");
+  await expect(summary.getByRole("listitem").first()).toContainText("贈送上限：5");
+  await expect(summary.getByRole("listitem").nth(1)).toContainText("是否限量：否");
+});

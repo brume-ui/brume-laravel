@@ -110,13 +110,15 @@ final class RelationPlanner
                     $relation->withTrashed();
                 }
                 $rows = $relation->lockForUpdate()->get()->all();
+            } elseif ($field instanceof RelationPicker) {
+                $rows = RelationPicker::jsonRows($stored, $field->settings()['multiple']);
             } else {
                 $rows = JsonRows::hydrate($stored ?? [], $this->root, $template.$relative, $context);
             }
             $multiple = $field instanceof Repeater || $field->settings()['multiple'];
             foreach ($rows as $index => $row) {
                 if ($field instanceof RelationPicker) {
-                    $id = (string) ($field->associationAttribute() !== null ? $row->getAttribute($field->associationAttribute()) : $row->getKey());
+                    $id = ! $relational ? $row['id'] : (string) ($field->associationAttribute() !== null ? $row->getAttribute($field->associationAttribute()) : $row->getKey());
                     $identity = ['key' => $id, 'id' => $id];
                 } else {
                     $identity = $relational ? ['key' => 'record:'.$row->getKey(), 'id' => (string) $row->getKey()] : $row['_brume'];
@@ -181,14 +183,19 @@ final class RelationPlanner
         $this->entries[$path]['relation'] = $relation;
         $this->entries[$path]['existing'] = $existing;
         $storedRows = [];
-        if (! $isRelation) {
+        $multiple = $field instanceof Repeater || $field->settings()['multiple'];
+        $jsonPicker = $field instanceof RelationPicker && ! $isRelation;
+        if ($jsonPicker) {
+            // JSON selections are identified by their selected id, never a _brume key.
+            $storedRows = $json !== null ? RelationPicker::jsonRows(data_get($json, $field->attributeName()), $multiple) : ($model->exists ? $field->storedJsonRowsForContext($model, $callback) : []);
+            $this->entries[$path]['stored'] = $storedRows;
+        } elseif (! $isRelation) {
             $storedRows = $json !== null ? data_get($json, $field->attributeName(), []) : ($model->exists ? $field->storedJsonRowsForContext($model, $callback) : []);
             $this->entries[$path]['stored'] = $storedRows;
             $storedRows = JsonRows::hydrate($storedRows ?? [], $this->root, $template.$relative, $storageContext);
         }
         $submitted = ! $storedOnly && Arr::has($input, $relative);
         // Readonly containers never use request identities. Scalar callbacks below verify picker owners first.
-        $multiple = $field instanceof Repeater || $field->settings()['multiple'];
         if ($isRelation && ! $submitted) {
             // Use only identities from the locked rows. Descendant values are resolved from
             // their own locked models, never a second unlocked snapshot of the tree.
@@ -203,7 +210,7 @@ final class RelationPlanner
             }
             $raw = $multiple ? $authoritativeRows : ($authoritativeRows[0] ?? null);
         } else {
-            $raw = $submitted ? Arr::get($input, $relative) : $storedRows;
+            $raw = $submitted ? Arr::get($input, $relative) : ($jsonPicker && ! $multiple ? ($storedRows[0] ?? null) : $storedRows);
         }
         $rows = $multiple ? ($raw ?? []) : ($raw === null ? [] : [$raw]);
         if (! is_array($rows) || ! array_is_list($rows)) {
@@ -233,6 +240,24 @@ final class RelationPlanner
                 }
                 $identity = ['key' => $id, 'id' => $id];
                 $selected = $id;
+                if ($jsonPicker) {
+                    // Stored extras of a kept selection; extras evaluate with the nullable root, like JSON rows.
+                    $matched = collect($storedRows)->first(fn ($item) => $item['id'] === $id);
+                    $childModel = $model;
+                    $childCallback = $this->root;
+                    $metadata = ['id' => $id];
+                    unset($row['id']);
+                    $seenIds[$id] = true;
+                    $seenKeys[$id] = true;
+                    $childJson = $matched ?? [];
+                    $childContext = [...$context, ['path' => $template.$relative] + $identity];
+                    $this->entries[$path]['children'][] = $childPrefix;
+                    $this->prepare($field->rowForm(), $childModel, $childCallback, $row, $childJson, $childPrefix, $childTemplate, $childContext, [...$storageContext, ['path' => $template.$relative] + $identity], $path);
+                    $this->nodes[$childPrefix] += compact('metadata', 'selected', 'matched');
+                    $this->inventory['rows'][$childPrefix] = ['path' => $rowPath, 'rowContext' => $childContext, 'owner' => null];
+
+                    continue;
+                }
                 $attribute = $field->associationAttribute() ?? $relation->getRelated()->getKeyName();
                 $matches = array_values(array_filter($existing, fn ($item) => (string) $item->getAttribute($attribute) === $id));
                 if (count($matches) > 1) {
@@ -616,10 +641,15 @@ final class RelationPlanner
                 $ids = $field instanceof RelationPicker ? array_map(fn ($child) => $this->nodes[$child]['selected'], $entry['children']) : ($field->type() === 'multipleSelect' ? ($value ?? []) : ($value === null || $value === '' ? [] : [$value]));
                 $selectedModels = $this->eligible($path, $ids);
             }
-            if (! $field instanceof RelationPicker && (! $field instanceof Repeater || $field->relationName() === null)) {
+            if (! ($field instanceof Repeater || $field instanceof RelationPicker) || $field->relationName() === null) {
                 $fields[$relative] = $field;
                 // Nested JSON remote fields still require eligibility; JSON is persisted by its declared writer.
-                if ($field instanceof Repeater) {
+                if ($field instanceof RelationPicker && ! $field->settings()['multiple']) {
+                    if ($entry['children'] !== [] && is_array($value)) {
+                        $value = $this->operations($entry['children'][0], $value)['values'];
+                    }
+                    Arr::set($values, $relative, $value);
+                } elseif ($field instanceof Repeater || $field instanceof RelationPicker) {
                     foreach ($entry['children'] as $index => $child) {
                         if (is_array($value[$index] ?? null)) {
                             $value[$index] = $this->operations($child, $value[$index])['values'];

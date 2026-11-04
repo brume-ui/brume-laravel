@@ -51,6 +51,11 @@ class CompositionController extends Resource
             $form->relationPicker('owner', '負責商品', self::source())->relation('owner')->multiple(false)->extra(fn (Form $row) => $row->text('note', '商品備註'));
             $form->relationPicker('candidates', '直接關聯商品', self::source())->relation('candidates');
             $form->relationPicker('featured', '精選商品', self::source())->relation('featured')->orderColumn('position')->extra(fn (Form $row) => $row->number('quantity', '精選數量')->min(1)->required());
+            // No relation(): the selections and their settings are stored as JSON in compositions.picks.
+            $form->relationPicker('picks', 'JSON 贈品', self::source())->help('不另建關聯表，選擇的商品與各自設定存在 picks JSON 欄位。')->extra(function (Form $row) {
+                $row->switch('limited', '是否限量')->default(false);
+                $row->number('limit', '贈送上限')->min(1)->required()->showWhen(Conditions::eq(Conditions::row('limited'), true));
+            });
         });
         $form->section('補充資料', fn (Form $form) => $this->jsonNotes($form));
         $form->section('級距與贈品', function (Form $form) use ($dependent) {
