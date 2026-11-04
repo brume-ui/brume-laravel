@@ -483,6 +483,29 @@ What's in it:
   come from the shell) in the real shell, as one registered component
   (`components/ComponentShowcase.tsx`). Its 圖表 section links to the dashboard.
 - **系統 → 管理員**: the admins list with 36 seeded admins.
+- **商品, 商品分類, 滿額贈**: the phase-2 acceptance pages, rebuilt from a real Dcat admin with
+  public declarations only (no option endpoints, temporary fields, relation-saving hooks or
+  JS in PHP strings). `CatalogSeeder` seeds them deterministically:
+  - **商品** (`/admin/products`, `ProductController`): 64 products `DEMO-001`…`DEMO-064`.
+    `DEMO-003` and `DEMO-005` are ERP-synced, so their basic fields are read-only and the total
+    limit cannot go below the sold count. Every tenth product is a preorder, and `DEMO-064` is a
+    bundle of `DEMO-001` ×2 and `DEMO-002` ×1. The form has sections for the cover and a
+    sortable gallery with links, preorder fields shown on demand, a remote category select declared with
+    `depth('tree_depth')`, and purchase limits with the computed remaining quantity.
+  - **商品分類** (`/admin/product-categories`, `ProductCategoryController`): 服飾 › 外套 and
+    家居. The edit page assigns products with a remote picker. A product picked here moves out
+    of its old category; a deselected product becomes uncategorised and is not deleted.
+  - **滿額贈** (`/admin/promotions`, `PromotionController`): one promotion with the thresholds
+    NT$500 (all gifts) and NT$1,000 (choose 1 of 2 limited gifts with historical counters).
+    Thresholds → actions → gifts save as one graph, with duplicate amounts (`500` and `500.00`)
+    rejected on client and server. 即時試算 is a registered React field
+    (`components/PromotionCalculator.tsx`) that previews the gifts for an order amount and saves
+    nothing.
+
+  Start with `composer serve` and open http://127.0.0.1:8100/admin/products,
+  `/admin/product-categories` or `/admin/promotions`. `composer serve` rebuilds and reseeds the
+  database. After editing the calculator or any other workbench `.tsx` file, run
+  `composer build-frontend` and reload.
 - Not in the menu, used by the e2e suite: `/admin/_demo/toast` (flashes the same toast every
   time) and `/admin/_demo/missing-component` (the guidance shown for an unregistered component).
 
