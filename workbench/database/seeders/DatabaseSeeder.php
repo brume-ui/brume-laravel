@@ -62,6 +62,9 @@ class DatabaseSeeder extends Seeder
         $this->call(CompositionSeeder::class);
         $this->seedOrders();
         $this->seedShowcaseItems();
+
+        // Last, so the Faker streams above (and the rows they make) stay exactly as before.
+        $this->call(CatalogSeeder::class);
     }
 
     /**

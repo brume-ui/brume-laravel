@@ -29,6 +29,11 @@ return [
         ['title' => 'workbench::menu.grid_showcase', 'icon' => 'table-properties', 'url' => '/grid-showcase'],
         ['title' => 'workbench::menu.compositions', 'icon' => 'layers', 'url' => '/compositions'],
         ['title' => 'workbench::menu.components', 'icon' => 'blocks', 'url' => '/components'],
+        ['title' => 'workbench::menu.catalog', 'icon' => 'package', 'children' => [
+            ['title' => 'workbench::menu.products', 'icon' => 'shopping-bag', 'url' => '/products'],
+            ['title' => 'workbench::menu.product_categories', 'icon' => 'folder-tree', 'url' => '/product-categories'],
+        ]],
+        ['title' => 'workbench::menu.promotions', 'icon' => 'gift', 'url' => '/promotions'],
         ['title' => 'workbench::menu.system', 'icon' => 'settings', 'children' => [
             ['title' => 'workbench::menu.admins', 'icon' => 'users', 'url' => '/users'],
         ]],
