@@ -152,7 +152,8 @@ test('create a promotion with two thresholds, nested actions and paged gifts; se
   const first = thresholds(page).nth(0);
   await field(first, '消費滿（NT$）').fill('300');
   await first.getByRole('button', { name: '新增 贈送方式', exact: true }).click();
-  // A new row starts empty: the strategy is chosen explicitly.
+  // The row template declares defaultValue 'all', but brume-ui 0.1.0-alpha.17 leaves a new nested
+  // relation row's radio unchecked (reported as a brume-ui follow-up), so the strategy is chosen explicitly.
   await actionsOf(first).nth(0).getByRole('radio', { name: '全部送', exact: true }).check();
   await pickGifts(actionsOf(first).nth(0), async (panel) => {
     await panel.getByRole('checkbox', { name: /示範商品 001/ }).check();
