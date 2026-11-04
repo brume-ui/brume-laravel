@@ -829,6 +829,10 @@ $form->relationPicker('freebies', 'Freebies', $source)->relation('freebies')
 
 `OptionSource` also accepts a Closure receiving `OptionContext` (readonly `record`, `dependencies`,
 `rowContext`) and returning a scoped Builder; `sections(labels, scope)` declares section metadata.
+Options follow the scoped Builder's own `orderBy` first (for example a stored tree path, so
+`depth()` indentation lists each child under its parent); the label and then the key order the
+rest and break ties. A single `select()` can be `clearable()`: it shows a clear button that
+returns the value to null, and `placeholder()` names that empty choice.
 Resource routes generate the options and temporary-upload endpoints and inherit the resource's
 route modifiers, authentication and scoped record lookup. No application AJAX endpoint or relation
 saving hook is needed. A remote declaration without a bound endpoint throws. Form saves validate

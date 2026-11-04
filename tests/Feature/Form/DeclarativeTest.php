@@ -430,3 +430,17 @@ it('keeps the prepared evaluation tree separate from nested submitted allowlists
         expect($e->errors())->toHaveKey('tags.0.note');
     }
 });
+
+it('declares a clearable single select with a placeholder for its empty choice', function () {
+    $form = Form::make(CellItem::class)->submitTo('post', '/cells');
+    $form->select('status', 'Status')->options(['open' => 'Open'])->clearable()->placeholder('None');
+    $form->select('customer', 'Customer')->options(['x' => 'X']);
+    expect($form->fields()['status']->toSchema())->toMatchArray(['clearable' => true, 'placeholder' => 'None'])
+        ->and($form->fields()['customer']->toSchema())->not->toHaveKey('clearable')
+        ->and($form->select('other')->clearable()->clearable(false)->toSchema())->not->toHaveKey('clearable')
+        ->and(JsonSchema::errors(['schemaVersion' => '0.4.0', 'page' => $form->toSchema(Request::create('/'))], 'PageEnvelope'))->toBe([]);
+});
+
+it('refuses clearable on choices that are not a single select', function (string $type) {
+    Form::make(CellItem::class)->{$type}('status')->clearable();
+})->with(['multipleSelect', 'radio', 'tags'])->throws(InvalidArgumentException::class);

@@ -37,6 +37,21 @@ class Select extends Field
         return $this;
     }
 
+    /** A single select shows a clear button; `placeholder()` names the empty choice it returns to (null). */
+    public function clearable(bool $on = true): static
+    {
+        if ($this->type() !== 'select') {
+            throw new \InvalidArgumentException('Only a single select can be clearable.');
+        }
+        if ($on) {
+            $this->schema['clearable'] = true;
+        } else {
+            unset($this->schema['clearable']);
+        }
+
+        return $this;
+    }
+
     protected function normalizeValue(mixed $value): mixed
     {
         $value = parent::normalizeValue($value);

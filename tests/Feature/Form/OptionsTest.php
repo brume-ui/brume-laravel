@@ -614,3 +614,22 @@ it('hydrates JSON picker authority and resolves extras row context from stored s
     formOptionsRequest($root->id, 'tags.*.choice', ['rowContext' => json_encode([['path' => 'tags', 'key' => 'other', 'id' => (string) $allowed->id]]), 'depends' => json_encode(['note' => 'x'])])->assertUnprocessable();
     formOptionsRequest($root->id, 'tags.*.choice', ['rowContext' => json_encode([['path' => 'tags', 'key' => (string) $foreign->id, 'id' => (string) $foreign->id]]), 'depends' => json_encode(['note' => 'x'])])->assertUnprocessable();
 });
+
+it('keeps a scoped source query its own declared order ahead of label and key', function () {
+    $b = brumeUser(['username' => 'b', 'name' => 'B']);
+    $a = brumeUser(['username' => 'a', 'name' => 'A']);
+    $c = brumeUser(['username' => 'c', 'name' => 'C']);
+    $ids = [$a->id, $b->id, $c->id];
+    // A declared order (here: username descending, like a stored tree path) that is neither label nor key order.
+    $source = OptionSource::make(fn () => User::query()->whereKey($ids)->orderByDesc('username'))->label('name');
+    $context = new OptionContext(null);
+    $declared = [(string) $c->id, (string) $b->id, (string) $a->id];
+
+    expect(array_column($source->response($context, [])['data'], 'value'))->toBe($declared)
+        ->and(array_column($source->response($context, [], true)['data'], 'value'))->toBe($declared)
+        ->and(array_column($source->response($context, ['per_page' => '2', 'page' => '2'])['data'], 'value'))->toBe([(string) $a->id])
+        ->and(array_column($source->response($context, ['q' => 'B'])['data'], 'value'))->toBe([(string) $b->id])
+        // Without a declared order the label, then the key, decides.
+        ->and(array_column(OptionSource::make(fn () => User::query()->whereKey($ids))->label('name')->response($context, [])['data'], 'value'))
+        ->toBe([(string) $a->id, (string) $b->id, (string) $c->id]);
+});

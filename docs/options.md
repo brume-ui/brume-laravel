@@ -32,7 +32,9 @@ model or null for a new row. A picker selected ID belongs to the selectable sour
 `label`, `search`, `columns`, and optional `depth` accept server-declared attribute identifiers.
 Hidden attributes and attributes excluded by `$visible` cannot be labels, keys, search inference,
 projections, or depths. Depth must be a nonnegative integer. Search escapes LIKE metacharacters.
-Results are ordered by declared label and primary key, and every operation clones the scoped builder.
+Results keep the scoped builder's own `orderBy` clauses first (declare a tree or position order
+there); the declared label and then the primary key order the rest and break ties. Every operation
+clones the scoped builder.
 
 `query(OptionContext): Builder` exposes the same base selectable scope for persistence eligibility.
 Task 9 must use it within its locked post-hook validation; no internal HTTP request is necessary.
