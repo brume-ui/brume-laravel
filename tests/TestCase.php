@@ -29,6 +29,8 @@ abstract class TestCase extends Orchestra
         $app['config']->set('app.key', 'base64:'.base64_encode(str_repeat('b', 32)));
         // Brume's Inertia pages live in the brume-ui packages, not in this repo.
         $app['config']->set('inertia.testing.ensure_pages_exist', false);
+        // Enforce foreign keys like the workbench's own SQLite connection and MySQL do.
+        $app['config']->set('database.connections.testing.foreign_key_constraints', true);
         // BRUME_TEST_DB=mysql runs the same suite on MySQL (the CI mysql job); SQLite otherwise.
         if (getenv('BRUME_TEST_DB') === 'mysql') {
             $app['config']->set('database.default', 'mysql');

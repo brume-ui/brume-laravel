@@ -3,6 +3,7 @@
 namespace Workbench\App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -22,5 +23,10 @@ class PromotionFreebie extends Model
     protected function casts(): array
     {
         return ['is_limited' => 'boolean'];
+    }
+
+    public function action(): BelongsTo
+    {
+        return $this->belongsTo(PromotionAction::class, 'action_id');
     }
 }

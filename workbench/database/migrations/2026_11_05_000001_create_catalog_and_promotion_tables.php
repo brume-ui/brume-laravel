@@ -10,9 +10,12 @@ return new class extends Migration
     {
         Schema::create('product_categories', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('parent_id')->nullable()->index();
+            // A parent with sub-categories cannot be deleted (the form's deleting event explains why).
+            $table->foreignId('parent_id')->nullable()->constrained('product_categories')->restrictOnDelete();
             $table->string('name');
             $table->unsignedInteger('position')->default(0);
+            // Materialized "position.id/" path per ancestor: ordering by it lists the tree depth-first.
+            $table->string('tree_path', 1000)->default('');
         });
 
         Schema::create('catalog_products', function (Blueprint $table) {
@@ -29,7 +32,8 @@ return new class extends Migration
             $table->boolean('is_preorder')->default(false);
             $table->dateTime('preorder_ships_at')->nullable();
             $table->string('preorder_note')->nullable();
-            $table->unsignedBigInteger('category_id')->nullable()->index();
+            // Deleting a category leaves its products uncategorised.
+            $table->foreignId('category_id')->nullable()->constrained('product_categories')->nullOnDelete();
             $table->boolean('is_bundle')->default(false);
             $table->unsignedInteger('per_order_limit')->nullable();
             $table->unsignedInteger('total_limit')->nullable();
@@ -40,8 +44,9 @@ return new class extends Migration
         });
 
         Schema::create('catalog_product_components', function (Blueprint $table) {
-            $table->unsignedBigInteger('bundle_id');
-            $table->unsignedBigInteger('component_id');
+            // A bundle takes its component rows with it; a component cannot go while a bundle uses it.
+            $table->foreignId('bundle_id')->constrained('catalog_products')->cascadeOnDelete();
+            $table->foreignId('component_id')->constrained('catalog_products')->restrictOnDelete();
             $table->unsignedInteger('quantity')->default(1);
             $table->unsignedInteger('position')->default(0);
             $table->primary(['bundle_id', 'component_id']);
@@ -58,14 +63,14 @@ return new class extends Migration
 
         Schema::create('promotion_conditions', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('promotion_id')->index();
+            $table->foreignId('promotion_id')->constrained('promotions')->cascadeOnDelete();
             $table->decimal('amount', 12, 2);
             $table->unsignedInteger('position')->default(0);
         });
 
         Schema::create('promotion_actions', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('condition_id')->index();
+            $table->foreignId('condition_id')->constrained('promotion_conditions')->cascadeOnDelete();
             $table->string('strategy');
             $table->unsignedInteger('choose_count')->nullable();
             $table->unsignedInteger('position')->default(0);
@@ -74,7 +79,8 @@ return new class extends Migration
 
         Schema::create('promotion_freebies', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('action_id')->index();
+            $table->foreignId('action_id')->constrained('promotion_actions')->cascadeOnDelete();
+            // No foreign key: a removed (trashed) gift row may outlive its product; live gifts block deletion in the form.
             $table->unsignedBigInteger('product_id')->index();
             $table->boolean('is_limited')->default(false);
             $table->unsignedInteger('given_limit')->nullable();

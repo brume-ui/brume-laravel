@@ -235,3 +235,10 @@ it('lists promotions with period, enabled switch and threshold count', function 
     expect(array_column($page['columns'], 'key'))->toContain('name', 'period', 'is_enabled', 'conditions_count')
         ->and($page['rows'])->toHaveCount(1);
 });
+
+it('deleting a promotion takes its thresholds, actions and gift rows with it', function () {
+    $this->postJson('/admin/promotions/_brume/actions/delete', ['target' => 'row', 'ids' => [1]])->assertOk();
+
+    expect(array_map('count', promotionGraph()))->toBe(['promotions' => 0, 'promotion_conditions' => 0, 'promotion_actions' => 0, 'promotion_freebies' => 0])
+        ->and(CatalogProduct::find(promotionProduct(11))->liveGifts()->exists())->toBeFalse();
+});

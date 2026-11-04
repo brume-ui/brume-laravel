@@ -3,6 +3,7 @@
 namespace Workbench\App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -15,6 +16,11 @@ class PromotionAction extends Model
     protected $table = 'promotion_actions';
 
     protected $guarded = [];
+
+    public function condition(): BelongsTo
+    {
+        return $this->belongsTo(PromotionCondition::class, 'condition_id');
+    }
 
     public function freebies(): HasMany
     {

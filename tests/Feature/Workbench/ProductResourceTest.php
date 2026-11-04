@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Workbench\App\Http\Controllers\ProductController;
 use Workbench\App\Models\CatalogProduct;
+use Workbench\App\Models\PromotionFreebie;
 use Workbench\Database\Seeders\CatalogSeeder;
 
 beforeEach(function () {
@@ -126,4 +127,33 @@ it('saves a seeded preorder product back unchanged', function () {
     $values = productValues($this, "/admin/products/{$product->id}/edit");
     $this->putJson("/admin/products/{$product->id}", ['values' => $values])->assertOk();
     expect($product->fresh()->preorder_note)->toBe($product->preorder_note);
+});
+
+function deleteProducts($test, array $ids)
+{
+    return $test->postJson('/admin/products/_brume/actions/delete', ['target' => count($ids) > 1 ? 'batch' : 'row', 'ids' => $ids])->assertOk();
+}
+
+it('refuses to delete a bundle component or a live gift, and deletes a bundle with its component rows', function () {
+    $id = fn (int $n) => (int) CatalogProduct::where('identifier', sprintf('DEMO-%03d', $n))->value('id');
+    $count = CatalogProduct::count();
+
+    deleteProducts($this, [$id(1)])->assertJsonPath('feedback.toast.type', 'error')
+        ->assertJsonPath('feedback.toast.message', '「示範商品 001」是組合商品「示範商品 064」的內容，請先從組合中移除再刪除。');
+    deleteProducts($this, [$id(11)])->assertJsonPath('feedback.toast.type', 'error')
+        ->assertJsonPath('feedback.toast.message', '「示範商品 011」是滿額贈「滿額贈示範」的贈品，請先移除贈品再刪除。');
+    // A refused row rolls back the whole batch.
+    deleteProducts($this, [$id(30), $id(1)])->assertJsonPath('feedback.toast.type', 'error');
+    expect(CatalogProduct::count())->toBe($count);
+
+    // Only a removed (trashed) gift row refers to DEMO-015: it does not block deletion.
+    PromotionFreebie::create(['action_id' => 1, 'product_id' => $id(15), 'position' => 9])->delete();
+    deleteProducts($this, [$id(15)]);
+    expect(CatalogProduct::whereKey($id(15))->exists())->toBeFalse();
+
+    deleteProducts($this, [$id(64)]);
+    expect(DB::table('catalog_product_components')->where('bundle_id', $id(64))->count())->toBe(0)
+        ->and(CatalogProduct::count())->toBe($count - 2);
+    deleteProducts($this, [$id(1)]);
+    expect(CatalogProduct::where('identifier', 'DEMO-001')->exists())->toBeFalse();
 });

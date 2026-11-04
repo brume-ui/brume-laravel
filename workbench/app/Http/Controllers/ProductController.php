@@ -83,7 +83,7 @@ class ProductController extends Resource
         });
         $form->section('銷售與限購', function (Form $form) {
             $form->select('category_id', '分類')
-                ->remote(OptionSource::make(ProductCategory::class)->label('name')->depth('tree_depth'));
+                ->remote(OptionSource::make(fn () => ProductCategory::query()->treeOrder())->label('name')->depth('tree_depth'));
             $form->number('per_order_limit', '每單限購')->min(1)->default(null);
             $form->number('total_limit', '總限購')->min(0)->default(null)
                 ->help('留空表示不限量；不可小於已售出數量。')
@@ -99,6 +99,20 @@ class ProductController extends Resource
             $form->relationPicker('components', '組合內容', $source)->relation('components')->orderColumn('position')->showWhen($isBundle)
                 ->extra(fn (Form $extra) => $extra->number('quantity', '數量')->min(1)->required());
         });
+        $form->deleting(fn (CatalogProduct $product) => $this->deletionBlocker($product));
+    }
+
+    /** A product still used by a bundle or handed out as a live gift stays; its references would dangle. */
+    private function deletionBlocker(CatalogProduct $product): ?Feedback
+    {
+        if (($bundle = $product->bundles()->orderBy('catalog_products.id')->first()) !== null) {
+            return Feedback::toast('error', "「{$product->name}」是組合商品「{$bundle->name}」的內容，請先從組合中移除再刪除。");
+        }
+        if (($gift = $product->liveGifts()->with('action.condition.promotion')->orderBy('id')->first()) !== null) {
+            return Feedback::toast('error', "「{$product->name}」是滿額贈「{$gift->action->condition->promotion->name}」的贈品，請先移除贈品再刪除。");
+        }
+
+        return null;
     }
 
     /** @param  Collection<int, CatalogProduct>  $products */

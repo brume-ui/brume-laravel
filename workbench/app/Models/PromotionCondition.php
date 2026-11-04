@@ -3,6 +3,7 @@
 namespace Workbench\App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PromotionCondition extends Model
@@ -16,6 +17,11 @@ class PromotionCondition extends Model
     protected function casts(): array
     {
         return ['amount' => 'decimal:2'];
+    }
+
+    public function promotion(): BelongsTo
+    {
+        return $this->belongsTo(Promotion::class);
     }
 
     public function actions(): HasMany
