@@ -11,12 +11,14 @@ use Workbench\App\Http\Controllers\AdminUserController;
 use Workbench\App\Http\Controllers\CompositionController;
 use Workbench\App\Http\Controllers\GridShowcaseController;
 use Workbench\App\Http\Controllers\OrderController;
+use Workbench\App\Http\Controllers\ProductController;
 use Workbench\App\Models\ShowcaseItem;
 
 Route::get('users', AdminUserController::class)->name('brume.users.index');
 Route::brumeResource('compositions', CompositionController::class)->names('brume.compositions');
 Route::brumeResource('orders', OrderController::class)->names('brume.orders');
 Route::brumeResource('grid-showcase', GridShowcaseController::class)->names('brume.grid-showcase');
+Route::brumeResource('products', ProductController::class)->names('brume.products');
 
 // 元件展示: one registered component (ComponentShowcase.tsx) that renders the whole brume-react kit.
 Route::get('components', fn () => Dashboard::make('元件展示')
