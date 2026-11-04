@@ -18,6 +18,7 @@ for (const scheme of ['light', 'dark'] as const) {
   for (const width of [1440, 390]) {
     for (const [name, path, heading] of [
       ['products', '/admin/products', '商品'],
+      ['product-create', '/admin/products/create', '新增商品'],
       ['product-edit', '/admin/products/64/edit', '編輯商品'],
       ['categories', '/admin/product-categories', '商品分類'],
       ['category-edit', '/admin/product-categories/1/edit', '編輯商品分類'],

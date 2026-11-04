@@ -12,6 +12,7 @@ for (const scheme of ['light', 'dark'] as const) {
   for (const width of [1440, 390]) {
     for (const [name, path, heading] of [
       ['list', '/admin/promotions', '滿額贈'],
+      ['create', '/admin/promotions/create', '新增滿額贈'],
       ['edit', '/admin/promotions/1/edit', '編輯滿額贈'],
     ] as const) {
       test(`promotions ${name} ${scheme} ${width}: axe, geometry, screenshot`, async ({ page }) => {
@@ -126,7 +127,7 @@ test('a duplicate threshold (500 beside 500.00) is rejected by the client before
   const sent = writes(page);
   await page.goto('/admin/promotions/1/edit');
   const second = field(thresholds(page).nth(1), '消費滿（NT$）');
-  // Focus first: the currency input re-renders its raw value on focus and would drop a fill made in the same tick.
+  // Works around a brume-ui currency input issue (a value set in the same tick as focus is dropped); tracked as a brume-ui follow-up.
   await second.focus();
   await second.fill('500');
   await expect(second).toHaveValue('500');

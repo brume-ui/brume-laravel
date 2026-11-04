@@ -36,7 +36,7 @@ class PromotionController extends Resource
         $grid->title('滿額贈')->description('消費滿指定金額即贈送商品；每個門檻可設定全部送或任選 N 樣。');
 
         $grid->column('name', '活動名稱')->primary();
-        $grid->column('period', '活動期間')
+        $grid->column('period', '活動期間')->width('20rem')
             ->display(fn ($value, Promotion $promotion) => $promotion->starts_at?->format('Y-m-d H:i').' ～ '.$promotion->ends_at?->format('Y-m-d H:i'));
         $grid->column('is_enabled', '啟用')->switch();
         $grid->column('conditions_count', '門檻數')->numeric();
