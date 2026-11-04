@@ -504,8 +504,8 @@ What's in it:
     Thresholds → actions → gifts save as one graph, with duplicate amounts (`500` and `500.00`)
     rejected on client and server. Removing a threshold or an action soft-deletes the rows under
     it, so gift counters stay on the trashed rows. 即時試算 is a registered React field
-    (`components/PromotionCalculator.tsx`) that previews the gifts for an order amount and saves
-    nothing.
+    (`components/PromotionCalculator.tsx`) that previews the gifts of the highest threshold an
+    order amount reaches (lower tiers are not added on top) and saves nothing.
 
   Start with `composer serve` and open http://127.0.0.1:8100/admin/products,
   `/admin/product-categories` or `/admin/promotions`. `composer serve` rebuilds and reseeds the

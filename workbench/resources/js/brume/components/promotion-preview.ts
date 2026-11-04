@@ -40,19 +40,29 @@ function previewAction(action: PreviewAction, actionIndex: number): PreviewActio
   return { kind: "choose", actionIndex, count, productIds, invalid };
 }
 
-/** Every threshold the order amount reaches, in declared order; exact integer comparison, no floats. */
+/**
+ * Only the highest threshold the order amount reaches applies (lower tiers are not added on top).
+ * Exact integer comparison, no floats. Equal amounts are a duplicate the form rejects; the first
+ * declared one wins. `thresholds` holds zero or one entry.
+ */
 export function previewPromotion(orderAmount: string, conditions: PreviewCondition[]): PreviewResult {
   const order = toCents(orderAmount);
   if (order === null) return { error: "amount" };
-  const thresholds: PreviewThreshold[] = [];
+  let best: { conditionIndex: number; cents: bigint } | null = null;
   for (const [conditionIndex, condition] of conditions.entries()) {
     const cents = toCents(condition.amount);
     if (cents === null || order < cents) continue;
-    thresholds.push({
-      conditionIndex,
-      amount: canonicalDecimal(condition.amount as string, 2) as string,
-      actions: condition.actions.map(previewAction),
-    });
+    if (best === null || cents > best.cents) best = { conditionIndex, cents };
   }
-  return { thresholds };
+  if (best === null) return { thresholds: [] };
+  const condition = conditions[best.conditionIndex];
+  return {
+    thresholds: [
+      {
+        conditionIndex: best.conditionIndex,
+        amount: canonicalDecimal(condition.amount as string, 2) as string,
+        actions: condition.actions.map(previewAction),
+      },
+    ],
+  };
 }

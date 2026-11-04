@@ -25,11 +25,12 @@ describe('previewPromotion', () => {
     });
   });
 
-  it('lists every qualifying threshold, not only the best', () => {
+  it('returns only the highest threshold reached', () => {
     const result = previewPromotion('1500', conditions);
     if ('error' in result) throw new Error('unexpected error');
-    expect(result.thresholds.map((t) => t.amount)).toEqual(['500.00', '1000.00']);
-    expect(result.thresholds[1].actions).toEqual([
+    expect(result.thresholds.map((t) => t.amount)).toEqual(['1000.00']);
+    expect(result.thresholds[0].conditionIndex).toBe(1);
+    expect(result.thresholds[0].actions).toEqual([
       { kind: 'choose', actionIndex: 0, count: 1, productIds: ['3', '4'], invalid: false },
       { kind: 'all', actionIndex: 1, productIds: ['5'], invalid: false },
     ]);
@@ -61,8 +62,19 @@ describe('previewPromotion', () => {
   it('treats 500 and 500.00 as the same threshold amount', () => {
     const result = previewPromotion('500', [{ amount: '500', actions: [] }, { amount: '500.0', actions: [] }]);
     if ('error' in result) throw new Error('unexpected error');
-    expect(result.thresholds).toHaveLength(2);
+    // Equal amounts are a duplicate the form rejects; the first declared one is shown.
+    expect(result.thresholds).toEqual([{ conditionIndex: 0, amount: '500.00', actions: [] }]);
     expect(previewPromotion('500', conditions)).toEqual(previewPromotion('500.00', conditions));
+  });
+
+  it('picks the highest reached amount regardless of declared order', () => {
+    const shuffled = [conditions[1], conditions[0]];
+    const result = previewPromotion('999.99', shuffled);
+    if ('error' in result) throw new Error('unexpected error');
+    expect(result.thresholds.map((t) => [t.conditionIndex, t.amount])).toEqual([[1, '500.00']]);
+    const top = previewPromotion('1000', shuffled);
+    if ('error' in top) throw new Error('unexpected error');
+    expect(top.thresholds.map((t) => [t.conditionIndex, t.amount])).toEqual([[0, '1000.00']]);
   });
 
   it('skips thresholds with an empty or invalid amount', () => {

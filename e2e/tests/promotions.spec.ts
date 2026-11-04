@@ -104,8 +104,9 @@ test('calculator: below, at and above thresholds; the form never turns dirty and
   await expect(result).not.toContainText('滿 NT$ 1000.00');
 
   await calculator.fill('1000');
-  await expect(result).toContainText('滿 NT$ 500.00');
+  // Only the highest tier reached applies; the 500 tier is not added on top.
   await expect(result).toContainText('滿 NT$ 1000.00');
+  await expect(result).not.toContainText('滿 NT$ 500.00');
   await expect(result).toContainText('任選 1 樣：示範商品 011、示範商品 012');
   await clean();
 

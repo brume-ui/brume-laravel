@@ -118,7 +118,7 @@ export function PromotionCalculator({ def, form, id, disabled }: FieldProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <Field label={def.label} description={def.help ?? "輸入訂單金額，依目前表單內容試算可得的贈品；不會儲存。"}>
+      <Field label={def.label} description={def.help ?? "輸入訂單金額，依目前表單內容試算可得的贈品（只送達到的最高一級門檻）；不會儲存。"}>
         <TextInput
           id={`${id}-amount`}
           inputMode="decimal"
