@@ -84,7 +84,7 @@ class CatalogSeeder extends Seeder
         ]);
 
         foreach ([[1, '500.00', 1], [2, '1000.00', 2]] as [$id, $amount, $position]) {
-            PromotionCondition::query()->updateOrCreate(['id' => $id], ['promotion_id' => 1, 'amount' => $amount, 'position' => $position]);
+            PromotionCondition::query()->withTrashed()->updateOrCreate(['id' => $id], ['promotion_id' => 1, 'amount' => $amount, 'position' => $position, 'deleted_at' => null]);
         }
 
         PromotionAction::query()->withTrashed()->updateOrCreate(['id' => 1], ['condition_id' => 1, 'strategy' => 'all', 'choose_count' => null, 'position' => 1, 'deleted_at' => null]);

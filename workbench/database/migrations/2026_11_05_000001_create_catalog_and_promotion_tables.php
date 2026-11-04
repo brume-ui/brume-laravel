@@ -66,6 +66,8 @@ return new class extends Migration
             $table->foreignId('promotion_id')->constrained('promotions')->cascadeOnDelete();
             $table->decimal('amount', 12, 2);
             $table->unsignedInteger('position')->default(0);
+            // Soft deletes keep a removed threshold's trashed actions and gift counters attached.
+            $table->softDeletes();
         });
 
         Schema::create('promotion_actions', function (Blueprint $table) {

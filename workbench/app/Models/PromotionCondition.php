@@ -5,9 +5,16 @@ namespace Workbench\App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * A threshold. Soft-deleted like its actions and gifts, so a removed threshold keeps its trashed
+ * gift rows (and their counters) attached instead of a cascading hard delete.
+ */
 class PromotionCondition extends Model
 {
+    use SoftDeletes;
+
     public $timestamps = false;
 
     protected $table = 'promotion_conditions';
