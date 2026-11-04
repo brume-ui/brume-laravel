@@ -146,6 +146,9 @@ jobs:
 
       - run: node frontend/scripts/check-package-origins.mjs
 
+      # Vitest: the pure workbench modules (the promotion preview arithmetic).
+      - run: pnpm --dir frontend test
+
       # Rebuilds the precompiled frontend and compares it byte for byte with the committed dist/.
       - id: check-dist
         run: node frontend/scripts/check-dist.mjs
