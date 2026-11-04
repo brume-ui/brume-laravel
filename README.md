@@ -788,6 +788,10 @@ Relation repeaters use `->relation('children')->orderColumn('position')`. `relat
 `extra(fn (Form $extra) => ...)`. Selected values are `{id, ...declaredFields}`, without an `extra`
 wrapper. The selected id is distinct from any intermediary child id. Direct HasMany picker
 foreign keys must be nullable; restoration requires a soft-deletable intermediary relation.
+Removing a repeater row or an intermediary also removes the rows it owns through its declared
+nested repeaters and `associateBy()` pickers (soft-deleted where the model uses `SoftDeletes`,
+keeping their files and counters; hard-deleted otherwise) and detaches its pivots; BelongsTo and
+direct HasMany selections are sources and stay as they are.
 Related-row evaluation callbacks receive the parent-owned model (the actual pivot for BTM extras);
 new associations receive null even if their source model already exists. JSON evaluation retains the
 original nullable global root. Mutating `fill`/`saveUsing` callbacks always receive the real execution

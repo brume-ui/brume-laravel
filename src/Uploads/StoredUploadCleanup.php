@@ -95,8 +95,11 @@ final class StoredUploadCleanup
                 continue;
             }
             $remove = false;
+            // A removed row takes its owned descendants with it, each deleted by its own model, so
+            // a file follows the row that stores it: a soft-deleted owner keeps it.
+            $softOwner = $entry['owner'] !== null && method_exists($entry['owner'], 'trashed') && ! $entry['owner']->isForceDeleting();
             foreach ($inventory['removed'] ?? [] as $removed) {
-                if ($removed['kind'] === 'direct' || (method_exists($removed['owner'], 'trashed') && ! $removed['owner']->isForceDeleting())) {
+                if ($removed['kind'] === 'direct' || $softOwner) {
                     continue;
                 }
                 $prefix = $removed['rowContext'];

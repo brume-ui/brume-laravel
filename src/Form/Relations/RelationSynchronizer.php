@@ -4,7 +4,10 @@ namespace Brume\Form\Relations;
 
 use Brume\Form\Fields\RelationPicker;
 use Brume\Form\Fields\Repeater;
+use Brume\Form\Form;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Arr;
 
 final class RelationSynchronizer
@@ -82,13 +85,39 @@ final class RelationSynchronizer
                     if (! $removed->save()) {
                         throw new \LogicException('The model refused deselection.');
                     }
-                } elseif (! $removed->delete()) {
-                    throw new \LogicException('The model refused removal.');
+                } else {
+                    $this->remove($removed, $operation['form']);
                 }
             }
             foreach ($operation['rows'] as $row) {
                 $this->node($row, $model, $row['binding']);
             }
+        }
+    }
+
+    /**
+     * A removed owned row takes its owned nested rows with it, deepest first: rows of nested relation
+     * repeaters and associateBy intermediaries are deleted by their own model (soft where it uses
+     * SoftDeletes), BelongsToMany pivots detach, and source-owned BelongsTo / direct HasMany
+     * selections are left exactly as they are.
+     */
+    private function remove(Model $row, Form $form): void
+    {
+        foreach ($form->fields() as $field) {
+            if (! ($field instanceof Repeater || $field instanceof RelationPicker) || $field->relationName() === null) {
+                continue;
+            }
+            $relation = $field->relationship($row);
+            if ($relation instanceof BelongsToMany) {
+                $relation->detach();
+            } elseif ($relation instanceof HasMany && ($field instanceof Repeater || $field->associationAttribute() !== null)) {
+                foreach ($relation->lockForUpdate()->get() as $child) {
+                    $this->remove($child, $field->rowForm());
+                }
+            }
+        }
+        if (! $row->delete()) {
+            throw new \LogicException('The model refused removal.');
         }
     }
 }

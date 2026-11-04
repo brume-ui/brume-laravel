@@ -242,3 +242,31 @@ it('deleting a promotion takes its thresholds, actions and gift rows with it', f
     expect(array_map('count', promotionGraph()))->toBe(['promotions' => 0, 'promotion_conditions' => 0, 'promotion_actions' => 0, 'promotion_freebies' => 0])
         ->and(CatalogProduct::find(promotionProduct(11))->liveGifts()->exists())->toBeFalse();
 });
+
+it('removing a threshold or an action trashes the rows under it with their counters', function () {
+    // Remove the 1000 threshold: its action and both gifts are trashed, counters intact.
+    $values = promotionValues($this);
+    $values['conditions'] = [$values['conditions'][0]];
+    $this->putJson('/admin/promotions/1', ['values' => $values])->assertOk();
+
+    expect(PromotionCondition::withTrashed()->findOrFail(2)->trashed())->toBeTrue()
+        ->and(PromotionAction::withTrashed()->findOrFail(2)->trashed())->toBeTrue()
+        ->and(PromotionFreebie::withTrashed()->whereKey([2, 3])->orderBy('id')->get()->map(fn ($gift) => [$gift->trashed(), $gift->given_count, $gift->already_given_count])->all())
+        ->toBe([[true, 12, 30], [true, 0, 8]])
+        ->and(Promotion::findOrFail(1)->conditions()->pluck('id')->all())->toBe([1])
+        ->and(PromotionFreebie::whereKey(1)->exists())->toBeTrue();
+
+    // Replace the 500 threshold's action with a new one: the old action's gift is trashed too.
+    $values = promotionValues($this);
+    $values['conditions'][0]['actions'] = [[
+        '_brume' => ['key' => 'replacement'], 'strategy' => 'all',
+        'freebies' => [['id' => (string) promotionProduct(20), 'is_limited' => false]],
+    ]];
+    $this->putJson('/admin/promotions/1', ['values' => $values])->assertOk();
+
+    expect(PromotionAction::withTrashed()->findOrFail(1)->trashed())->toBeTrue()
+        ->and(PromotionFreebie::withTrashed()->findOrFail(1)->trashed())->toBeTrue()
+        ->and(PromotionFreebie::query()->pluck('product_id')->all())->toBe([promotionProduct(20)])
+        // No live gift row is left under a trashed action or threshold.
+        ->and(PromotionFreebie::query()->whereDoesntHave('action.condition')->count())->toBe(0);
+});

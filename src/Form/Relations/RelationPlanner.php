@@ -711,7 +711,7 @@ final class RelationPlanner
             foreach ($removed as $removedModel) {
                 $this->inventory['removed'][] = ['path' => $path, 'template' => $node['template'].$relative, 'rowContext' => $node['storageContext'], 'kind' => $kind, 'identity' => $field instanceof RelationPicker ? (string) ($field->associationAttribute() !== null ? $removedModel->getAttribute($field->associationAttribute()) : $removedModel->getKey()) : (string) $removedModel->getKey(), 'owner' => clone $removedModel, 'form' => $field->rowForm()];
             }
-            $relations[] = ['kind' => $kind, 'name' => $name, 'rows' => $rows, 'removed' => $kind === 'pivot' ? array_map(fn ($row) => $row->getRelation($relation->getPivotAccessor())->getAttribute($relation->getRelatedPivotKeyName()), $removed) : $removed, 'foreign' => $kind !== 'pivot' ? $relation->getForeignKeyName() : null];
+            $relations[] = ['kind' => $kind, 'name' => $name, 'rows' => $rows, 'removed' => $kind === 'pivot' ? array_map(fn ($row) => $row->getRelation($relation->getPivotAccessor())->getAttribute($relation->getRelatedPivotKeyName()), $removed) : $removed, 'foreign' => $kind !== 'pivot' ? $relation->getForeignKeyName() : null, 'form' => $field->rowForm()];
         }
 
         return ['prefix' => $prefix, 'model' => $node['model'], 'fields' => $fields, 'values' => $values, 'relations' => $relations, 'restore' => false];
