@@ -1111,9 +1111,9 @@ it('JSON picker stores selected ids with extras in an array cast and reads them 
     expect(json_decode($root->fresh()->getRawOriginal('data'), true))->toBe([['id' => (string) $b->id, 'quantity' => 3], ['id' => (string) $a->id, 'quantity' => 2]]);
     expect($form->fields()['data']->valueFor($root->fresh()))->toBe([['id' => (string) $b->id, 'quantity' => 3], ['id' => (string) $a->id, 'quantity' => 2]]);
     graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'quantity' => 4]]]);
-    expect($root->fresh()->data)->toBe([['id' => (string) $a->id, 'quantity' => 4]]);
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted([['id' => (string) $a->id, 'quantity' => 4]]));
     graphSave($form, $root, ['data' => []]);
-    expect($root->fresh()->data)->toBe([]);
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted([]));
 });
 
 it('JSON picker validates eligibility, extras and identity before writing', function () {
@@ -1126,7 +1126,7 @@ it('JSON picker validates eligibility, extras and identity before writing', func
     expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $a->id]]]))->toThrow(ValidationException::class);
     expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'quantity' => 1], ['id' => (string) $a->id, 'quantity' => 2]]]))->toThrow(ValidationException::class);
     expect(fn () => graphSave($form, $root, ['data' => [['quantity' => 1]]]))->toThrow(ValidationException::class);
-    expect($root->fresh()->data)->toBe([]);
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted([]));
 });
 
 it('single JSON picker stores one object or null', function () {
@@ -1135,7 +1135,7 @@ it('single JSON picker stores one object or null', function () {
     $form = graphForm();
     $form->relationPicker('data', 'Owner', graphSource())->multiple(false)->extra(fn ($row) => $row->text('note'));
     graphSave($form, $root, ['data' => ['id' => (string) $a->id, 'note' => 'hi']]);
-    expect($root->fresh()->data)->toBe(['id' => (string) $a->id, 'note' => 'hi']);
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted(['id' => (string) $a->id, 'note' => 'hi']));
     expect($form->fields()['data']->valueFor($root->fresh()))->toBe(['id' => (string) $a->id, 'note' => 'hi']);
     graphSave($form, $root, ['data' => null]);
     expect($root->fresh()->data)->toBeNull();
@@ -1151,10 +1151,10 @@ it('JSON picker keeps undeclared stored keys of kept selections and readonly ext
         $row->text('locked')->readOnly();
     });
     graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'quantity' => 5, 'locked' => 'changed'], ['id' => (string) $b->id, 'quantity' => 2]]]);
-    expect($root->fresh()->data)->toBe([
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted([
         ['id' => (string) $a->id, 'quantity' => 5, 'sold' => 9, 'locked' => 'x'],
         ['id' => (string) $b->id, 'quantity' => 2],
-    ]);
+    ]));
 });
 
 it('JSON picker nests inside a JSON repeater row', function () {
@@ -1166,7 +1166,7 @@ it('JSON picker nests inside a JSON repeater row', function () {
         $tier->relationPicker('gifts', 'Gifts', graphSource())->extra(fn ($gift) => $gift->number('quantity')->required());
     });
     graphSave($form, $root, ['data' => [['_brume' => ['key' => 'new-1'], 'name' => 'First', 'gifts' => [['id' => (string) $a->id, 'quantity' => 2]]]]]);
-    expect($root->fresh()->data)->toBe([['_brume' => ['key' => 'new-1'], 'name' => 'First', 'gifts' => [['id' => (string) $a->id, 'quantity' => 2]]]]);
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted([['_brume' => ['key' => 'new-1'], 'name' => 'First', 'gifts' => [['id' => (string) $a->id, 'quantity' => 2]]]]));
     expect($form->fields()['data']->valueFor($root->fresh()))->toBe([['_brume' => ['key' => 'new-1'], 'name' => 'First', 'gifts' => [['id' => (string) $a->id, 'quantity' => 2]]]]);
 });
 
@@ -1190,7 +1190,7 @@ it('inactive or readonly JSON pickers keep their stored selections exactly', fun
         'readonly' => $picker->readOnly(),
     };
     graphSave($form, $root, ['sold' => 0, 'data' => [['id' => (string) $b->id, 'quantity' => 7]]]);
-    expect($root->fresh()->data)->toBe($stored);
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted($stored));
 })->with(['hidden', 'disabled', 'readonly']);
 
 it('JSON picker selections drive row and root conditions', function () {
@@ -1205,7 +1205,7 @@ it('JSON picker selections drive row and root conditions', function () {
     expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'limited' => true]], 'code' => 'x']))->toThrow(ValidationException::class);
     expect(fn () => graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'limited' => false]]]))->toThrow(ValidationException::class);
     graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'limited' => false, 'limit' => 99]], 'code' => 'x']);
-    expect($root->fresh()->data)->toBe([['id' => (string) $a->id, 'limited' => false]])->and($root->fresh()->code)->toBe('x');
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted([['id' => (string) $a->id, 'limited' => false]]))->and($root->fresh()->code)->toBe('x');
     graphSave($form, $root, ['data' => [['id' => (string) $a->id, 'limited' => true, 'limit' => 3]], 'code' => 'x']);
-    expect($root->fresh()->data)->toBe([['id' => (string) $a->id, 'limited' => true, 'limit' => 3]]);
+    expect(jsonKeysSorted($root->fresh()->data))->toBe(jsonKeysSorted([['id' => (string) $a->id, 'limited' => true, 'limit' => 3]]));
 });

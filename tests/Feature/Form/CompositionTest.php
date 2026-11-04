@@ -260,7 +260,7 @@ it('stores workbench JSON picker selections with conditional per-item limits in 
     $this->putJson('/compositions/1', ['values' => $values])->assertUnprocessable()->assertJsonValidationErrors('picks.0.limit');
     $values['picks'] = [['id' => '2', 'limited' => true, 'limit' => 5], ['id' => '1', 'limited' => false, 'limit' => 9]];
     $this->putJson('/compositions/1', ['values' => $values])->assertOk();
-    expect(Composition::find(1)->picks)->toBe([['id' => '2', 'limited' => true, 'limit' => 5], ['id' => '1', 'limited' => false]]);
+    expect(jsonKeysSorted(Composition::find(1)->picks))->toBe(jsonKeysSorted([['id' => '2', 'limited' => true, 'limit' => 5], ['id' => '1', 'limited' => false]]));
     $fresh = $this->get('/compositions/1/edit', ['X-Brume-Form' => '1'])->assertOk();
     expect($fresh->json('page.values.picks'))->toBe([['id' => '2', 'limited' => true, 'limit' => 5], ['id' => '1', 'limited' => false, 'limit' => null]])
         ->and(JsonSchema::errors($fresh->json(), 'PageEnvelope'))->toBe([]);

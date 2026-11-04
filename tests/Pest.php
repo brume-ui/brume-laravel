@@ -16,3 +16,20 @@ function brumeUser(array $attributes = []): User
         ...$attributes,
     ]);
 }
+
+/** JSON object property order is driver-defined (MySQL reorders keys); list order is kept. */
+function jsonKeysSorted(mixed $value): mixed
+{
+    if ($value instanceof stdClass) {
+        $value = get_object_vars($value);
+    }
+    if (! is_array($value)) {
+        return $value;
+    }
+    $value = array_map(jsonKeysSorted(...), $value);
+    if (! array_is_list($value)) {
+        ksort($value);
+    }
+
+    return $value;
+}
