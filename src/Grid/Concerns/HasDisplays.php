@@ -290,6 +290,12 @@ trait HasDisplays
      */
     protected static function safeUrlItem(string $type, mixed $item): mixed
     {
+        // A label looks its options up by the value's string form, where a boolean would read
+        // "true"/"false"; send 1/0 so options keyed 0 and 1 match.
+        if ($type === 'label') {
+            return is_bool($item) ? (int) $item : $item;
+        }
+
         if (! in_array($type, ['image', 'downloadable'], true)) {
             return $item;
         }

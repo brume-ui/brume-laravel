@@ -127,6 +127,15 @@ it('sends label options keyed 0, 1, ... as a JSON object', function () {
         ->toBe('{"type":"label","options":{"0":{"label":"否","tone":"neutral"},"1":{"label":"是","tone":"success"}}}');
 });
 
+it('sends a boolean attribute under a label display as 0 or 1 so label options keyed 0 and 1 match', function () {
+    $column = displayColumn('is_featured')->label([0 => '單品', 1 => '組合']);
+
+    expect($column->value(displayOrder(['is_featured' => true])))->toBe(1)
+        ->and($column->value(displayOrder(['is_featured' => false])))->toBe(0)
+        ->and($column->exportValue(displayOrder(['is_featured' => false])))->toBe('單品')
+        ->and(displayColumn('is_featured')->value(displayOrder(['is_featured' => false])))->toBeFalse();
+});
+
 it('keeps the editable rules for the cell endpoint', function () {
     expect(displayColumn()->editable(rules: 'required|max:5')->editRules())->toBe('required|max:5')
         ->and(displayColumn()->switch(['boolean'])->editRules())->toBe(['boolean'])
