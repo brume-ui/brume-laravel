@@ -67,7 +67,18 @@ final class RelationSynchronizer
             throw new \LogicException('The model refused form persistence.');
         }
         if ($trashedAt !== null && $form !== null) {
-            $this->restoreNested($model, $form, $trashedAt);
+            // Rows this save itself keeps or removes under the restored row follow the plan instead.
+            $planned = [];
+            foreach ($node['relations'] as $operation) {
+                if ($operation['kind'] === 'children') {
+                    foreach ([...$operation['removed'], ...array_column($operation['rows'], 'model')] as $row) {
+                        if ($row->exists) {
+                            $planned[$operation['name']][] = (string) $row->getKey();
+                        }
+                    }
+                }
+            }
+            $this->restoreNested($model, $form, $trashedAt, $planned);
         }
         foreach ($node['relations'] as $operation) {
             if ($operation['kind'] === 'belongsTo') {
@@ -196,9 +207,12 @@ final class RelationSynchronizer
     /**
      * Restoring a removed row also restores the soft-deletable nested rows its removal trashed:
      * those trashed at or after the row itself (see remove()). Rows trashed earlier on their own stay
-     * trashed.
+     * trashed, and so do rows the save's own plan removes or keeps ($planned keys per relation name),
+     * so a nested restorable selection that was not picked again stays removed.
+     *
+     * @param  array<string, list<string>>  $planned
      */
-    private function restoreNested(Model $row, Form $form, string $trashedAt): void
+    private function restoreNested(Model $row, Form $form, string $trashedAt, array $planned = []): void
     {
         foreach ($form->fields() as $field) {
             if (! ($field instanceof Repeater || $field instanceof RelationPicker) || $field->relationName() === null) {
@@ -210,6 +224,9 @@ final class RelationSynchronizer
             }
             $related = $relation->getRelated();
             foreach ($relation->onlyTrashed()->where($related->getQualifiedDeletedAtColumn(), '>=', $trashedAt)->lockForUpdate()->get() as $child) {
+                if (in_array((string) $child->getKey(), $planned[$field->relationName()] ?? [], true)) {
+                    continue;
+                }
                 $childTrashedAt = $child->getRawOriginal($child->getDeletedAtColumn());
                 if (! $child->restore()) {
                     throw new \LogicException('The model refused restoration.');

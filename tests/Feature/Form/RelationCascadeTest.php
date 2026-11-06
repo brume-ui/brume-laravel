@@ -119,6 +119,11 @@ class CascadeGift extends Model
         return $this->belongsToMany(CascadeProduct::class, 'cascade_gift_products', 'gift_id', 'product_id')->withPivot('quantity');
     }
 
+    public function extras()
+    {
+        return $this->hasMany(CascadeExtra::class, 'gift_id');
+    }
+
     public function sets()
     {
         return $this->belongsToMany(CascadeProduct::class, 'cascade_gift_sets', 'gift_id', 'product_id')->using(CascadeSetPivot::class);
@@ -137,6 +142,19 @@ class CascadeSetPivot extends Pivot
     {
         static::deleted(fn (self $pivot) => static::$deleted[] = [$pivot->gift_id, $pivot->product_id]);
     }
+}
+/** A restorable intermediary nested in a restorable intermediary. */
+class CascadeExtra extends Model
+{
+    use SoftDeletes;
+
+    protected $table = 'cascade_extras';
+
+    protected $guarded = [];
+
+    public $timestamps = false;
+
+    protected $connection = 'cascade_records';
 }
 /** Soft rows under a gift, with soft stamps under them: restored with the gift. */
 class CascadeMark extends Model
@@ -262,6 +280,12 @@ beforeEach(function () {
         $t->integer('quantity')->default(1);
         $t->primary(['gift_id', 'product_id']);
     });
+    Schema::connection('cascade_records')->create('cascade_extras', function ($t) {
+        $t->id();
+        $t->unsignedBigInteger('gift_id');
+        $t->unsignedBigInteger('product_id');
+        $t->softDeletes();
+    });
     Schema::connection('cascade_records')->create('cascade_gift_sets', function ($t) {
         $t->unsignedBigInteger('gift_id');
         $t->unsignedBigInteger('product_id');
@@ -282,7 +306,7 @@ afterEach(function () {
     if ($connection->transactionLevel() > 0) {
         $connection->rollBack(0);
     }
-    foreach (['cascade_gift_sets', 'cascade_gift_products', 'cascade_memos', 'cascade_stamps', 'cascade_marks', 'cascade_tier_products', 'cascade_products', 'cascade_gifts', 'cascade_notes', 'cascade_steps', 'cascade_tiers', 'cascade_roots', 'brume_uploads'] as $table) {
+    foreach (['cascade_extras', 'cascade_gift_sets', 'cascade_gift_products', 'cascade_memos', 'cascade_stamps', 'cascade_marks', 'cascade_tier_products', 'cascade_products', 'cascade_gifts', 'cascade_notes', 'cascade_steps', 'cascade_tiers', 'cascade_roots', 'brume_uploads'] as $table) {
         Schema::connection('cascade_records')->dropIfExists($table);
     }
     DB::purge('cascade_records');
@@ -309,6 +333,7 @@ function cascadeForm(CascadeRoot $root): Form
                     $gift->repeater('memos', 'Memos', fn (Form $memo) => $memo->file('file'))->relation('memos');
                     $gift->relationPicker('bundle', 'Bundle', $products)->relation('bundle')->extra(fn (Form $item) => $item->number('quantity'));
                     $gift->relationPicker('sets', 'Sets', $products)->relation('sets');
+                    $gift->relationPicker('extras', 'Extras', $products)->relation('extras')->associateBy('product_id')->restoreRemoved();
                 });
         })->relation('steps');
     })->relation('tiers');
@@ -598,3 +623,24 @@ it('detaches custom pivot classes through their model, so pivot events fire', fu
         // The plain pivot of the same gift is still detached in one statement.
         ->and(DB::connection('cascade_records')->table('cascade_gift_products')->count())->toBe(0);
 });
+
+it('restoring an intermediary keeps a nested restorable selection removed unless it is picked again', function (bool $repick) {
+    $graph = cascadeGraph();
+    ['gift' => $gift] = cascadeGiftGraph($graph);
+    $extra = $gift->extras()->create(['product_id' => $graph['owner']->id]);
+    $pick = ['id' => (string) $graph['part']->id];
+
+    cascadeSave($graph['root'], cascadeGiftValues($graph, null));
+    expect($extra->fresh()->trashed())->toBeTrue();
+    $trashedAt = $extra->fresh()->getRawOriginal('deleted_at');
+
+    $this->travel(1)->minutes();
+    cascadeSave($graph['root'], cascadeGiftValues($graph, $pick + ['extras' => $repick ? [['id' => (string) $graph['owner']->id]] : []]));
+
+    expect($gift->fresh()->trashed())->toBeFalse()
+        ->and($extra->fresh()->trashed())->toBe(! $repick)
+        ->and(CascadeExtra::withTrashed()->where('gift_id', $gift->id)->pluck('id')->all())->toBe([$extra->id]);
+    if (! $repick) {
+        expect($extra->fresh()->getRawOriginal('deleted_at'))->toBe($trashedAt);
+    }
+})->with(['not picked again' => false, 'picked again' => true]);
