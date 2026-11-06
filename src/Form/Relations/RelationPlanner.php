@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -106,7 +107,9 @@ final class RelationPlanner
                 }
                 $relation = $field->relationship($owner);
                 $this->sameConnection($relation->getRelated());
-                if ($field instanceof RelationPicker && $field->restoresRemoved()) {
+                // Trashed owned rows too: removing a hard-deleted parent force-deletes them, and
+                // cleanup then decides by whether each storing row still exists.
+                if (($field instanceof RelationPicker && $field->restoresRemoved()) || ($relation instanceof HasMany && ($field instanceof Repeater || $field->associationAttribute() !== null) && in_array(SoftDeletes::class, class_uses_recursive($relation->getRelated()), true))) {
                     $relation->withTrashed();
                 }
                 $rows = $relation->lockForUpdate()->get()->all();

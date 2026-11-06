@@ -16,6 +16,13 @@ use Illuminate\Support\Arr;
 
 final class RelationSynchronizer
 {
+    /** Removal modes, see remove(). */
+    private const RESTORABLE = 'restorable';
+
+    private const PURGE = 'purge';
+
+    private const FORCE = 'force';
+
     private ?Model $rootContext;
 
     public function save(RelationPlan $plan): void
@@ -110,7 +117,7 @@ final class RelationSynchronizer
                 // A row trashed by an earlier removal stays as it is (and keeps its removal time).
                 $removed = array_values(array_filter($operation['removed'], fn (Model $row) => ! $this->trashed($row)));
                 if ($removed !== []) {
-                    $this->remove($removed, $operation['form'], $this->softDeletes($removed[0]));
+                    $this->remove($removed, $operation['form'], $this->softDeletes($removed[0]) ? self::RESTORABLE : self::PURGE);
                 }
             }
             foreach ($operation['rows'] as $row) {
@@ -125,18 +132,20 @@ final class RelationSynchronizer
      * direct HasMany selections are sources and stay as they are. Each nested relation is handled for
      * the whole batch with one locked query.
      *
-     * A row removed by a hard delete purges its subtree, deepest first: nested rows are deleted by
-     * their own model (trashed where it uses SoftDeletes) and BelongsToMany pivots detach. A row
-     * removed by a soft delete stays restorable: it is trashed first, then only its soft-deletable
-     * nested rows are trashed (recursively, so their deleted_at is never earlier than the parent's),
-     * while other nested rows and pivots stay attached to the trashed row.
+     * RESTORABLE (a row removed by a soft delete): the row is trashed first, then only its
+     * soft-deletable nested rows are trashed (recursively, so their deleted_at is never earlier than
+     * the parent's); other nested rows and pivots stay attached to the trashed row.
+     * PURGE (a row removed by a hard delete): its subtree goes deepest first. Nested rows are deleted
+     * by their own model (trashed where it uses SoftDeletes) and pivots detach; nested rows that were
+     * already trashed would be left pointing at the deleted row, so they are force-deleted (FORCE).
+     * FORCE: the row and everything under it, trashed or not, is physically deleted.
      *
      * @param  list<Model>  $rows
      */
-    private function remove(array $rows, Form $form, bool $restorable): void
+    private function remove(array $rows, Form $form, string $mode): void
     {
-        if ($restorable) {
-            $this->delete($rows);
+        if ($mode === self::RESTORABLE) {
+            $this->delete($rows, false);
         }
         foreach ($form->fields() as $field) {
             if (! ($field instanceof Repeater || $field instanceof RelationPicker) || $field->relationName() === null) {
@@ -145,30 +154,40 @@ final class RelationSynchronizer
             // Built without its parent constraint, so the batch's keys constrain it instead.
             $relation = Relation::noConstraints(fn () => $field->relationship($rows[0]));
             if ($relation instanceof BelongsToMany) {
-                if (! $restorable) {
+                if ($mode !== self::RESTORABLE) {
                     $this->detach($field, $rows);
                 }
             } elseif ($relation instanceof HasMany && ($field instanceof Repeater || $field->associationAttribute() !== null)) {
-                if ($restorable && ! $this->softDeletes($relation->getRelated())) {
+                $soft = $this->softDeletes($relation->getRelated());
+                if ($mode === self::RESTORABLE && ! $soft) {
                     continue;
                 }
                 $relation->addEagerConstraints($rows);
+                if ($soft && $mode !== self::RESTORABLE) {
+                    $relation->withTrashed();
+                }
                 $children = $relation->lockForUpdate()->get()->all();
-                if ($children !== []) {
-                    $this->remove($children, $field->rowForm(), $restorable);
+                $trashed = array_values(array_filter($children, fn (Model $child) => $this->trashed($child)));
+                $active = array_values(array_filter($children, fn (Model $child) => ! $this->trashed($child)));
+                if ($trashed !== []) {
+                    $this->remove($trashed, $field->rowForm(), self::FORCE);
+                }
+                if ($active !== []) {
+                    $this->remove($active, $field->rowForm(), $mode);
                 }
             }
         }
-        if (! $restorable) {
-            $this->delete($rows);
+        if ($mode !== self::RESTORABLE) {
+            $this->delete($rows, $mode === self::FORCE);
         }
     }
 
     /** @param  list<Model>  $rows */
-    private function delete(array $rows): void
+    private function delete(array $rows, bool $force): void
     {
         foreach ($rows as $row) {
-            if (! $row->delete()) {
+            $deleted = $force && $this->softDeletes($row) ? $row->forceDelete() : $row->delete();
+            if (! $deleted) {
                 throw new \LogicException('The model refused removal.');
             }
         }

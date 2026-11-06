@@ -425,30 +425,30 @@ it('removing a gift intermediary leaves its siblings and restores it with its co
     Storage::disk('public')->assertExists('files/gift-0.txt');
 });
 
-/** Rebuilds steps, notes and gifts with `cascadeOnDelete` foreign keys, enforced on this connection. */
-function cascadeForeignKeys(): void
+/** Rebuilds steps, notes and gifts with enforced foreign keys: `cascadeOnDelete`, or restricting. */
+function cascadeForeignKeys(bool $cascade = true): void
 {
     $schema = Schema::connection('cascade_records');
     $schema->enableForeignKeyConstraints();
     foreach (['cascade_gifts', 'cascade_notes', 'cascade_steps'] as $table) {
         $schema->drop($table);
     }
-    $schema->create('cascade_steps', function ($t) {
+    $schema->create('cascade_steps', function ($t) use ($cascade) {
         $t->id();
-        $t->foreignId('tier_id')->constrained('cascade_tiers')->cascadeOnDelete();
+        $cascade ? $t->foreignId('tier_id')->constrained('cascade_tiers')->cascadeOnDelete() : $t->foreignId('tier_id')->constrained('cascade_tiers');
         $t->string('name')->default('step');
         $t->string('file')->nullable();
         $t->softDeletes();
     });
-    $schema->create('cascade_notes', function ($t) {
+    $schema->create('cascade_notes', function ($t) use ($cascade) {
         $t->id();
-        $t->foreignId('step_id')->constrained('cascade_steps')->cascadeOnDelete();
+        $cascade ? $t->foreignId('step_id')->constrained('cascade_steps')->cascadeOnDelete() : $t->foreignId('step_id')->constrained('cascade_steps');
         $t->string('body')->default('note');
         $t->string('file')->nullable();
     });
-    $schema->create('cascade_gifts', function ($t) {
+    $schema->create('cascade_gifts', function ($t) use ($cascade) {
         $t->id();
-        $t->foreignId('step_id')->constrained('cascade_steps')->cascadeOnDelete();
+        $cascade ? $t->foreignId('step_id')->constrained('cascade_steps')->cascadeOnDelete() : $t->foreignId('step_id')->constrained('cascade_steps');
         $t->unsignedBigInteger('product_id');
         $t->integer('sold')->default(0);
         $t->string('file')->nullable();
@@ -644,3 +644,47 @@ it('restoring an intermediary keeps a nested restorable selection removed unless
         expect($extra->fresh()->getRawOriginal('deleted_at'))->toBe($trashedAt);
     }
 })->with(['not picked again' => false, 'picked again' => true]);
+
+it('removing a hard-deleted row force-deletes its already trashed rows, so a restricting foreign key holds', function () {
+    cascadeForeignKeys(false);
+    ['root' => $root, 'tierA' => $tierA, 'tierB' => $tierB, 'steps' => $steps] = cascadeGraph();
+    $steps[0]->delete();
+
+    cascadeSave($root, ['tiers' => [cascadeRow($tierB)]]);
+
+    expect(CascadeTier::whereKey($tierA->id)->exists())->toBeFalse()
+        ->and(CascadeStep::withTrashed()->whereKey($steps[0]->id)->exists())->toBeFalse()
+        ->and(CascadeNote::where('step_id', $steps[0]->id)->exists())->toBeFalse()
+        ->and(CascadeGift::withTrashed()->where('step_id', $steps[0]->id)->exists())->toBeFalse()
+        ->and(CascadeStep::whereKey($steps[1]->id)->exists())->toBeTrue();
+    Storage::disk('public')->assertMissing(['files/tier-a.txt', 'files/step-0.txt', 'files/note-0.txt', 'files/gift-0.txt']);
+    Storage::disk('public')->assertExists(['files/step-1.txt', 'files/note-1.txt', 'files/gift-1.txt']);
+});
+
+it('cleans the files of already trashed rows under a removed hard-deleted row', function () {
+    cascadeForeignKeys();
+    ['root' => $root, 'tierA' => $tierA, 'tierB' => $tierB, 'steps' => $steps] = cascadeGraph();
+    $old = $tierA->steps()->create(['file' => 'files/old-step.txt']);
+    $old->notes()->create(['file' => 'files/old-note.txt']);
+    $old->delete();
+    Storage::disk('public')->put('files/old-step.txt', 'old');
+    Storage::disk('public')->put('files/old-note.txt', 'old');
+
+    cascadeSave($root, ['tiers' => [cascadeRow($tierB)]]);
+
+    expect(CascadeStep::withTrashed()->whereKey([$old->id, $steps[0]->id])->exists())->toBeFalse();
+    Storage::disk('public')->assertMissing(['files/old-step.txt', 'files/old-note.txt', 'files/step-0.txt']);
+    Storage::disk('public')->assertExists(['files/step-1.txt']);
+});
+
+it('keeps the files of already trashed rows under a kept row', function () {
+    ['root' => $root, 'tierA' => $tierA, 'tierB' => $tierB] = cascadeGraph();
+    $old = $tierA->steps()->create(['file' => 'files/old-step.txt']);
+    $old->delete();
+    Storage::disk('public')->put('files/old-step.txt', 'old');
+
+    cascadeSave($root, ['tiers' => [cascadeRow($tierA), cascadeRow($tierB)]]);
+
+    expect(CascadeStep::withTrashed()->findOrFail($old->id)->trashed())->toBeTrue();
+    Storage::disk('public')->assertExists('files/old-step.txt');
+});

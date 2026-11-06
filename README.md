@@ -797,7 +797,9 @@ Removing a repeater row or an intermediary also removes the rows it owns through
 nested repeaters and `associateBy()` pickers; BelongsTo and direct HasMany selections are sources
 and stay as they are. How far that goes depends on how the removed row itself goes:
 - A row that is hard-deleted takes its whole subtree: nested rows are soft-deleted where the model
-  uses `SoftDeletes` (keeping their counters) and deleted otherwise, and pivots detach.
+  uses `SoftDeletes` (keeping their counters) and deleted otherwise, and pivots detach. Nested
+  rows that were already trashed are force-deleted with everything under them, so they never
+  point at the deleted row.
 - A row that is soft-deleted stays whole so it can come back: only its soft-deletable nested rows
   are trashed with it (recursively); other nested rows and its pivots stay attached to the trashed
   row. A row that is already trashed is left as it is.
