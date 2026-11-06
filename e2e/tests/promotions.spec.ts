@@ -128,8 +128,6 @@ test('a duplicate threshold (500 beside 500.00) is rejected by the client before
   const sent = writes(page);
   await page.goto('/admin/promotions/1/edit');
   const second = field(thresholds(page).nth(1), '消費滿（NT$）');
-  // Works around a brume-ui currency input issue (a value set in the same tick as focus is dropped); tracked as a brume-ui follow-up.
-  await second.focus();
   await second.fill('500');
   await expect(second).toHaveValue('500');
   await page.getByRole('button', { name: '儲存', exact: true }).click();
@@ -153,9 +151,8 @@ test('create a promotion with two thresholds, nested actions and paged gifts; se
   const first = thresholds(page).nth(0);
   await field(first, '消費滿（NT$）').fill('300');
   await first.getByRole('button', { name: '新增 贈送方式', exact: true }).click();
-  // The row template declares defaultValue 'all', but brume-ui 0.1.0-alpha.17 leaves a new nested
-  // relation row's radio unchecked (reported as a brume-ui follow-up), so the strategy is chosen explicitly.
-  await actionsOf(first).nth(0).getByRole('radio', { name: '全部送', exact: true }).check();
+  // A new nested row starts with the template default ('all').
+  await expect(actionsOf(first).nth(0).getByRole('radio', { name: '全部送', exact: true })).toBeChecked();
   await pickGifts(actionsOf(first).nth(0), async (panel) => {
     await panel.getByRole('checkbox', { name: /示範商品 001/ }).check();
     await panel.getByRole('button', { name: '下一頁', exact: true }).click();
