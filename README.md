@@ -805,7 +805,10 @@ and stay as they are. How far that goes depends on how the removed row itself go
   row. A row that is already trashed is left as it is.
 - When `restoreRemoved()` brings an intermediary back, the nested rows its removal trashed come
   back too (rows trashed at or after it, matched by `deleted_at`). Rows trashed earlier on their
-  own stay trashed.
+  own stay trashed. A selection the same save leaves unpicked stays removed. `deleted_at` is
+  compared at the column's precision (seconds by default, and mixed precisions across tables
+  compare as stored), so a nested row trashed on its own within the same second as its parent's
+  later removal is restored with it.
 A removed row's uploaded files are deleted after commit only if the row is physically gone,
 including a soft-deletable row that a database `cascadeOnDelete` foreign key removed with its
 parent; a row that is only trashed keeps them.
