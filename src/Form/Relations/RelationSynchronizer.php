@@ -8,6 +8,8 @@ use Brume\Form\Form;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphPivot;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Arr;
@@ -163,7 +165,8 @@ final class RelationSynchronizer
 
     /**
      * Detach every pivot of the batch in one statement, keeping the relation's own pivot
-     * constraints (wherePivot...), as detach() does for one parent.
+     * constraints (wherePivot...), as detach() does for one parent. A custom pivot class (its model
+     * events, observers or SoftDeletes) or a touching relation detaches row by row through detach().
      *
      * @param  list<Model>  $rows
      */
@@ -174,7 +177,10 @@ final class RelationSynchronizer
         // newPivotQuery() ends with the single-parent constraint; widen it to the whole batch.
         $parent = end($query->wheres);
         $bindings = $query->getRawBindings()['where'];
-        if (($parent['type'] ?? null) !== 'Basic' || $parent['column'] !== $relation->getQualifiedForeignPivotKeyName() || end($bindings) !== $parent['value']) {
+        $plain = in_array($relation->getPivotClass(), [Pivot::class, MorphPivot::class], true)
+            && $relation->getRelated()->getTouchedRelations() === []
+            && ! $rows[0]->touches($relation->getRelationName());
+        if (! $plain || ($parent['type'] ?? null) !== 'Basic' || $parent['column'] !== $relation->getQualifiedForeignPivotKeyName() || end($bindings) !== $parent['value']) {
             foreach ($rows as $row) {
                 $field->relationship($row)->detach();
             }

@@ -7,6 +7,7 @@ use Brume\Form\Relations\RelationSynchronizer;
 use Brume\Options\OptionSource;
 use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -116,6 +117,25 @@ class CascadeGift extends Model
     public function bundle()
     {
         return $this->belongsToMany(CascadeProduct::class, 'cascade_gift_products', 'gift_id', 'product_id')->withPivot('quantity');
+    }
+
+    public function sets()
+    {
+        return $this->belongsToMany(CascadeProduct::class, 'cascade_gift_sets', 'gift_id', 'product_id')->using(CascadeSetPivot::class);
+    }
+}
+/** A custom pivot: detaching it must go through the model, so its events fire. */
+class CascadeSetPivot extends Pivot
+{
+    public static array $deleted = [];
+
+    protected $table = 'cascade_gift_sets';
+
+    protected $connection = 'cascade_records';
+
+    protected static function booted(): void
+    {
+        static::deleted(fn (self $pivot) => static::$deleted[] = [$pivot->gift_id, $pivot->product_id]);
     }
 }
 /** Soft rows under a gift, with soft stamps under them: restored with the gift. */
@@ -242,6 +262,11 @@ beforeEach(function () {
         $t->integer('quantity')->default(1);
         $t->primary(['gift_id', 'product_id']);
     });
+    Schema::connection('cascade_records')->create('cascade_gift_sets', function ($t) {
+        $t->unsignedBigInteger('gift_id');
+        $t->unsignedBigInteger('product_id');
+        $t->primary(['gift_id', 'product_id']);
+    });
     Schema::connection('cascade_records')->create('cascade_tier_products', function ($t) {
         $t->unsignedBigInteger('tier_id');
         $t->unsignedBigInteger('product_id');
@@ -257,7 +282,7 @@ afterEach(function () {
     if ($connection->transactionLevel() > 0) {
         $connection->rollBack(0);
     }
-    foreach (['cascade_gift_products', 'cascade_memos', 'cascade_stamps', 'cascade_marks', 'cascade_tier_products', 'cascade_products', 'cascade_gifts', 'cascade_notes', 'cascade_steps', 'cascade_tiers', 'cascade_roots', 'brume_uploads'] as $table) {
+    foreach (['cascade_gift_sets', 'cascade_gift_products', 'cascade_memos', 'cascade_stamps', 'cascade_marks', 'cascade_tier_products', 'cascade_products', 'cascade_gifts', 'cascade_notes', 'cascade_steps', 'cascade_tiers', 'cascade_roots', 'brume_uploads'] as $table) {
         Schema::connection('cascade_records')->dropIfExists($table);
     }
     DB::purge('cascade_records');
@@ -283,6 +308,7 @@ function cascadeForm(CascadeRoot $root): Form
                     $gift->repeater('marks', 'Marks', fn (Form $mark) => $mark->repeater('stamps', 'Stamps', fn (Form $stamp) => $stamp->text('name'))->relation('stamps'))->relation('marks');
                     $gift->repeater('memos', 'Memos', fn (Form $memo) => $memo->file('file'))->relation('memos');
                     $gift->relationPicker('bundle', 'Bundle', $products)->relation('bundle')->extra(fn (Form $item) => $item->number('quantity'));
+                    $gift->relationPicker('sets', 'Sets', $products)->relation('sets');
                 });
         })->relation('steps');
     })->relation('tiers');
@@ -544,7 +570,8 @@ function cascadeRemovalQueries(int $count): array
 it('removes nested rows with one query per nested relation, however many rows are removed', function () {
     // Per-row writes (each model's own delete or trash, with its events) scale with the rows;
     // reads and pivot detaches must not.
-    $batched = fn (array $queries) => array_values(array_filter($queries, fn ($sql) => str_starts_with($sql, 'select') || preg_match('/^delete from .*(tier|gift)_products/', $sql)));
+    // The custom-class pivot (sets) detaches row by row on purpose; see the pivot events test.
+    $batched = fn (array $queries) => array_values(array_filter($queries, fn ($sql) => ! str_contains($sql, 'cascade_gift_sets') && (str_starts_with($sql, 'select') || preg_match('/^delete from .*(tier|gift)_products/', $sql))));
 
     $one = $batched(cascadeRemovalQueries(1));
     $many = $batched(cascadeRemovalQueries(4));
@@ -556,4 +583,18 @@ it('removes nested rows with one query per nested relation, however many rows ar
         expect(array_filter($many, fn ($sql) => str_starts_with($sql, 'select * from "cascade_'.$table.'"') || str_starts_with($sql, 'select * from `cascade_physical_cascade_'.$table.'`')))->toHaveCount(1);
     }
     expect(array_filter($many, fn ($sql) => str_starts_with($sql, 'delete')))->toHaveCount(2);
+});
+
+it('detaches custom pivot classes through their model, so pivot events fire', function () {
+    $graph = cascadeGraph();
+    ['gift' => $gift] = cascadeGiftGraph($graph);
+    $gift->sets()->attach([$graph['part']->id, $graph['owner']->id]);
+    CascadeSetPivot::$deleted = [];
+
+    cascadeSave($graph['root'], ['tiers' => [cascadeRow($graph['tierB'])]]);
+
+    expect(DB::connection('cascade_records')->table('cascade_gift_sets')->count())->toBe(0)
+        ->and(collect(CascadeSetPivot::$deleted)->sort()->values()->all())->toBe(collect([[$gift->id, $graph['part']->id], [$gift->id, $graph['owner']->id]])->sort()->values()->all())
+        // The plain pivot of the same gift is still detached in one statement.
+        ->and(DB::connection('cascade_records')->table('cascade_gift_products')->count())->toBe(0);
 });
