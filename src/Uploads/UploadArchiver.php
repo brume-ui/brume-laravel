@@ -140,16 +140,20 @@ class UploadArchiver
             $kept = array_map(fn ($item) => is_string($item) ? $item : $item['path'], $result);
             $plans[] = [$path, $field, $multiple ? $result : ($result[0] ?? null), $rows, array_values(array_diff($owned, $kept))];
         }
-        $removed = $inventory === null ? [] : app(StoredUploadCleanup::class)->removed($inventory);
-        if ($plans === [] && $removed === []) {
+        ['files' => $removed, 'owned' => $owned] = $inventory === null ? ['files' => [], 'owned' => []] : app(StoredUploadCleanup::class)->removed($inventory);
+        if ($plans === [] && $removed === [] && $owned === []) {
             return;
         }
         $connection = $record->getConnection();
         $new = [];
         $temporary = [];
         app(UploadTransactions::class)->register($connection,
-            function () use (&$temporary, &$removed) {
+            function () use (&$temporary, &$removed, $owned) {
                 $this->cleanup(array_merge($temporary, $removed));
+                // Decided after commit: a removed row's files go only once the row is physically gone.
+                if ($owned !== []) {
+                    $this->cleanup(app(StoredUploadCleanup::class)->orphaned($owned));
+                }
             },
             function () use (&$new) {
                 $this->cleanup($new);

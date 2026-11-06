@@ -11,6 +11,7 @@ use Brume\Uploads\Support\UploadTransactions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\Concerns\AsPivot;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
@@ -72,7 +73,14 @@ final class StoredUploadCleanup
         return $files;
     }
 
-    /** Compare verified current membership to original raw ownership; omitted containers retain files. */
+    /**
+     * Compare verified current membership to original raw ownership; omitted containers retain files.
+     * `files` are removed outright (JSON rows dropped from a kept owner); `owned` pairs each storing row
+     * of a removed relation row with its files, cleaned only when that row is physically gone after the
+     * save (see orphaned()).
+     *
+     * @return array{files: list<array{0: string, 1: string}>, owned: list<array{0: Model, 1: list<array{0: string, 1: string}>}>}
+     */
     public function removed(array $inventory): array
     {
         $sourceBoundaries = [];
@@ -89,29 +97,29 @@ final class StoredUploadCleanup
         foreach ($inventory['fields'] ?? [] as $entry) {
             $current[UploadInventory::key($entry)] = $entry;
         }
-        $files = [];
+        $files = $owned = [];
         foreach ($inventory['original'] as $entry) {
             if (! $entry['field'] instanceof Upload || isset($current[UploadInventory::key($entry)])) {
                 continue;
             }
-            $remove = false;
-            // A removed row takes its owned descendants with it, each deleted by its own model, so
-            // a file follows the row that stores it: a soft-deleted owner keeps it.
-            $softOwner = $entry['owner'] !== null && method_exists($entry['owner'], 'trashed') && ! $entry['owner']->isForceDeleting();
+            $remove = $cascade = false;
+            // A removed row takes its owned descendants with it, so a file follows the row that stores
+            // it: whether that row was deleted (by its model or a database cascade) or only trashed is
+            // decided after the save.
             foreach ($inventory['removed'] ?? [] as $removed) {
-                if ($removed['kind'] === 'direct' || $softOwner) {
+                if ($removed['kind'] === 'direct') {
                     continue;
                 }
                 $prefix = $removed['rowContext'];
                 $row = $entry['rowContext'][count($prefix)] ?? null;
                 if (array_slice($entry['rowContext'], 0, count($prefix)) === $prefix && ($row['path'] ?? null) === $removed['template'] && ($row['id'] ?? null) === $removed['identity']) {
-                    $owned = true;
+                    $ownedRow = true;
                     foreach (array_slice($entry['rowContext'], count($prefix) + 1, null, true) as $index => $descendant) {
                         if (isset($sourceBoundaries[json_encode([$descendant['path'], array_slice($entry['rowContext'], 0, $index)], JSON_THROW_ON_ERROR)])) {
-                            $owned = false;
+                            $ownedRow = false;
                         }
                     }
-                    $remove = $remove || $owned;
+                    $cascade = $cascade || $ownedRow;
                 }
             }
             foreach ($entry['rowContext'] as $index => $row) {
@@ -128,8 +136,58 @@ final class StoredUploadCleanup
                     }
                 }
             }
-            if ($remove) {
+            if ($remove || ($cascade && $entry['owner'] === null)) {
                 $files = [...$files, ...$this->files($entry['field'], $entry['stored'])];
+            } elseif ($cascade) {
+                $owned[] = [$entry['owner'], $this->files($entry['field'], $entry['stored'])];
+            }
+        }
+
+        return ['files' => array_values(array_unique($files, SORT_REGULAR)), 'owned' => $owned];
+    }
+
+    /**
+     * Files of removed rows that no longer physically exist, trashed or not (a soft-deletable row can
+     * still be deleted by a database cascade). Run after the save: trashed rows keep their files.
+     *
+     * @param  list<array{0: Model, 1: list<array{0: string, 1: string}>}>  $owned
+     * @return list<array{0: string, 1: string}>
+     */
+    public function orphaned(array $owned): array
+    {
+        $groups = [];
+        $files = [];
+        foreach ($owned as [$owner, $ownerFiles]) {
+            if ($ownerFiles === []) {
+                continue;
+            }
+            if (in_array(AsPivot::class, class_uses_recursive($owner), true) && $owner->getAttribute($owner->getKeyName()) === null) {
+                // Pivots without their own key are identified by both pivot keys, like Eloquent does.
+                $exists = $owner->newQueryWithoutScopes()
+                    ->where($owner->getForeignKey(), $owner->getAttribute($owner->getForeignKey()))
+                    ->where($owner->getRelatedKey(), $owner->getAttribute($owner->getRelatedKey()))
+                    ->exists();
+                if (! $exists) {
+                    $files = [...$files, ...$ownerFiles];
+                }
+
+                continue;
+            }
+            $group = get_class($owner).'|'.$owner->getConnectionName();
+            $groups[$group]['model'] ??= $owner;
+            $groups[$group]['rows'][] = [(string) $owner->getKey(), $ownerFiles];
+        }
+        foreach ($groups as ['model' => $model, 'rows' => $rows]) {
+            // Without scopes, so a trashed row counts as present.
+            $present = $model->newQueryWithoutScopes()
+                ->whereIn($model->getQualifiedKeyName(), array_values(array_unique(array_column($rows, 0))))
+                ->pluck($model->getKeyName())
+                ->map(fn ($key) => (string) $key)
+                ->all();
+            foreach ($rows as [$key, $ownerFiles]) {
+                if (! in_array($key, $present, true)) {
+                    $files = [...$files, ...$ownerFiles];
+                }
             }
         }
 

@@ -287,3 +287,49 @@ it('removing a gift intermediary leaves its siblings and restores it with its co
     expect($gift->fresh()->trashed())->toBeFalse()->and($gift->fresh()->sold)->toBe(7)->and(CascadeGift::withTrashed()->where('step_id', $steps[0]->id)->count())->toBe(1);
     Storage::disk('public')->assertExists('files/gift-0.txt');
 });
+
+/** Rebuilds steps, notes and gifts with `cascadeOnDelete` foreign keys, enforced on this connection. */
+function cascadeForeignKeys(): void
+{
+    $schema = Schema::connection('cascade_records');
+    $schema->enableForeignKeyConstraints();
+    foreach (['cascade_gifts', 'cascade_notes', 'cascade_steps'] as $table) {
+        $schema->drop($table);
+    }
+    $schema->create('cascade_steps', function ($t) {
+        $t->id();
+        $t->foreignId('tier_id')->constrained('cascade_tiers')->cascadeOnDelete();
+        $t->string('name')->default('step');
+        $t->string('file')->nullable();
+        $t->softDeletes();
+    });
+    $schema->create('cascade_notes', function ($t) {
+        $t->id();
+        $t->foreignId('step_id')->constrained('cascade_steps')->cascadeOnDelete();
+        $t->string('body')->default('note');
+        $t->string('file')->nullable();
+    });
+    $schema->create('cascade_gifts', function ($t) {
+        $t->id();
+        $t->foreignId('step_id')->constrained('cascade_steps')->cascadeOnDelete();
+        $t->unsignedBigInteger('product_id');
+        $t->integer('sold')->default(0);
+        $t->string('file')->nullable();
+        $t->softDeletes();
+    });
+}
+
+it('cleans the files of soft-deletable rows that a database cascade physically deleted', function () {
+    cascadeForeignKeys();
+    ['root' => $root, 'tierA' => $tierA, 'tierB' => $tierB, 'steps' => $steps] = cascadeGraph();
+
+    cascadeSave($root, ['tiers' => [cascadeRow($tierB)]]);
+
+    // The step and gift were trashed first, then the tier's delete cascaded them away for good.
+    expect(CascadeTier::whereKey($tierA->id)->exists())->toBeFalse()
+        ->and(CascadeStep::withTrashed()->whereKey($steps[0]->id)->exists())->toBeFalse()
+        ->and(CascadeGift::withTrashed()->where('step_id', $steps[0]->id)->exists())->toBeFalse()
+        ->and(CascadeStep::whereKey($steps[1]->id)->exists())->toBeTrue();
+    Storage::disk('public')->assertMissing(['files/tier-a.txt', 'files/step-0.txt', 'files/gift-0.txt', 'files/note-0.txt']);
+    Storage::disk('public')->assertExists(['files/owner.txt', 'files/picked.txt', 'files/step-1.txt', 'files/note-1.txt', 'files/gift-1.txt']);
+});

@@ -797,6 +797,9 @@ Removing a repeater row or an intermediary also removes the rows it owns through
 nested repeaters and `associateBy()` pickers (soft-deleted where the model uses `SoftDeletes`,
 keeping their files and counters; hard-deleted otherwise) and detaches its pivots; BelongsTo and
 direct HasMany selections are sources and stay as they are.
+A removed row's uploaded files are deleted after commit only if the row is physically gone,
+including a soft-deletable row that a database `cascadeOnDelete` foreign key removed with its
+parent; a row that is only trashed keeps them.
 Related-row evaluation callbacks receive the parent-owned model (the actual pivot for BTM extras);
 new associations receive null even if their source model already exists. JSON evaluation retains the
 original nullable global root. Mutating `fill`/`saveUsing` callbacks always receive the real execution
