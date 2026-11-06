@@ -8,6 +8,7 @@ use Brume\Form\Form;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Arr;
 
@@ -94,10 +95,9 @@ final class RelationSynchronizer
                 }
             } else {
                 // A row trashed by an earlier removal stays as it is (and keeps its removal time).
-                foreach ($operation['removed'] as $removed) {
-                    if (! $this->trashed($removed)) {
-                        $this->remove($removed, $operation['form'], $this->softDeletes($removed));
-                    }
+                $removed = array_values(array_filter($operation['removed'], fn (Model $row) => ! $this->trashed($row)));
+                if ($removed !== []) {
+                    $this->remove($removed, $operation['form'], $this->softDeletes($removed[0]));
                 }
             }
             foreach ($operation['rows'] as $row) {
@@ -107,49 +107,84 @@ final class RelationSynchronizer
     }
 
     /**
-     * A removed owned row takes its owned nested rows with it through declared nested relation
-     * repeaters and associateBy() intermediaries; BelongsTo and direct HasMany selections are sources
-     * and stay as they are.
+     * Removed owned rows (all of one relation, so of one model) take their owned nested rows with
+     * them through declared nested relation repeaters and associateBy() intermediaries; BelongsTo and
+     * direct HasMany selections are sources and stay as they are. Each nested relation is handled for
+     * the whole batch with one locked query.
      *
      * A row removed by a hard delete purges its subtree, deepest first: nested rows are deleted by
      * their own model (trashed where it uses SoftDeletes) and BelongsToMany pivots detach. A row
      * removed by a soft delete stays restorable: it is trashed first, then only its soft-deletable
      * nested rows are trashed (recursively, so their deleted_at is never earlier than the parent's),
      * while other nested rows and pivots stay attached to the trashed row.
+     *
+     * @param  list<Model>  $rows
      */
-    private function remove(Model $row, Form $form, bool $restorable): void
+    private function remove(array $rows, Form $form, bool $restorable): void
     {
         if ($restorable) {
-            $this->delete($row);
+            $this->delete($rows);
         }
         foreach ($form->fields() as $field) {
             if (! ($field instanceof Repeater || $field instanceof RelationPicker) || $field->relationName() === null) {
                 continue;
             }
-            $relation = $field->relationship($row);
+            // Built without its parent constraint, so the batch's keys constrain it instead.
+            $relation = Relation::noConstraints(fn () => $field->relationship($rows[0]));
             if ($relation instanceof BelongsToMany) {
                 if (! $restorable) {
-                    $relation->detach();
+                    $this->detach($field, $rows);
                 }
             } elseif ($relation instanceof HasMany && ($field instanceof Repeater || $field->associationAttribute() !== null)) {
                 if ($restorable && ! $this->softDeletes($relation->getRelated())) {
                     continue;
                 }
-                foreach ($relation->lockForUpdate()->get() as $child) {
-                    $this->remove($child, $field->rowForm(), $restorable);
+                $relation->addEagerConstraints($rows);
+                $children = $relation->lockForUpdate()->get()->all();
+                if ($children !== []) {
+                    $this->remove($children, $field->rowForm(), $restorable);
                 }
             }
         }
         if (! $restorable) {
-            $this->delete($row);
+            $this->delete($rows);
         }
     }
 
-    private function delete(Model $row): void
+    /** @param  list<Model>  $rows */
+    private function delete(array $rows): void
     {
-        if (! $row->delete()) {
-            throw new \LogicException('The model refused removal.');
+        foreach ($rows as $row) {
+            if (! $row->delete()) {
+                throw new \LogicException('The model refused removal.');
+            }
         }
+    }
+
+    /**
+     * Detach every pivot of the batch in one statement, keeping the relation's own pivot
+     * constraints (wherePivot...), as detach() does for one parent.
+     *
+     * @param  list<Model>  $rows
+     */
+    private function detach(Repeater|RelationPicker $field, array $rows): void
+    {
+        $relation = $field->relationship($rows[0]);
+        $query = $relation->newPivotQuery();
+        // newPivotQuery() ends with the single-parent constraint; widen it to the whole batch.
+        $parent = end($query->wheres);
+        $bindings = $query->getRawBindings()['where'];
+        if (($parent['type'] ?? null) !== 'Basic' || $parent['column'] !== $relation->getQualifiedForeignPivotKeyName() || end($bindings) !== $parent['value']) {
+            foreach ($rows as $row) {
+                $field->relationship($row)->detach();
+            }
+
+            return;
+        }
+        array_pop($query->wheres);
+        array_pop($bindings);
+        $query->setBindings($bindings, 'where');
+        $query->whereIn($relation->getQualifiedForeignPivotKeyName(), array_map(fn (Model $row) => $row->getAttribute($relation->getParentKeyName()), $rows))->delete();
     }
 
     /**

@@ -2,6 +2,8 @@
 
 use Brume\Form\Form;
 use Brume\Form\FormSaver;
+use Brume\Form\Relations\RelationPlanner;
+use Brume\Form\Relations\RelationSynchronizer;
 use Brume\Options\OptionSource;
 use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Eloquent\Model;
@@ -502,4 +504,56 @@ it('removing a hard-deleted row still purges the nested rows and pivots under it
         ->and(DB::connection('cascade_records')->table('cascade_tier_products')->where('tier_id', $graph['tierA']->id)->exists())->toBeFalse();
     Storage::disk('public')->assertMissing(['files/memo.txt', 'files/tier-a.txt', 'files/note-0.txt']);
     Storage::disk('public')->assertExists(['files/gift-0.txt', 'files/step-0.txt']);
+});
+
+/** Statements the synchronizer issues while removing every tier of a graph with $count populated tiers. */
+function cascadeRemovalQueries(int $count): array
+{
+    $root = CascadeRoot::create();
+    $part = CascadeProduct::create(['name' => 'part']);
+    foreach (range(1, $count) as $index) {
+        $tier = $root->tiers()->create();
+        $tier->parts()->attach($part->id);
+        foreach ([1, 2] as $step) {
+            $step = $tier->steps()->create();
+            $step->notes()->create();
+            $gift = $step->gifts()->create(['product_id' => $part->id]);
+            $gift->marks()->create()->stamps()->create();
+            $gift->memos()->create();
+            $gift->bundle()->attach($part->id);
+        }
+    }
+    $connection = DB::connection('cascade_records');
+    $connection->beginTransaction();
+    try {
+        $form = cascadeForm($root);
+        $form->forRecord($root)->initializeForSave();
+        $plan = (new RelationPlanner)->plan($form, $root, ['tiers' => []], $root);
+        $connection->flushQueryLog();
+        $connection->enableQueryLog();
+        (new RelationSynchronizer)->save($plan);
+        $connection->disableQueryLog();
+        $queries = array_column($connection->getQueryLog(), 'query');
+    } finally {
+        $connection->rollBack();
+    }
+
+    return $queries;
+}
+
+it('removes nested rows with one query per nested relation, however many rows are removed', function () {
+    // Per-row writes (each model's own delete or trash, with its events) scale with the rows;
+    // reads and pivot detaches must not.
+    $batched = fn (array $queries) => array_values(array_filter($queries, fn ($sql) => str_starts_with($sql, 'select') || preg_match('/^delete from .*(tier|gift)_products/', $sql)));
+
+    $one = $batched(cascadeRemovalQueries(1));
+    $many = $batched(cascadeRemovalQueries(4));
+
+    // tiers → parts, steps → notes, gifts → marks → stamps, memos, bundle.
+    expect(count($many))->toBe(count($one));
+    // One locked read per nested relation, one detach per pivot relation, for 4 tiers / 8 steps / 8 gifts.
+    foreach (['steps', 'notes', 'gifts', 'marks', 'stamps', 'memos'] as $table) {
+        expect(array_filter($many, fn ($sql) => str_starts_with($sql, 'select * from "cascade_'.$table.'"') || str_starts_with($sql, 'select * from `cascade_physical_cascade_'.$table.'`')))->toHaveCount(1);
+    }
+    expect(array_filter($many, fn ($sql) => str_starts_with($sql, 'delete')))->toHaveCount(2);
 });
