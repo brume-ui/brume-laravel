@@ -270,7 +270,7 @@ test("persistent gift branches validate active fields and reload inactive stored
   await expect(first.getByRole("textbox", { name: "優惠券代碼", exact: true })).toHaveValue("CORRECTED-9");
 });
 
-test("persistent gift threshold sorting preserves IDs and a newly added owner chooses its type explicitly", async ({ page }) => {
+test("persistent gift threshold sorting preserves IDs and a newly added owner starts at the default type", async ({ page }) => {
   await edit(page, 10);
   const before = await storedGifts(page, 10);
   await thresholds(page).nth(0).getByRole("radio", { name: "點數", exact: true }).check();
@@ -286,8 +286,8 @@ test("persistent gift threshold sorting preserves IDs and a newly added owner ch
   expect(sorted[1].gifts).toEqual(before[0].gifts);
   await page.getByRole("button", { name: "新增 門檻", exact: true }).click();
   const added = thresholds(page).nth(2);
-  // Published alpha14 creates an empty row draft; defaultValue is not an initializer.
-  await expect(added.getByRole("radio", { name: "商品", exact: true })).not.toBeChecked();
+  // A new row starts with the template default (商品); the user switches it to 點數.
+  await expect(added.getByRole("radio", { name: "商品", exact: true })).toBeChecked();
   await added.getByRole("textbox", { name: "門檻名稱", exact: true }).fill("新增點數門檻");
   await added.getByRole("textbox", { name: "門檻金額", exact: true }).fill("300.00");
   await added.getByRole("radio", { name: "點數", exact: true }).check();
