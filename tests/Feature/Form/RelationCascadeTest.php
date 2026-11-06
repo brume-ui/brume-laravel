@@ -100,6 +100,62 @@ class CascadeGift extends Model
     public $timestamps = false;
 
     protected $connection = 'cascade_records';
+
+    public function marks()
+    {
+        return $this->hasMany(CascadeMark::class, 'gift_id');
+    }
+
+    public function memos()
+    {
+        return $this->hasMany(CascadeMemo::class, 'gift_id');
+    }
+
+    public function bundle()
+    {
+        return $this->belongsToMany(CascadeProduct::class, 'cascade_gift_products', 'gift_id', 'product_id')->withPivot('quantity');
+    }
+}
+/** Soft rows under a gift, with soft stamps under them: restored with the gift. */
+class CascadeMark extends Model
+{
+    use SoftDeletes;
+
+    protected $table = 'cascade_marks';
+
+    protected $guarded = [];
+
+    public $timestamps = false;
+
+    protected $connection = 'cascade_records';
+
+    public function stamps()
+    {
+        return $this->hasMany(CascadeStamp::class, 'mark_id');
+    }
+}
+class CascadeStamp extends Model
+{
+    use SoftDeletes;
+
+    protected $table = 'cascade_stamps';
+
+    protected $guarded = [];
+
+    public $timestamps = false;
+
+    protected $connection = 'cascade_records';
+}
+/** Hard rows under a gift: kept on a trashed gift, deleted with a purged one. */
+class CascadeMemo extends Model
+{
+    protected $table = 'cascade_memos';
+
+    protected $guarded = [];
+
+    public $timestamps = false;
+
+    protected $connection = 'cascade_records';
 }
 class CascadeProduct extends Model
 {
@@ -161,6 +217,29 @@ beforeEach(function () {
         $t->string('name')->default('product');
         $t->string('file')->nullable();
     });
+    Schema::connection('cascade_records')->create('cascade_marks', function ($t) {
+        $t->id();
+        $t->unsignedBigInteger('gift_id');
+        $t->string('name')->default('mark');
+        $t->softDeletes();
+    });
+    Schema::connection('cascade_records')->create('cascade_stamps', function ($t) {
+        $t->id();
+        $t->unsignedBigInteger('mark_id');
+        $t->string('name')->default('stamp');
+        $t->softDeletes();
+    });
+    Schema::connection('cascade_records')->create('cascade_memos', function ($t) {
+        $t->id();
+        $t->unsignedBigInteger('gift_id');
+        $t->string('file')->nullable();
+    });
+    Schema::connection('cascade_records')->create('cascade_gift_products', function ($t) {
+        $t->unsignedBigInteger('gift_id');
+        $t->unsignedBigInteger('product_id');
+        $t->integer('quantity')->default(1);
+        $t->primary(['gift_id', 'product_id']);
+    });
     Schema::connection('cascade_records')->create('cascade_tier_products', function ($t) {
         $t->unsignedBigInteger('tier_id');
         $t->unsignedBigInteger('product_id');
@@ -176,7 +255,7 @@ afterEach(function () {
     if ($connection->transactionLevel() > 0) {
         $connection->rollBack(0);
     }
-    foreach (['cascade_tier_products', 'cascade_products', 'cascade_gifts', 'cascade_notes', 'cascade_steps', 'cascade_tiers', 'cascade_roots', 'brume_uploads'] as $table) {
+    foreach (['cascade_gift_products', 'cascade_memos', 'cascade_stamps', 'cascade_marks', 'cascade_tier_products', 'cascade_products', 'cascade_gifts', 'cascade_notes', 'cascade_steps', 'cascade_tiers', 'cascade_roots', 'brume_uploads'] as $table) {
         Schema::connection('cascade_records')->dropIfExists($table);
     }
     DB::purge('cascade_records');
@@ -197,7 +276,12 @@ function cascadeForm(CascadeRoot $root): Form
             $step->file('file');
             $step->repeater('notes', 'Notes', fn (Form $note) => $note->file('file'))->relation('notes');
             $step->relationPicker('gifts', 'Gifts', $products)->relation('gifts')->associateBy('product_id')->restoreRemoved()
-                ->extra(fn (Form $gift) => $gift->file('file'));
+                ->extra(function (Form $gift) use ($products) {
+                    $gift->file('file');
+                    $gift->repeater('marks', 'Marks', fn (Form $mark) => $mark->repeater('stamps', 'Stamps', fn (Form $stamp) => $stamp->text('name'))->relation('stamps'))->relation('marks');
+                    $gift->repeater('memos', 'Memos', fn (Form $memo) => $memo->file('file'))->relation('memos');
+                    $gift->relationPicker('bundle', 'Bundle', $products)->relation('bundle')->extra(fn (Form $item) => $item->number('quantity'));
+                });
         })->relation('steps');
     })->relation('tiers');
 
@@ -261,19 +345,19 @@ it('removing a hard-deleted row removes its owned nested rows: soft where they s
     Storage::disk('public')->assertExists(['files/step-0.txt', 'files/gift-0.txt', 'files/owner.txt', 'files/picked.txt', 'files/step-1.txt', 'files/note-1.txt', 'files/gift-1.txt']);
 });
 
-it('removing a soft-deleted row trashes its soft gifts and hard-deletes its notes', function () {
+it('removing a soft-deleted row trashes its soft gifts and keeps its notes attached', function () {
     ['root' => $root, 'tierA' => $tierA, 'tierB' => $tierB, 'steps' => $steps] = cascadeGraph();
 
     cascadeSave($root, ['tiers' => [cascadeRow($tierA, ['steps' => []]), cascadeRow($tierB)]]);
 
     expect(CascadeStep::withTrashed()->findOrFail($steps[0]->id)->trashed())->toBeTrue()
         ->and(CascadeGift::withTrashed()->where('step_id', $steps[0]->id)->get()->map(fn ($gift) => [$gift->trashed(), $gift->sold])->all())->toBe([[true, 7]])
-        ->and(CascadeNote::where('step_id', $steps[0]->id)->exists())->toBeFalse()
+        // A trashed row stays whole: its non-soft-deletable notes stay attached to it.
+        ->and(CascadeNote::where('step_id', $steps[0]->id)->count())->toBe(1)
         ->and(CascadeTier::whereKey($tierA->id)->exists())->toBeTrue()
         ->and(DB::connection('cascade_records')->table('cascade_tier_products')->where('tier_id', $tierA->id)->value('quantity'))->toBe(3)
         ->and(CascadeGift::where('step_id', $steps[1]->id)->count())->toBe(1);
-    Storage::disk('public')->assertMissing('files/note-0.txt');
-    Storage::disk('public')->assertExists(['files/step-0.txt', 'files/gift-0.txt', 'files/tier-a.txt']);
+    Storage::disk('public')->assertExists(['files/step-0.txt', 'files/gift-0.txt', 'files/note-0.txt', 'files/tier-a.txt']);
 });
 
 it('removing a gift intermediary leaves its siblings and restores it with its counters', function () {
@@ -332,4 +416,90 @@ it('cleans the files of soft-deletable rows that a database cascade physically d
         ->and(CascadeStep::whereKey($steps[1]->id)->exists())->toBeTrue();
     Storage::disk('public')->assertMissing(['files/tier-a.txt', 'files/step-0.txt', 'files/gift-0.txt', 'files/note-0.txt']);
     Storage::disk('public')->assertExists(['files/owner.txt', 'files/picked.txt', 'files/step-1.txt', 'files/note-1.txt', 'files/gift-1.txt']);
+});
+
+/** Gives step one's gift two marks (one with a stamp), a memo and a bundled part. */
+function cascadeGiftGraph(array $graph): array
+{
+    $gift = CascadeGift::where('step_id', $graph['steps'][0]->id)->firstOrFail();
+    [$mark, $loose] = [$gift->marks()->create(), $gift->marks()->create(['name' => 'loose'])];
+    $stamp = $mark->stamps()->create();
+    $memo = $gift->memos()->create(['file' => 'files/memo.txt']);
+    $gift->bundle()->attach($graph['part']->id, ['quantity' => 2]);
+    Storage::disk('public')->put('files/memo.txt', 'memo');
+
+    return compact('gift', 'mark', 'loose', 'stamp', 'memo');
+}
+
+function cascadeGiftValues(array $graph, ?array $gift): array
+{
+    return ['tiers' => [cascadeRow($graph['tierA'], ['steps' => [cascadeRow($graph['steps'][0], ['gifts' => $gift === null ? [] : [$gift]])]]), cascadeRow($graph['tierB'])]];
+}
+
+it('restoring a removed intermediary restores the rows its removal trashed and keeps its other rows and pivots', function () {
+    $graph = cascadeGraph();
+    ['gift' => $gift, 'mark' => $mark, 'loose' => $loose, 'stamp' => $stamp, 'memo' => $memo] = cascadeGiftGraph($graph);
+    $pick = ['id' => (string) $graph['part']->id];
+
+    // Trashed on its own first: the gift's removal and restoration must leave it alone.
+    cascadeSave($graph['root'], cascadeGiftValues($graph, $pick + ['marks' => [cascadeRow($mark)]]));
+    $looseTrashedAt = CascadeMark::withTrashed()->findOrFail($loose->id)->getRawOriginal('deleted_at');
+    expect($looseTrashedAt)->not->toBeNull();
+
+    $this->travel(1)->minutes();
+    cascadeSave($graph['root'], cascadeGiftValues($graph, null));
+
+    $pivot = fn () => DB::connection('cascade_records')->table('cascade_gift_products')->where('gift_id', $gift->id)->pluck('quantity', 'product_id')->all();
+    expect($gift->fresh()->trashed())->toBeTrue()
+        ->and(CascadeMark::withTrashed()->findOrFail($mark->id)->trashed())->toBeTrue()
+        ->and(CascadeStamp::withTrashed()->findOrFail($stamp->id)->trashed())->toBeTrue()
+        ->and(CascadeMark::withTrashed()->findOrFail($loose->id)->getRawOriginal('deleted_at'))->toBe($looseTrashedAt)
+        ->and($memo->fresh())->not->toBeNull()
+        ->and($pivot())->toBe([$graph['part']->id => 2]);
+    Storage::disk('public')->assertExists(['files/gift-0.txt', 'files/memo.txt']);
+
+    $this->travel(1)->minutes();
+    cascadeSave($graph['root'], cascadeGiftValues($graph, $pick));
+
+    expect($gift->fresh()->trashed())->toBeFalse()->and($gift->fresh()->sold)->toBe(7)
+        ->and(CascadeMark::findOrFail($mark->id)->trashed())->toBeFalse()
+        ->and(CascadeStamp::findOrFail($stamp->id)->trashed())->toBeFalse()
+        ->and(CascadeMark::withTrashed()->findOrFail($loose->id)->trashed())->toBeTrue()
+        ->and(CascadeMark::withTrashed()->findOrFail($loose->id)->getRawOriginal('deleted_at'))->toBe($looseTrashedAt)
+        ->and(CascadeMemo::where('gift_id', $gift->id)->pluck('id')->all())->toBe([$memo->id])
+        ->and($pivot())->toBe([$graph['part']->id => 2]);
+    Storage::disk('public')->assertExists(['files/gift-0.txt', 'files/memo.txt']);
+});
+
+it('a row that was already trashed is not removed again, so its restore still finds its rows', function () {
+    $graph = cascadeGraph();
+    ['gift' => $gift, 'mark' => $mark] = cascadeGiftGraph($graph);
+
+    cascadeSave($graph['root'], cascadeGiftValues($graph, null));
+    $trashedAt = $gift->fresh()->getRawOriginal('deleted_at');
+    $this->travel(1)->minutes();
+    // The trashed gift is still an existing (withTrashed) row of its picker, and still not picked.
+    cascadeSave($graph['root'], cascadeGiftValues($graph, null));
+    expect($gift->fresh()->getRawOriginal('deleted_at'))->toBe($trashedAt);
+
+    cascadeSave($graph['root'], cascadeGiftValues($graph, ['id' => (string) $graph['part']->id]));
+    expect($gift->fresh()->trashed())->toBeFalse()->and(CascadeMark::findOrFail($mark->id)->trashed())->toBeFalse();
+});
+
+it('removing a hard-deleted row still purges the nested rows and pivots under its trashed rows', function () {
+    $graph = cascadeGraph();
+    ['gift' => $gift, 'mark' => $mark, 'stamp' => $stamp, 'memo' => $memo] = cascadeGiftGraph($graph);
+
+    cascadeSave($graph['root'], ['tiers' => [cascadeRow($graph['tierB'])]]);
+
+    expect(CascadeTier::whereKey($graph['tierA']->id)->exists())->toBeFalse()
+        ->and($gift->fresh()->trashed())->toBeTrue()
+        ->and(CascadeMark::withTrashed()->findOrFail($mark->id)->trashed())->toBeTrue()
+        ->and(CascadeStamp::withTrashed()->findOrFail($stamp->id)->trashed())->toBeTrue()
+        ->and(CascadeMemo::whereKey($memo->id)->exists())->toBeFalse()
+        ->and(CascadeNote::where('step_id', $graph['steps'][0]->id)->exists())->toBeFalse()
+        ->and(DB::connection('cascade_records')->table('cascade_gift_products')->where('gift_id', $gift->id)->exists())->toBeFalse()
+        ->and(DB::connection('cascade_records')->table('cascade_tier_products')->where('tier_id', $graph['tierA']->id)->exists())->toBeFalse();
+    Storage::disk('public')->assertMissing(['files/memo.txt', 'files/tier-a.txt', 'files/note-0.txt']);
+    Storage::disk('public')->assertExists(['files/gift-0.txt', 'files/step-0.txt']);
 });

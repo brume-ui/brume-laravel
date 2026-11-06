@@ -794,9 +794,16 @@ Relation repeaters use `->relation('children')->orderColumn('position')`. `relat
 wrapper. The selected id is distinct from any intermediary child id. Direct HasMany picker
 foreign keys must be nullable; restoration requires a soft-deletable intermediary relation.
 Removing a repeater row or an intermediary also removes the rows it owns through its declared
-nested repeaters and `associateBy()` pickers (soft-deleted where the model uses `SoftDeletes`,
-keeping their files and counters; hard-deleted otherwise) and detaches its pivots; BelongsTo and
-direct HasMany selections are sources and stay as they are.
+nested repeaters and `associateBy()` pickers; BelongsTo and direct HasMany selections are sources
+and stay as they are. How far that goes depends on how the removed row itself goes:
+- A row that is hard-deleted takes its whole subtree: nested rows are soft-deleted where the model
+  uses `SoftDeletes` (keeping their counters) and deleted otherwise, and pivots detach.
+- A row that is soft-deleted stays whole so it can come back: only its soft-deletable nested rows
+  are trashed with it (recursively); other nested rows and its pivots stay attached to the trashed
+  row. A row that is already trashed is left as it is.
+- When `restoreRemoved()` brings an intermediary back, the nested rows its removal trashed come
+  back too (rows trashed at or after it, matched by `deleted_at`). Rows trashed earlier on their
+  own stay trashed.
 A removed row's uploaded files are deleted after commit only if the row is physically gone,
 including a soft-deletable row that a database `cascadeOnDelete` foreign key removed with its
 parent; a row that is only trashed keeps them.
