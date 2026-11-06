@@ -26,11 +26,10 @@ class ProductCategoryController extends Resource
 
     protected function grid(Grid $grid): void
     {
-        $grid->title('商品分類')->description('分類以縮排顯示層級；在編輯頁指定分類底下的商品。');
+        $grid->title('商品分類')->description('分類以樹狀顯示層級；在編輯頁指定分類底下的商品。');
 
-        $grid->column('name', '分類名稱')->primary()
-            // Indentation only: a glyph would be underlined as part of the edit link.
-            ->display(fn ($value, ProductCategory $category) => str_repeat('　', 2 * $category->tree_depth).$value);
+        // treeOrder() returns each parent right before its children, as tree() needs.
+        $grid->column('name', '分類名稱')->primary()->tree('tree_depth');
         $grid->column('products_count', '商品數')->numeric();
     }
 

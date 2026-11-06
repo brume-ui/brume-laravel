@@ -171,6 +171,11 @@ $grid->editUrl(fn (Order $order) => route('brume.orders.edit', $order));
 ```
 
 - Column keys are unique, and `_meta` is reserved.
+- **A tree column** (`->tree('tree_depth')`, or `->tree(fn (Category $row) => $row->depth)`)
+  indents each row by its depth (0 is a root, `null` counts as 0) and joins it to its parent with a
+  quiet elbow; the cell keeps its display, so a `primary()` name stays the edit link, underlined on
+  the text alone. The grid does not reorder rows: the query must return them in tree order, each
+  parent right before its children. A depth that is not a whole number from 0 throws.
 - **A column keyed `id` is the row's id** (`row.id`, which actions, inline edits, selection and the
   export send back), so it shows the model key unchanged: `display()`, `label()`, `image()`,
   `downloadable()`, `table()` and inline editing throw on it. For a formatted number, declare
@@ -493,8 +498,8 @@ What's in it:
     sortable gallery with links, preorder fields shown on demand, a remote category select declared with
     `depth('tree_depth')`, and purchase limits with the computed remaining quantity.
   - **商品分類** (`/admin/product-categories`, `ProductCategoryController`): 服飾 › 外套 and
-    家居, listed depth-first (each child indented under its parent, a stored `tree_path` gives the
-    order) in the grid and in both category selects. The parent select is `clearable()` with a
+    家居, listed depth-first (a stored `tree_path` gives the order) in the grid as a
+    `tree('tree_depth')` column and in both category selects. The parent select is `clearable()` with a
     「無（頂層）」 empty choice. The edit page assigns products with a remote picker. A product
     picked here moves out of its old category; a deselected product becomes uncategorised and is
     not deleted. A category with sub-categories cannot be deleted; deleting one leaves its products

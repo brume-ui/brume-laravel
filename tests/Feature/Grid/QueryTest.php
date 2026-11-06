@@ -346,6 +346,29 @@ it('outputs the column options', function () {
     ]);
 });
 
+it('marks a tree column and sends each row depth keyed by the column', function () {
+    queryUsers(['Root', 'Child', 'Grandchild']);
+    $levels = ['Root' => null, 'Child' => 1, 'Grandchild' => '2'];
+    $grid = Grid::make(User::class)->defaultSort('id');
+    $grid->column('name')->primary()->tree(fn (User $user) => $levels[$user->name] ?? null);
+
+    $page = queryPage($grid);
+
+    expect($page['columns'][0])->toBe(['key' => 'name', 'label' => 'Name', 'primary' => true, 'tree' => true])
+        ->and(array_map(fn (array $row) => [$row['name'], $row['_meta']['depth']], $page['rows']))
+        // A digit string counts; null (no level) is a root.
+        ->toBe([['Root', ['name' => 0]], ['Child', ['name' => 1]], ['Grandchild', ['name' => 2]]])
+        ->and(array_column($page['rows'], 'name'))->toBe(['Root', 'Child', 'Grandchild']);
+});
+
+it('refuses a tree depth that is not a whole number from 0', function (mixed $depth) {
+    queryUsers(['Root']);
+    $grid = Grid::make(User::class);
+    $grid->column('name')->tree(fn () => $depth);
+
+    queryPage($grid);
+})->with([[-1], [1.5], ['x']])->throws(InvalidArgumentException::class, 'tree() 層級');
+
 it('uses the route name as the grid id, then the path, unless set', function () {
     $this->actingAs(brumeUser(), 'brume');
     Route::middleware([...config('brume.route.middleware'), HandleBrumeRequests::class])->group(function () {

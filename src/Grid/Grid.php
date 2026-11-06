@@ -795,7 +795,7 @@ class Grid implements Renderable, Responsable
 
     /**
      * The row's id, column values and, when there is any, its _meta: editUrl, the row actions it
-     * allows (only when one declares visible()), and href, content and raw keyed by column.
+     * allows (only when one declares visible()), and href, content, raw and depth keyed by column.
      *
      * @param  list<Action>  $rowActions
      * @return array<string, mixed>

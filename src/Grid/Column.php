@@ -41,6 +41,9 @@ class Column
 
     protected bool $primary = false;
 
+    /** fn (Model $row): mixed, the row's level for a tree() column; null when not a tree. */
+    protected ?Closure $treeDepth = null;
+
     /** The column keyed `id`: its cell is the row's id (row.id), so it shows that value unchanged. */
     protected bool $rowId = false;
 
@@ -187,6 +190,20 @@ class Column
         }
 
         $this->primary = true;
+
+        return $this;
+    }
+
+    /**
+     * Shows the column as a tree: each row is indented by its depth (0 is a root) and joined to
+     * its parent by a quiet elbow, the label keeping its own display (a primary column stays the
+     * edit link, underlined on the text alone). $depth is an attribute (dotted keys work) or
+     * fn (Model $row): int. The grid does not reorder rows: the query must return them in tree
+     * order, each parent right before its children.
+     */
+    public function tree(string|Closure $depth = 'depth'): static
+    {
+        $this->treeDepth = is_string($depth) ? fn (mixed $row) => data_get($row, $depth) : $depth;
 
         return $this;
     }
@@ -369,7 +386,8 @@ class Column
             // The schema's default is true, so only the exception is written out.
             + ($this->hideable ? [] : ['hideable' => false])
             + ($this->hiddenByDefault ? ['hiddenByDefault' => true] : [])
-            + ($this->primary ? ['primary' => true] : []);
+            + ($this->primary ? ['primary' => true] : [])
+            + ($this->treeDepth !== null ? ['tree' => true] : []);
     }
 
     /**
@@ -416,7 +434,7 @@ class Column
      *
      * @internal
      *
-     * @return array{href?: string, content?: array<string, mixed>, raw?: mixed}
+     * @return array{href?: string, content?: array<string, mixed>, raw?: mixed, depth?: int}
      */
     public function rowMeta(mixed $row): array
     {
@@ -424,12 +442,39 @@ class Column
 
         $meta = $this->displayMeta($row);
 
+        if ($this->treeDepth !== null) {
+            $meta['depth'] = $this->treeDepthOf($row);
+        }
+
         if ($this->editor !== null && $this->display !== null) {
             $this->assertRawVisible($row);
             $meta['raw'] = $this->rawValue($row);
         }
 
         return $meta;
+    }
+
+    /**
+     * The row's tree level: a whole number from 0, given as an int or a digit string (a database
+     * may return either); null counts as a root.
+     */
+    protected function treeDepthOf(mixed $row): int
+    {
+        $depth = ($this->treeDepth)($row);
+
+        if ($depth === null) {
+            return 0;
+        }
+
+        if (is_string($depth) && ctype_digit($depth)) {
+            $depth = (int) $depth;
+        }
+
+        if (! is_int($depth) || $depth < 0) {
+            throw new InvalidArgumentException("欄位「{$this->key}」的 tree() 層級必須是 0 以上的整數（0 = 頂層），目前是 ".get_debug_type($depth).'。請確認層級欄位或 closure 的回傳值。');
+        }
+
+        return $depth;
     }
 
     /**

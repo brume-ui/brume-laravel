@@ -80,12 +80,14 @@ it('rejects a parent that is the category itself or a descendant', function () {
     expect($root->fresh()->parent_id)->toBeNull();
 });
 
-it('lists the hierarchy with indented names and product counts', function () {
+it('lists the hierarchy as a tree column with product counts', function () {
     $page = $this->get('/admin/product-categories')->assertOk()->viewData('page')['props']['envelope']['page'];
     expect(array_column($page['columns'], 'key'))->toContain('name', 'products_count')
+        ->and($page['columns'][0])->toMatchArray(['key' => 'name', 'primary' => true, 'tree' => true])
         ->and($page['rows'])->toHaveCount(ProductCategory::count())
-        // Indentation only: the edit link carries no tree glyph.
-        ->and(array_column($page['rows'], 'name'))->toBe(['服飾', '　　外套', '家居']);
+        // The name is sent bare; the depth travels in _meta and the UI draws the indent.
+        ->and(array_column($page['rows'], 'name'))->toBe(['服飾', '外套', '家居'])
+        ->and(array_map(fn ($row) => $row['_meta']['depth']['name'], $page['rows']))->toBe([0, 1, 0]);
 });
 
 function categoryField(array $nodes, string $name): ?array
@@ -120,7 +122,8 @@ it('orders the grid and both category selects depth-first, a new category last a
 
     $rows = $this->get('/admin/product-categories')->assertOk()->viewData('page')['props']['envelope']['page']['rows'];
     expect(array_map(fn ($row) => (string) $row['id'], $rows))->toBe($ids)
-        ->and(array_column($rows, 'name'))->toBe(['服飾', '　　外套', '　　　　羽絨', '　　童裝', '家居', '新分類']);
+        ->and(array_column($rows, 'name'))->toBe(['服飾', '外套', '羽絨', '童裝', '家居', '新分類'])
+        ->and(array_map(fn ($row) => $row['_meta']['depth']['name'], $rows))->toBe(array_column($tree, 1));
 
     $options = fn (string $url, string $field) => array_map(fn ($option) => [$option['value'], $option['depth']], categoryOptions($this, $url, ['field' => $field]));
     $expected = array_map(fn ($node) => [(string) $node[0], $node[1]], $tree);
