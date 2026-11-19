@@ -65,6 +65,7 @@ class DatabaseSeeder extends Seeder
 
         // Last, so the Faker streams above (and the rows they make) stay exactly as before.
         $this->call(CatalogSeeder::class);
+        $this->call(OrderingSeeder::class);
     }
 
     /**

@@ -11,4 +11,8 @@ return [
     'promotions' => '满额赠',
     'system' => '系统',
     'admins' => '管理员',
+    'ordering' => '排序示范',
+    'nav_menus' => '网站菜单',
+    'home_banners' => '首页横幅',
+    'product_category_tree' => '分类排序',
 ];

@@ -26,7 +26,7 @@ class ProductCategoryController extends Resource
 
     protected function grid(Grid $grid): void
     {
-        $grid->title('商品分類')->description('分類以樹狀顯示層級；在編輯頁指定分類底下的商品。');
+        $grid->title('商品分類')->description('分類以樹狀顯示層級；在編輯頁指定分類底下的商品。要調整順序請到「分類排序」。');
 
         // treeOrder() returns each parent right before its children, as tree() needs.
         $grid->column('name', '分類名稱')->primary()->tree('tree_depth');

@@ -33,6 +33,11 @@ return [
             ['title' => 'workbench::menu.products', 'icon' => 'shopping-bag', 'url' => '/products'],
             ['title' => 'workbench::menu.product_categories', 'icon' => 'folder-tree', 'url' => '/product-categories'],
         ]],
+        ['title' => 'workbench::menu.ordering', 'icon' => 'arrow-down-up', 'children' => [
+            ['title' => 'workbench::menu.nav_menus', 'icon' => 'menu', 'url' => '/nav-menus'],
+            ['title' => 'workbench::menu.home_banners', 'icon' => 'image', 'url' => '/home-banners'],
+            ['title' => 'workbench::menu.product_category_tree', 'icon' => 'list-tree', 'url' => '/product-category-tree'],
+        ]],
         ['title' => 'workbench::menu.promotions', 'icon' => 'gift', 'url' => '/promotions'],
         ['title' => 'workbench::menu.system', 'icon' => 'settings', 'children' => [
             ['title' => 'workbench::menu.admins', 'icon' => 'users', 'url' => '/users'],

@@ -11,4 +11,8 @@ return [
     'promotions' => '滿額贈',
     'system' => '系統',
     'admins' => '管理員',
+    'ordering' => '排序示範',
+    'nav_menus' => '網站選單',
+    'home_banners' => '首頁橫幅',
+    'product_category_tree' => '分類排序',
 ];
