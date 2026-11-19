@@ -199,6 +199,36 @@ $grid->editUrl(fn (Order $order) => route('brume.orders.edit', $order));
 - `emptyState('還沒有訂單', '建立第一筆訂單後會顯示在這裡。', '新增訂單', route(...))` replaces the
   empty list's copy.
 
+### 拖曳排序
+
+列表可以直接拖曳排序，不必另外寫排序頁。每一列左側有固定顯示的拖曳把手（按鈕名稱「拖曳排序：{名稱}」）；
+鍵盤上，聚焦把手後按 Space／Enter 拿起，↑／↓ 移動（樹狀再加 →／← 縮排或取消縮排），Space／Enter 放下，
+Esc 取消。成功後出現「已更新順序」提示與「復原」按鈕。
+
+- `orderable('sort')`：排序欄位 `$column`（預設 `order`），`$direction` 為 `asc`（預設，從 1 起編號）或
+  `desc`（第一列得到最大的數字），`$label` 是「調整順序」視窗每列顯示的屬性（預設主欄位，再沒有就用第一欄）。
+  排序範圍是交給 `Grid::make()` 的基礎查詢（含條件、global scope 與軟刪除），不含使用者的搜尋、篩選與排序。
+  排序值為 NULL 的列排在最後，第一次儲存時一起編號。沒有 `defaultSort()` 時，列表依這個順序顯示。
+  套用欄位排序、搜尋或篩選時，把手會停用（`aria-disabled`），並提示「請先清除排序／篩選，或使用「調整順序」」；
+  工具列的「調整順序」開啟視窗，依名稱列出範圍內全部項目，提供「置頂」／「置底」與「儲存」／「取消」，
+  可跨頁調整。「調整順序」視窗與整批儲存最多 1000 筆，範圍內超過時回 422「項目太多，無法一次調整順序」；單筆拖曳沒有上限。
+  範圍很大時，請替排序欄位與範圍條件欄位（例如 `where('shop_id', ...)`）建立索引。
+- `treeView('parent_id', 'order', maxDepth: 2, root: null, addChild: true)`：以樹狀顯示並拖曳排序與換上層。
+  `$parent` 是上層欄位，`$order` 是同層順序（NULL 排最後，第一次儲存時編號）。根節點的上層值預設是 NULL；
+  從 Dcat 搬來的資料表通常用 `0`，請傳 `root: 0`。樹狀一次顯示範圍內全部列，不分頁；上層不在範圍內的列視為根節點。
+  `maxDepth` 限制層數（根為第 1 層），到上限的節點不能再被放進子層（沒有放置目標，鍵盤縮排會被忽略）。
+  有 Resource 時，每個節點的列選單有「新增子項」（`addChild`），會前往新增頁並預填上層欄位。工具列有「全部展開」／「全部收合」，
+  每個節點也可個別展開。樹狀列表不能搭配 `orderable()`，也沒有搜尋、篩選、欄位排序、批次動作與行內編輯。
+- `orderSaved(fn (array $changedIds) => ...)`：順序儲存後、在同一個 transaction 內呼叫，參數是值有變動的列的 id；
+  丟出例外會讓整次排序 rollback。寫回只更新有變動的列，用 query builder 批次 update，不觸發 model 事件，
+  也不動 `updated_at`，所以要同步快取或 materialized path 時請在這裡處理。沒有任何變動時不會呼叫。
+
+```php
+$grid->quickSearch('title')->orderable('sort')->perPage(20);
+$grid->treeView('parent_id', 'position', maxDepth: 3);
+$grid->orderSaved(fn (array $ids) => Category::whereKey($ids)->get()->each->refreshTreePath());
+```
+
 ### Filters
 
 `$grid->filters()` holds the panel filters (under 「篩選」), hidden filters, selector pills and
@@ -437,7 +467,7 @@ These are planned for later sub-plans and phases:
 
 - **Rich text, color picker and Show pages**: phase 3; use `textarea` until then.
 - **Custom calendars**: native `date` / `datetime-local` inputs are retained; revisit after user trials.
-- **Orderable, Tree and DialogTree**: phase 3.
+- **DialogTree**: phase 3. (Drag ordering and tree lists are available: see 拖曳排序.)
 
 ## Development
 
@@ -516,6 +546,11 @@ What's in it:
   `/admin/product-categories` or `/admin/promotions`. `composer serve` rebuilds and reseeds the
   database. After editing the calculator or any other workbench `.tsx` file, run
   `composer build-frontend` and reload.
+- **排序示範** (sidebar group): `/admin/nav-menus` (網站選單, `treeView(maxDepth: 2)`, 18 seeded menus),
+  `/admin/home-banners` (首頁橫幅, `orderable('sort')`, 45 seeded banners over three pages of 20, quick search and
+  an 上架狀態 filter; banners 41-45 have no sort value yet) and `/admin/product-category-tree` (分類排序, a
+  `treeView` over the product categories whose `orderSaved` refreshes the stored paths, so
+  `/admin/product-categories` shows every move).
 - Not in the menu, used by the e2e suite: `/admin/_demo/toast` (flashes the same toast every
   time) and `/admin/_demo/missing-component` (the guidance shown for an unregistered component).
 
@@ -875,7 +910,7 @@ pivot extras, BelongsTo extras, direct HasMany selection, a JSON picker (`picks`
 values, dependent sources, mapped addresses, custom inline editing and nested Uploads. It uses
 separate deterministic tables/seeds so existing Order/GridShowcase examples retain their data.
 Playground `/#/form-composition` supplements the focused relation/repeater routes. Precompiled
-distribution and install checks use the actual published alpha.20 packages; ordinary browser
+distribution and install checks use the actual published alpha.21 packages; ordinary browser
 acceptance must run against the same graph before delivery.
 
 ### 資料庫贈品示範與安全升級
@@ -969,7 +1004,7 @@ frontend installation. Both install modes continue to be checked using actual pu
 
 ### Published frontend verification (maintainers)
 
-All five `@brume-ui/brume-*` dependencies pin `0.1.0-alpha.20` with registry integrity in the
+All five `@brume-ui/brume-*` dependencies pin `0.1.0-alpha.21` with registry integrity in the
 frozen frontend lockfile. `check-package-origins.mjs` rejects source links before the distribution
 and ordinary workbench E2E gates. All 51 browser cases, including composition, run in ordinary E2E.
 Linux baseline generation remains opt-in; inspect every changed PNG and run ordinary non-update CI
