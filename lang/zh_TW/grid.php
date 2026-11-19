@@ -55,4 +55,13 @@ return [
         'partial' => '已刪除 :count 筆，另外 :kept 筆沒有刪除。',
         'none' => '沒有刪除任何資料。',
     ],
+    // The reorder endpoint (Grid::orderable()).
+    'reorder' => [
+        'too_many' => '項目太多，無法一次調整順序。',
+        'conflict' => '項目已經變動，請重新整理後再調整順序。',
+        'both_anchors' => '只能指定 before 或 after 其中一個。',
+        'parent' => '這個列表不是樹狀結構，移動時不能指定 parent。',
+        'self' => '不能把項目移到自己的前面或後面。',
+        'ids' => 'ids 必須是這個列表的資料編號清單。',
+    ],
 ];

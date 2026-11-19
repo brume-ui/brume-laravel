@@ -8,6 +8,8 @@ use Brume\Grid\Editing\CellUpdater;
 use Brume\Grid\Export\XlsxExporter;
 use Brume\Grid\Grid;
 use Brume\Grid\GridRouteRegistrar;
+use Brume\Grid\Ordering\ReorderConflict;
+use Brume\Grid\Ordering\Reorderer;
 use Brume\Http\ErrorResponse;
 use Brume\Http\Middleware\HandleGridEndpoint;
 use Brume\Options\OptionContext;
@@ -35,6 +37,8 @@ class GridEndpointController
             'cell' => $this->cell($grid, $request, (string) $argument),
             'export' => $this->export($grid, $request),
             'options' => $this->options($grid, $request, (string) $argument),
+            'reorder-items' => $this->reorderItems($grid),
+            'reorder' => $this->reorder($grid, $request),
         };
     }
 
@@ -104,6 +108,56 @@ class GridEndpointController
         $options = $grid->filters()->remoteOptions($source);
 
         return $options !== null ? new JsonResponse($options->respond($request)) : $this->unavailable();
+    }
+
+    /**
+     * The ReorderItemsResponse of an orderable() grid: every row of its query, in order.
+     */
+    public function reorderItems(Grid $grid): JsonResponse
+    {
+        if ($grid->ordering() === null) {
+            return $this->unavailable();
+        }
+
+        try {
+            return new JsonResponse(app(Reorderer::class)->items($grid));
+        } catch (ValidationException $e) {
+            return ErrorResponse::make($e->getMessage(), $e->status, $e->errors());
+        }
+    }
+
+    /**
+     * A ReorderMoveRequest { id, before?, after? } answered with a ReorderResponse { undo? }, or a
+     * ReorderListRequest { ids } answered with {}. A row that left the grid's query, or a list
+     * that is not exactly its rows, is a 409.
+     */
+    public function reorder(Grid $grid, Request $request): JsonResponse
+    {
+        if ($grid->ordering() === null) {
+            return $this->unavailable();
+        }
+
+        $reorderer = app(Reorderer::class);
+
+        try {
+            if ($request->exists('ids')) {
+                $ids = $request->input('ids');
+
+                if (! is_array($ids) || ! array_is_list($ids)) {
+                    throw ValidationException::withMessages(['ids' => __('brume::grid.reorder.ids')]);
+                }
+
+                $reorderer->saveList($grid, $ids);
+
+                return new JsonResponse((object) []);
+            }
+
+            return new JsonResponse((object) $reorderer->move($grid, $request->all()));
+        } catch (ValidationException $e) {
+            return ErrorResponse::make($e->getMessage(), $e->status, $e->errors());
+        } catch (ReorderConflict $e) {
+            return ErrorResponse::make($e->getMessage(), 409);
+        }
     }
 
     /**

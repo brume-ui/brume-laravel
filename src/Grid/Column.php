@@ -353,6 +353,24 @@ class Column
 
     /**
      * @internal
+     */
+    public function isPrimary(): bool
+    {
+        return $this->primary;
+    }
+
+    /**
+     * Whether an inline edit of this column writes $attribute (its own key, or a switchGroup's).
+     *
+     * @internal
+     */
+    public function editsAttribute(string $attribute): bool
+    {
+        return $this->isEditable() && ($this->switchKeys !== [] ? array_key_exists($attribute, $this->switchKeys) : $this->key === $attribute);
+    }
+
+    /**
+     * @internal
      *
      * @param  'asc'|'desc'  $direction
      */

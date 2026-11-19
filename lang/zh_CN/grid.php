@@ -55,4 +55,13 @@ return [
         'partial' => '已删除 :count 条，另外 :kept 条没有删除。',
         'none' => '没有删除任何数据。',
     ],
+    // The reorder endpoint (Grid::orderable()).
+    'reorder' => [
+        'too_many' => '项目太多，无法一次调整顺序。',
+        'conflict' => '项目已经变动，请刷新后再调整顺序。',
+        'both_anchors' => '只能指定 before 或 after 其中一个。',
+        'parent' => '这个列表不是树状结构，移动时不能指定 parent。',
+        'self' => '不能把项目移到自己的前面或后面。',
+        'ids' => 'ids 必须是这个列表的数据编号列表。',
+    ],
 ];

@@ -4,6 +4,7 @@ use Brume\BrumeManager;
 use Brume\Grid\Grid;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Tests\Support\JsonSchema;
+use Brume\Tests\Support\Models\SortItem;
 use Illuminate\Support\Facades\Route;
 use Workbench\App\Models\Order;
 
@@ -101,4 +102,47 @@ it('answers every endpoint with an ErrorResponse while the grid declares nothing
     ['PATCH', '/admin/orders/_brume/cells/1'],
     ['GET', '/admin/orders/_brume/export'],
     ['GET', '/admin/orders/_brume/options/customer'],
+    ['GET', '/admin/orders/_brume/reorder'],
+    ['POST', '/admin/orders/_brume/reorder'],
 ]);
+
+it('validates an orderable page and every reorder answer against the protocol', function () {
+    Route::prefix('admin')
+        ->middleware([...config('brume.route.middleware'), HandleBrumeRequests::class])
+        ->group(fn () => Route::brumeGrid('sorts', function () {
+            $grid = Grid::make(SortItem::query()->where('shop_id', 1))->title('Sorts')->orderable('sort', 'desc');
+            $grid->column('name')->primary();
+
+            return $grid;
+        }));
+    [$a, $b, $c] = array_map(fn (string $name) => SortItem::query()->create(['shop_id' => 1, 'name' => $name]), ['A', 'B', 'C']);
+    $other = SortItem::query()->create(['shop_id' => 2, 'name' => 'E']);
+
+    $envelope = $this->get('/admin/sorts')->assertOk()->viewData('page')['props']['envelope'];
+    expect(JsonSchema::errors($envelope, 'PageEnvelope'))->toBe([])
+        ->and($envelope['page']['ordering'])->toBe(['mode' => 'list', 'column' => 'sort', 'direction' => 'desc']);
+
+    $items = $this->getJson('/admin/sorts/_brume/reorder')->assertOk();
+    expect(JsonSchema::errors($items->json(), 'ReorderItemsResponse'))->toBe([]);
+
+    $move = ['id' => $c->id, 'before' => $a->id];
+    expect(JsonSchema::errors($move, 'ReorderMoveRequest'))->toBe([]);
+    $moved = $this->postJson('/admin/sorts/_brume/reorder', $move)->assertOk();
+    expect(JsonSchema::errors($moved->json(), 'ReorderResponse'))->toBe([])
+        ->and(JsonSchema::errors($moved->json('undo'), 'ReorderMoveRequest'))->toBe([]);
+
+    $list = ['ids' => [$b->id, $a->id, $c->id]];
+    expect(JsonSchema::errors($list, 'ReorderListRequest'))->toBe([]);
+    $saved = $this->postJson('/admin/sorts/_brume/reorder', $list)->assertOk();
+    expect(JsonSchema::errors(json_decode($saved->getContent()), 'ReorderResponse'))->toBe([]);
+
+    foreach ([
+        [409, ['id' => $other->id]],
+        [409, ['ids' => [$a->id, $b->id]]],
+        [422, ['id' => $a->id, 'before' => $b->id, 'after' => $c->id]],
+        [422, ['id' => $a->id, 'parent' => null]],
+    ] as [$status, $body]) {
+        $response = $this->postJson('/admin/sorts/_brume/reorder', $body)->assertStatus($status);
+        expect(JsonSchema::errors($response->json(), 'ErrorResponse'))->toBe([]);
+    }
+});

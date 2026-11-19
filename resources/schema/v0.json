@@ -796,6 +796,9 @@
                       },
                       "primary": {
                         "type": "boolean"
+                      },
+                      "tree": {
+                        "type": "boolean"
                       }
                     }
                   }
@@ -933,6 +936,28 @@
                                 "patternProperties": {
                                   "^(.*)$": {}
                                 }
+                              },
+                              "depth": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^(.*)$": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                }
+                              },
+                              "parent": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             }
                           }
@@ -2044,6 +2069,50 @@
                     },
                     "upload": {
                       "type": "string"
+                    },
+                    "reorder": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "ordering": {
+                  "type": "object",
+                  "required": [
+                    "mode",
+                    "column",
+                    "direction"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "anyOf": [
+                        {
+                          "const": "list",
+                          "type": "string"
+                        },
+                        {
+                          "const": "tree",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "column": {
+                      "type": "string"
+                    },
+                    "direction": {
+                      "anyOf": [
+                        {
+                          "const": "asc",
+                          "type": "string"
+                        },
+                        {
+                          "const": "desc",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "maxDepth": {
+                      "minimum": 1,
+                      "type": "integer"
                     }
                   }
                 },
@@ -3160,6 +3229,28 @@
                       "patternProperties": {
                         "^(.*)$": {}
                       }
+                    },
+                    "depth": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "parent": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }
@@ -3724,6 +3815,232 @@
           }
         }
       ]
+    },
+    "ReorderMoveRequest": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    "ReorderListRequest": {
+      "type": "object",
+      "required": [
+        "ids"
+      ],
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "ReorderResponse": {
+      "type": "object",
+      "properties": {
+        "undo": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "parent": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "before": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "after": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            }
+          }
+        },
+        "feedback": {
+          "type": "object",
+          "properties": {
+            "toast": {
+              "type": "object",
+              "required": [
+                "type",
+                "message"
+              ],
+              "properties": {
+                "type": {
+                  "anyOf": [
+                    {
+                      "const": "success",
+                      "type": "string"
+                    },
+                    {
+                      "const": "error",
+                      "type": "string"
+                    },
+                    {
+                      "const": "info",
+                      "type": "string"
+                    },
+                    {
+                      "const": "warning",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            },
+            "refresh": {
+              "type": "boolean"
+            },
+            "redirect": {
+              "type": "string"
+            },
+            "download": {
+              "type": "object",
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "filename": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ReorderItemsResponse": {
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     },
     "FormNode": {
       "anyOf": [

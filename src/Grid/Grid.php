@@ -118,6 +118,11 @@ class Grid implements Renderable, Responsable
 
     protected ?string $exportFilename = null;
 
+    /** @var array{column: string, direction: 'asc'|'desc', label: ?string}|null */
+    protected ?array $ordering = null;
+
+    protected ?Closure $orderSaved = null;
+
     /** @var array<string, true> lists already warned about (see endpoints()), by title */
     protected static array $warnedWithoutEndpoints = [];
 
@@ -356,6 +361,108 @@ class Grid implements Renderable, Responsable
     }
 
     /**
+     * Let the rows be put in order by dragging them, or in the 調整順序 dialog, saved in $column
+     * (1, 2, 3, ... from the first row; with 'desc', the first row gets the highest number). The
+     * order covers the grid's query as given to make() (its conditions, global scopes and soft
+     * deletes), never the list's search, filters or sort. Rows whose value is NULL come last, and
+     * get a number on the first save. Without defaultSort(), the list is shown in this order.
+     * $label is the attribute the dialog shows per row: by default the primary column, else the
+     * first column.
+     */
+    public function orderable(string $column = 'order', string $direction = 'asc', ?string $label = null): static
+    {
+        if (! in_array($direction, ['asc', 'desc'], true)) {
+            throw new InvalidArgumentException("orderable() 的方向只能是 asc 或 desc，目前是「{$direction}」。");
+        }
+
+        $this->ordering = ['column' => $column, 'direction' => $direction, 'label' => $label];
+        $this->assertOrderingNotEdited();
+
+        return $this;
+    }
+
+    /**
+     * Called after a new order is saved, inside its transaction, with the ids of the rows whose
+     * value changed: fn (list<int|string> $changedIds): void. An exception rolls the order back.
+     */
+    public function orderSaved(Closure $fn): static
+    {
+        $this->orderSaved = $fn;
+
+        return $this;
+    }
+
+    /**
+     * @internal
+     *
+     * @return array{mode: 'list', column: string, direction: 'asc'|'desc', label: string}|null
+     */
+    public function ordering(): ?array
+    {
+        if ($this->ordering === null) {
+            return null;
+        }
+
+        $this->assertOrderingNotEdited();
+
+        return ['mode' => 'list', 'column' => $this->ordering['column'], 'direction' => $this->ordering['direction'], 'label' => $this->orderingLabel()];
+    }
+
+    /**
+     * @internal
+     */
+    public function orderSavedHook(): ?Closure
+    {
+        return $this->orderSaved;
+    }
+
+    /**
+     * Orders $query by the orderable() column: NULLs last, then the column in its direction,
+     * then the primary key ascending.
+     *
+     * @internal
+     */
+    public function applyOrdering(Builder $query): Builder
+    {
+        $column = $query->qualifyColumn($this->ordering['column']);
+        $wrapped = $query->getQuery()->getGrammar()->wrap($column);
+
+        return $query->reorder()
+            ->orderByRaw("{$wrapped} is null")
+            ->orderBy($column, $this->ordering['direction'])
+            ->orderBy($query->getModel()->getQualifiedKeyName());
+    }
+
+    /**
+     * An inline edit of the order column would fight with the order saves.
+     */
+    protected function assertOrderingNotEdited(): void
+    {
+        $column = $this->ordering['column'];
+
+        foreach ($this->columns as $declared) {
+            if ($declared->editsAttribute($column)) {
+                throw new LogicException("排序欄位「{$column}」由 orderable() 管理，不能同時行內編輯（欄位「{$declared->key()}」）。請拿掉這個欄位的 editable()、switch() 或 switchGroup()。");
+            }
+        }
+    }
+
+    protected function orderingLabel(): string
+    {
+        if ($this->ordering['label'] !== null) {
+            return $this->ordering['label'];
+        }
+
+        foreach ($this->columns as $column) {
+            if ($column->isPrimary()) {
+                return $column->key();
+            }
+        }
+
+        return ($this->columns[0] ?? null)?->key() ?? $this->query->getModel()->getKeyName();
+    }
+
+    /**
      * @internal
      */
     public function isExportable(): bool
@@ -472,6 +579,7 @@ class Grid implements Renderable, Responsable
     {
         $state = GridQuery::fromRequest($request, $this);
         $endpoints = $this->endpoints($request);
+        $ordering = $this->ordering();
         // Without the endpoint nothing could run them, so the actions are left out.
         $actions = $endpoints !== null ? ['row' => $this->actionsOf('row'), 'batch' => $this->actionsOf('batch'), 'tool' => $this->actionsOf('tool')]
             : ['row' => [], 'batch' => [], 'tool' => []];
@@ -509,6 +617,7 @@ class Grid implements Renderable, Responsable
             ]
             + ($endpoints !== null ? ['endpoints' => $endpoints] : [])
             + ($endpoints !== null && $this->exportable ? ['export' => ['url' => $this->endpointBase($request).'/export']] : [])
+            + ($endpoints !== null && $ordering !== null ? ['ordering' => ['mode' => $ordering['mode'], 'column' => $ordering['column'], 'direction' => $ordering['direction']]] : [])
             + ($this->empty !== null ? ['empty' => $this->empty] : [])
             + ($endpoints !== null && $this->quickFields !== null ? ['quickCreate' => $this->quickSchema($request)] : [])
             + ($this->resource !== null ? ['resource' => $this->resource] : []);
@@ -542,7 +651,13 @@ class Grid implements Renderable, Responsable
 
         $this->filters()->apply($query, $state->filters, $state->scope);
 
-        $this->applySort($query, $state->sort ?? $this->defaultSort);
+        $sort = $state->sort ?? $this->defaultSort;
+
+        if ($sort === null && $this->ordering !== null) {
+            $this->applyOrdering($query);
+        } else {
+            $this->applySort($query, $sort);
+        }
 
         return $query;
     }
@@ -594,12 +709,12 @@ class Grid implements Renderable, Responsable
 
     /**
      * Whether the grid declares something served by the `_brume` endpoints (actions, inline
-     * editing, export, remote filter options), which only Route::brumeGrid registers.
+     * editing, export, remote filter options, ordering), which only Route::brumeGrid registers.
      */
     protected function needsEndpoints(): bool
     {
         return $this->quickFields !== null || $this->filters()->hasRemote() || $this->deletable || array_merge(...array_values($this->actions)) !== []
-            || $this->editsInline() || $this->exportable;
+            || $this->editsInline() || $this->exportable || $this->ordering !== null;
     }
 
     /**
@@ -633,12 +748,12 @@ class Grid implements Renderable, Responsable
                 'action' => $base.'/actions/{action}',
                 'cell' => $base.'/cells/{id}',
                 'options' => $base.'/options/{source}',
-            ];
+            ] + ($this->ordering !== null ? ['reorder' => $base.'/reorder'] : []);
         }
 
         if ($this->needsEndpoints()) {
             $message = sprintf(
-                '列表「%s」宣告了 Action、行內編輯、匯出或遠端篩選，這些功能需要用 Route::brumeGrid 註冊路由，例如 Route::brumeGrid(\'orders\', OrderController::class)，而不是 Route::get。',
+                '列表「%s」宣告了 Action、行內編輯、匯出、遠端篩選或拖曳排序，這些功能需要用 Route::brumeGrid 註冊路由，例如 Route::brumeGrid(\'orders\', OrderController::class)，而不是 Route::get。',
                 $this->title,
             );
 

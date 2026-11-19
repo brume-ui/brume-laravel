@@ -35,7 +35,7 @@ beforeEach(function () {
     $this->actingAs(brumeUser(), 'brume');
 });
 
-it('registers the page route and the five endpoints', function () {
+it('registers the page route and the seven endpoints', function () {
     $route = null;
     adminRoutes(function () use (&$route) {
         $route = Route::brumeGrid('orders', OrderGridController::class)->name('brume.orders.index');
@@ -54,6 +54,8 @@ it('registers the page route and the five endpoints', function () {
         'PATCH admin/orders/_brume/cells/{_brume_id}',
         'GET admin/orders/_brume/export',
         'GET admin/orders/_brume/options/{_brume_source}',
+        'GET admin/orders/_brume/reorder',
+        'POST admin/orders/_brume/reorder',
     ])
         ->and($route)->toBeInstanceOf(GridRouteRegistrar::class)
         ->and($route->getName())->toBe('brume.orders.index')
@@ -113,6 +115,8 @@ it('answers the endpoints with a JSON 404 until the grid declares the feature', 
     'cell' => ['PATCH', '/admin/orders/_brume/cells/1'],
     'export' => ['GET', '/admin/orders/_brume/export'],
     'options' => ['GET', '/admin/orders/_brume/options/customer'],
+    'reorder items' => ['GET', '/admin/orders/_brume/reorder'],
+    'reorder' => ['POST', '/admin/orders/_brume/reorder'],
 ]);
 
 it('fails loudly when the controller does not return a Grid', function () {
@@ -294,7 +298,7 @@ it('runs the page controller\'s own middleware on every endpoint', function (str
 ]);
 
 /**
- * The page and the five endpoints answer 403 when denied; allowed, the page renders and the
+ * The page and the seven endpoints answer 403 when denied; allowed, the page renders and the
  * endpoints reach their (still empty) handlers.
  */
 function expectEndpointsGuarded($test, bool $allowed): void
@@ -307,6 +311,8 @@ function expectEndpointsGuarded($test, bool $allowed): void
         ['PATCH', '/admin/orders/_brume/cells/1'],
         ['GET', '/admin/orders/_brume/export'],
         ['GET', '/admin/orders/_brume/options/customer'],
+        ['GET', '/admin/orders/_brume/reorder'],
+        ['POST', '/admin/orders/_brume/reorder'],
     ] as [$method, $uri]) {
         $test->json($method, $uri, ['target' => 'row', 'ids' => [1]])->assertStatus($allowed ? 404 : 403);
     }

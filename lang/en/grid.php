@@ -55,4 +55,13 @@ return [
         'partial' => 'Deleted :count of :total rows; the others were kept.',
         'none' => 'Nothing was deleted.',
     ],
+    // The reorder endpoint (Grid::orderable()).
+    'reorder' => [
+        'too_many' => 'There are too many items to reorder at once.',
+        'conflict' => 'The items have changed. Reload the page and reorder again.',
+        'both_anchors' => 'Give either before or after, not both.',
+        'parent' => 'This list is not a tree: a move cannot name a parent.',
+        'self' => 'An item cannot be moved before or after itself.',
+        'ids' => 'ids must be a list of the ids of rows in this list.',
+    ],
 ];

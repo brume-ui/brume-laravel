@@ -9,14 +9,14 @@ use Illuminate\Routing\Router;
 
 /**
  * Route::brumeGrid('orders', OrderController::class): the list page plus the `_brume` endpoints its
- * actions, inline editing, export and remote filter options talk to.
+ * actions, inline editing, export, remote filter options and ordering talk to.
  *
  * Every endpoint runs the page's own action, so it goes through the same group, route and controller
  * middleware, route model binding (custom keys included) and route caching as the page. The Grid the
  * action returns then answers the endpoint instead of rendering the page (Grid::toResponse()).
  *
  * Route modifiers chained on the result (domain, middleware, can, where, scopeBindings, withTrashed, ...)
- * apply to all six routes; anything else (name, ...) goes to the page route. Called without
+ * apply to all eight routes; anything else (name, ...) goes to the page route. Called without
  * arguments, domain() and middleware() read the page route's value.
  *
  * @mixin Route
@@ -60,6 +60,8 @@ final class GridRouteRegistrar
             'cell' => ['patch', 'cells/{'.self::ENDPOINT_PARAMETERS['cell'].'}'],
             'export' => ['get', 'export'],
             'options' => ['get', 'options/{'.self::ENDPOINT_PARAMETERS['options'].'}'],
+            'reorder-items' => ['get', 'reorder'],
+            'reorder' => ['post', 'reorder'],
         ];
 
         foreach ($endpoints as $endpoint => [$method, $path]) {
@@ -83,7 +85,7 @@ final class GridRouteRegistrar
     }
 
     /**
-     * @return array<string, Route> keyed by quick-create, action, cell, export, options
+     * @return array<string, Route> keyed by quick-create, action, cell, export, options, reorder-items, reorder
      */
     public function endpoints(): array
     {
