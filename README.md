@@ -578,6 +578,8 @@ it runs as its own Playwright project after the other specs. `form.spec.ts` then
 `forms` project depending on `grid`, with retries disabled, so its mutations cannot race the seeded
 counts. It covers real persistence, keyboard/dirty guards, uploads/extras/sort, action inputs,
 quick create, inline editors, axe and 1440×900 / 390×844 light/dark geometry and screenshots.
+`ordering.spec.ts` (the `ordering` project, last) drives the drag-sort pages with real pointer drags and the keyboard,
+and puts every row it moves back.
 
 CI and `composer e2e` install the published UI packages from `frontend/pnpm-lock.yaml` with a
 frozen lockfile before building the workbench. The frontend dist check and install smoke jobs use

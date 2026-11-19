@@ -22,7 +22,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: ["grid.spec.ts", "form.spec.ts", "composition.spec.ts", "polish.spec.ts", "catalog.spec.ts", "promotions.spec.ts"],
+      testIgnore: ["grid.spec.ts", "form.spec.ts", "composition.spec.ts", "polish.spec.ts", "catalog.spec.ts", "promotions.spec.ts", "ordering.spec.ts"],
     },
     // grid.spec.ts ships and deletes seeded orders, which the dashboard and 訂單 checks above
     // count on, so it runs once they are done.
@@ -52,6 +52,8 @@ export default defineConfig({
     // Product and category acceptance, then promotions; each creates its own prefixed records.
     { name: 'catalog', use: { ...devices['Desktop Chrome'] }, testMatch: 'catalog.spec.ts', dependencies: ['polish'], retries: 0 },
     { name: 'promotions', use: { ...devices['Desktop Chrome'] }, testMatch: 'promotions.spec.ts', dependencies: ['catalog'], retries: 0 },
+    // Drag-to-order pages; moves what it reorders back, and runs last so nothing else sees it in flux.
+    { name: 'ordering', use: { ...devices['Desktop Chrome'] }, testMatch: 'ordering.spec.ts', dependencies: ['promotions'], retries: 0, fullyParallel: false },
   ],
   webServer: {
     // Builds the workbench frontend, migrates and seeds a fresh database, then serves the workbench.
