@@ -63,5 +63,13 @@ return [
         'parent' => 'This list is not a tree: a move cannot name a parent.',
         'self' => 'An item cannot be moved before or after itself.',
         'ids' => 'ids must be a list of the ids of rows in this list.',
+        'tree_parent' => 'A move in a tree must name a parent (null for the top level).',
+        'descendant' => 'An item cannot be moved under itself or one of its children.',
+        'max_depth' => 'The tree can have at most :max levels.',
+        'tree_list' => 'A tree is reordered one move at a time, not as a whole list.',
+    ],
+    // Grid::treeView().
+    'tree' => [
+        'add_child' => 'Add child',
     ],
 ];

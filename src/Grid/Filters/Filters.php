@@ -282,6 +282,16 @@ class Filters
     }
 
     /**
+     * Whether nothing is declared: no filter, selector or scope.
+     *
+     * @internal
+     */
+    public function isEmpty(): bool
+    {
+        return $this->filters === [] && $this->scopes === [];
+    }
+
+    /**
      * Whether a filter loads its options through the `_brume` options endpoint.
      *
      * @internal

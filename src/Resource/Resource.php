@@ -5,6 +5,7 @@ namespace Brume\Resource;
 use Brume\Facades\Brume;
 use Brume\Form\Form;
 use Brume\Form\FormSaver;
+use Brume\Grid\Actions\AddChildAction;
 use Brume\Grid\Grid;
 use Brume\Grid\RowLookup;
 use Brume\Http\ErrorResponse;
@@ -57,7 +58,36 @@ abstract class Resource extends Controller
 
     final public function create(Request $request)
     {
-        return $this->buildForm($request)->toResponse($request);
+        $form = $this->buildForm($request);
+        $this->prefillParent($form, $request);
+
+        return $form->toResponse($request);
+    }
+
+    /**
+     * 新增子項 (Grid::treeView()) opens the create form with ?_brume_parent={id}: the field named
+     * after the tree's parent column defaults to that row's key, when the row is in the list's
+     * query and the form has such a field.
+     */
+    protected function prefillParent(Form $form, Request $request): void
+    {
+        $value = $request->query(AddChildAction::PARAMETER);
+
+        if ($value === null) {
+            return;
+        }
+
+        $grid = Grid::make($this->query());
+        $this->grid($grid);
+        $column = $grid->treeParent();
+        $rows = $grid->rows();
+        $id = $rows->normalizeId($value);
+        $form->initialize();
+        $field = $column !== null ? ($form->fields()[$column] ?? null) : null;
+
+        if ($field !== null && $id !== null && ($parent = $rows->find([$id])?->first()) !== null) {
+            $field->default($parent->getKey());
+        }
     }
 
     final public function edit(Request $request)

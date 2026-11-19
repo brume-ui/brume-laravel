@@ -63,5 +63,13 @@ return [
         'parent' => '這個列表不是樹狀結構，移動時不能指定 parent。',
         'self' => '不能把項目移到自己的前面或後面。',
         'ids' => 'ids 必須是這個列表的資料編號清單。',
+        'tree_parent' => '樹狀列表移動時必須指定 parent（移到最上層時為 null）。',
+        'descendant' => '不能把項目移到自己或自己的子項底下。',
+        'max_depth' => '最多只能有 :max 層。',
+        'tree_list' => '樹狀列表一次只能移動一個項目，不能整批儲存順序。',
+    ],
+    // Grid::treeView().
+    'tree' => [
+        'add_child' => '新增子項',
     ],
 ];

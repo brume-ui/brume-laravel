@@ -6,8 +6,10 @@ use Brume\Contracts\Renderable;
 use Brume\Facades\Brume;
 use Brume\Form\Form;
 use Brume\Grid\Actions\Action;
+use Brume\Grid\Actions\AddChildAction;
 use Brume\Grid\Actions\DeleteAction;
 use Brume\Grid\Filters\Filters;
+use Brume\Grid\Ordering\Tree;
 use Brume\Grid\Query\Like;
 use Brume\Http\Controllers\GridEndpointController;
 use Brume\Support\Href;
@@ -122,6 +124,12 @@ class Grid implements Renderable, Responsable
     protected ?array $ordering = null;
 
     protected ?Closure $orderSaved = null;
+
+    /** @var array{parent: string, maxDepth: ?int, root: int|string|null, addChild: bool}|null */
+    protected ?array $tree = null;
+
+    /** The tree of the grid's query, once built for this request (see tree()). */
+    protected ?Tree $builtTree = null;
 
     /** @var array<string, true> lists already warned about (see endpoints()), by title */
     protected static array $warnedWithoutEndpoints = [];
@@ -375,8 +383,40 @@ class Grid implements Renderable, Responsable
             throw new InvalidArgumentException("orderable() 的方向只能是 asc 或 desc，目前是「{$direction}」。");
         }
 
+        if ($this->tree !== null) {
+            throw new LogicException('orderable() 和 treeView() 不能同時使用：樹狀列表本身就能拖曳排序。請拿掉 orderable()。');
+        }
+
         $this->ordering = ['column' => $column, 'direction' => $direction, 'label' => $label];
         $this->assertOrderingNotEdited();
+
+        return $this;
+    }
+
+    /**
+     * Show the rows as a tree, put in order and moved between parents by dragging. $parent holds
+     * the parent's key ($root, NULL by default, for a root: Dcat's tables use 0), $order the
+     * position among siblings (1, 2, 3, ... from the first; NULLs come last and get a number on
+     * the first save). The tree covers the grid's query as given to make() and shows every row at
+     * once, without paging; a row whose parent is outside it is shown as a root. $maxDepth limits
+     * the levels (a root is level 1). With a resource, each node offers 新增子項 ($addChild),
+     * which opens the create form with the parent field filled in.
+     *
+     * A tree has no search, filters, sortable columns, batch actions or inline editing.
+     */
+    public function treeView(string $parent = 'parent_id', string $order = 'order', ?int $maxDepth = null, int|string|null $root = null, bool $addChild = true): static
+    {
+        if ($maxDepth !== null && $maxDepth < 1) {
+            throw new InvalidArgumentException("treeView() 的 maxDepth 至少是 1（只有根節點），目前是 {$maxDepth}。");
+        }
+
+        if ($this->ordering !== null && $this->tree === null) {
+            throw new LogicException('treeView() 和 orderable() 不能同時使用：樹狀列表本身就能拖曳排序。請拿掉 orderable()。');
+        }
+
+        $this->ordering = ['column' => $order, 'direction' => 'asc', 'label' => null];
+        $this->tree = ['parent' => $parent, 'maxDepth' => $maxDepth, 'root' => $root, 'addChild' => $addChild];
+        $this->builtTree = null;
 
         return $this;
     }
@@ -395,7 +435,7 @@ class Grid implements Renderable, Responsable
     /**
      * @internal
      *
-     * @return array{mode: 'list', column: string, direction: 'asc'|'desc', label: string}|null
+     * @return array{mode: 'list'|'tree', column: string, direction: 'asc'|'desc', label: string, parent?: string, maxDepth?: ?int, root?: int|string|null}|null
      */
     public function ordering(): ?array
     {
@@ -403,9 +443,82 @@ class Grid implements Renderable, Responsable
             return null;
         }
 
+        if ($this->tree !== null) {
+            $this->assertTreeCompatible();
+
+            return ['mode' => 'tree', 'column' => $this->ordering['column'], 'direction' => 'asc', 'label' => $this->orderingLabel()] + $this->tree;
+        }
+
         $this->assertOrderingNotEdited();
 
         return ['mode' => 'list', 'column' => $this->ordering['column'], 'direction' => $this->ordering['direction'], 'label' => $this->orderingLabel()];
+    }
+
+    /**
+     * The parent column of a treeView() grid, else null.
+     *
+     * @internal
+     */
+    public function treeParent(): ?string
+    {
+        return $this->tree['parent'] ?? null;
+    }
+
+    /**
+     * The tree of the grid's query (see treeView()), built once per grid.
+     *
+     * @internal
+     */
+    public function tree(): Tree
+    {
+        if ($this->tree === null) {
+            throw new LogicException('這個列表沒有用 treeView()。');
+        }
+
+        return $this->builtTree ??= new Tree(
+            $this->applyOrdering($this->rows()->query())->get()->map(fn (Model $model) => [
+                'key' => $model->getKey(),
+                'parent' => $model->getAttribute($this->tree['parent']),
+                'value' => $model->getAttribute($this->ordering['column']),
+                'model' => $model,
+            ]),
+            $this->tree['root'],
+        );
+    }
+
+    /**
+     * A tree shows every row at once, in its own order: what narrows, sorts or pages a list, and
+     * inline editing, have no place in it.
+     */
+    protected function assertTreeCompatible(): void
+    {
+        $remove = fn (string $what, string $fix) => new LogicException("樹狀列表（treeView()）會一次顯示所有資料並依拖曳的順序排列，不能搭配{$what}。{$fix}");
+
+        if ($this->quickSearch !== []) {
+            throw $remove('quickSearch()', '請拿掉 quickSearch()。');
+        }
+
+        foreach ($this->columns as $column) {
+            if ($column->hasFilter()) {
+                throw $remove("篩選（欄位「{$column->key()}」）", '請拿掉這個欄位的 filter()。');
+            }
+
+            if ($column->isSortable()) {
+                throw $remove("欄位排序（欄位「{$column->key()}」的 sortable()）", '請拿掉這個欄位的 sortable()。');
+            }
+
+            if ($column->isEditable()) {
+                throw $remove("行內編輯（欄位「{$column->key()}」）", '請拿掉這個欄位的 editable()、switch() 或 switchGroup()。');
+            }
+        }
+
+        if (! $this->filters()->isEmpty()) {
+            throw $remove('篩選', '請拿掉 filters() 裡的篩選、選擇器和範圍。');
+        }
+
+        if ($this->actions['batch'] !== []) {
+            throw $remove('batchActions()（樹狀列表不能多選）', '請拿掉 batchActions()；deletable() 的刪除在樹狀列表只會出現在每個節點上。');
+        }
     }
 
     /**
@@ -584,8 +697,22 @@ class Grid implements Renderable, Responsable
         $actions = $endpoints !== null ? ['row' => $this->actionsOf('row'), 'batch' => $this->actionsOf('batch'), 'tool' => $this->actionsOf('tool')]
             : ['row' => [], 'batch' => [], 'tool' => []];
 
-        // Past the end: answer with the last page and report it as the current one.
-        $paginator = $this->currentPage($state);
+        if ($ordering !== null && $ordering['mode'] === 'tree') {
+            // Every row of the grid's query at once, depth first: one page holding them all.
+            $tree = $this->tree();
+            $rows = array_map(fn (string $id) => $this->treeRow($tree, $id, $actions['row']), $tree->order());
+            $pagination = ['page' => 1, 'perPage' => max(1, count($rows)), 'total' => count($rows), 'lastPage' => 1];
+        } else {
+            // Past the end: answer with the last page and report it as the current one.
+            $paginator = $this->currentPage($state);
+            $rows = $paginator->getCollection()->map(fn (Model $row) => $this->row($row, $actions['row']))->all();
+            $pagination = [
+                'page' => $paginator->currentPage(),
+                'perPage' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'lastPage' => max(1, $paginator->lastPage()),
+            ];
+        }
 
         return [
             'type' => 'list',
@@ -595,13 +722,8 @@ class Grid implements Renderable, Responsable
             + [
                 'gridId' => $this->id ?? $request->route()?->getName() ?? $request->path(),
                 'columns' => array_map(fn (Column $column) => $column->toSchema(), $this->columns),
-                'rows' => $paginator->getCollection()->map(fn (Model $row) => $this->row($row, $actions['row']))->all(),
-                'pagination' => [
-                    'page' => $paginator->currentPage(),
-                    'perPage' => $paginator->perPage(),
-                    'total' => $paginator->total(),
-                    'lastPage' => max(1, $paginator->lastPage()),
-                ],
+                'rows' => $rows,
+                'pagination' => $pagination,
                 'query' => $state->toArray(),
                 'perPageOptions' => $this->perPageChoices(),
             ]
@@ -617,7 +739,8 @@ class Grid implements Renderable, Responsable
             ]
             + ($endpoints !== null ? ['endpoints' => $endpoints] : [])
             + ($endpoints !== null && $this->exportable ? ['export' => ['url' => $this->endpointBase($request).'/export']] : [])
-            + ($endpoints !== null && $ordering !== null ? ['ordering' => ['mode' => $ordering['mode'], 'column' => $ordering['column'], 'direction' => $ordering['direction']]] : [])
+            + ($endpoints !== null && $ordering !== null ? ['ordering' => ['mode' => $ordering['mode'], 'column' => $ordering['column'], 'direction' => $ordering['direction']]
+                + (($ordering['maxDepth'] ?? null) !== null ? ['maxDepth' => $ordering['maxDepth']] : [])] : [])
             + ($this->empty !== null ? ['empty' => $this->empty] : [])
             + ($endpoints !== null && $this->quickFields !== null ? ['quickCreate' => $this->quickSchema($request)] : [])
             + ($this->resource !== null ? ['resource' => $this->resource] : []);
@@ -898,6 +1021,11 @@ class Grid implements Renderable, Responsable
      */
     protected function actionsOf(string $target): array
     {
+        // A tree has no selection, so no batch actions; its nodes may offer 新增子項.
+        if ($this->tree !== null && $target === 'batch') {
+            return [];
+        }
+
         $delete = match (true) {
             ! $this->deletable => [],
             $target === 'row' => [DeleteAction::forRow()->resourceForm($this->deleteForm)],
@@ -905,7 +1033,42 @@ class Grid implements Renderable, Responsable
             default => [],
         };
 
-        return [...$this->actions[$target], ...$delete];
+        $addChild = $target === 'row' && ($action = $this->addChildAction()) !== null ? [$action] : [];
+
+        return [...$this->actions[$target], ...$addChild, ...$delete];
+    }
+
+    /**
+     * 新增子項 on a treeView() grid with a resource create form: it opens the form with
+     * ?_brume_parent={id}, and is left out on the nodes at maxDepth.
+     */
+    protected function addChildAction(): ?AddChildAction
+    {
+        $createUrl = $this->resource['createUrl'] ?? null;
+
+        if ($this->tree === null || ! $this->tree['addChild'] || ! is_string($createUrl)) {
+            return null;
+        }
+
+        foreach ($this->actions['row'] as $declared) {
+            if ($declared->key() === AddChildAction::KEY) {
+                throw new InvalidArgumentException('樹狀列表的「新增子項」操作使用 key「'.AddChildAction::KEY.'」，請把同 key 的列操作換一個 key，或用 treeView(addChild: false) 關掉新增子項。');
+            }
+        }
+
+        $action = AddChildAction::to($createUrl);
+        $maxDepth = $this->tree['maxDepth'];
+
+        if ($maxDepth !== null) {
+            $action->visible(function (Model $row) use ($maxDepth) {
+                $tree = $this->tree();
+                $id = (string) $row->getKey();
+
+                return $tree->has($id) && $tree->depth($id) < $maxDepth;
+            });
+        }
+
+        return $action;
     }
 
     /**
@@ -948,6 +1111,22 @@ class Grid implements Renderable, Responsable
         }
 
         return $row + ($meta !== [] ? ['_meta' => $meta] : []);
+    }
+
+    /**
+     * A tree node's row: the row with _meta.parent, the key of the row it is shown under (null for
+     * a root, whatever the table stores for one).
+     *
+     * @param  list<Action>  $rowActions
+     * @return array<string, mixed>
+     */
+    protected function treeRow(Tree $tree, string $id, array $rowActions): array
+    {
+        $row = $this->row($tree->row($id)['model'], $rowActions);
+        $parent = $tree->parent($id);
+        $row['_meta'] = ($row['_meta'] ?? []) + ['parent' => $parent !== null ? $tree->row($parent)['key'] : null];
+
+        return $row;
     }
 
     protected function paginate(GridQuery $state, int $page): LengthAwarePaginator

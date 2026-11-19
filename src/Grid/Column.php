@@ -346,6 +346,14 @@ class Column
     /**
      * @internal
      */
+    public function hasFilter(): bool
+    {
+        return $this->filter !== null;
+    }
+
+    /**
+     * @internal
+     */
     public function isSortable(): bool
     {
         return $this->sortable;

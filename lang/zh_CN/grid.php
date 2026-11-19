@@ -63,5 +63,13 @@ return [
         'parent' => '这个列表不是树状结构，移动时不能指定 parent。',
         'self' => '不能把项目移到自己的前面或后面。',
         'ids' => 'ids 必须是这个列表的数据编号列表。',
+        'tree_parent' => '树状列表移动时必须指定 parent（移到最上层时为 null）。',
+        'descendant' => '不能把项目移到自己或自己的子项下面。',
+        'max_depth' => '最多只能有 :max 层。',
+        'tree_list' => '树状列表一次只能移动一个项目，不能整批保存顺序。',
+    ],
+    // Grid::treeView().
+    'tree' => [
+        'add_child' => '新增子项',
     ],
 ];

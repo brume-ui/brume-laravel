@@ -115,7 +115,10 @@ class GridEndpointController
      */
     public function reorderItems(Grid $grid): JsonResponse
     {
-        if ($grid->ordering() === null) {
+        $ordering = $grid->ordering();
+
+        // A tree has no 調整順序 dialog.
+        if ($ordering === null || $ordering['mode'] === 'tree') {
             return $this->unavailable();
         }
 
@@ -129,7 +132,7 @@ class GridEndpointController
     /**
      * A ReorderMoveRequest { id, before?, after? } answered with a ReorderResponse { undo? }, or a
      * ReorderListRequest { ids } answered with {}. A row that left the grid's query, or a list
-     * that is not exactly its rows, is a 409.
+     * that is not exactly its rows, is a 409. A tree takes moves only, each naming its parent.
      */
     public function reorder(Grid $grid, Request $request): JsonResponse
     {
@@ -141,6 +144,10 @@ class GridEndpointController
 
         try {
             if ($request->exists('ids')) {
+                if ($grid->ordering()['mode'] === 'tree') {
+                    throw ValidationException::withMessages(['ids' => __('brume::grid.reorder.tree_list')]);
+                }
+
                 $ids = $request->input('ids');
 
                 if (! is_array($ids) || ! array_is_list($ids)) {
