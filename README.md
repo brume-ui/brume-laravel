@@ -223,8 +223,21 @@ Esc 取消。成功後出現「已更新順序」提示與「復原」按鈕。
   丟出例外會讓整次排序 rollback。寫回只更新有變動的列，用 query builder 批次 update，不觸發 model 事件，
   也不動 `updated_at`，所以要同步快取或 materialized path 時請在這裡處理。沒有任何變動時不會呼叫。
 
+`orderable()` 和 `treeView()` 是兩種互斥的模式，同一個 Grid 只能擇一（兩者都呼叫會丟出例外）。
+排序欄位不能同時是行內編輯欄位：若該欄位（或 `switch()`／`switchGroup()` 涵蓋的屬性）也設了 `editable()`，
+`orderable()` 會丟出 `LogicException`（「排序欄位「sort」由 orderable() 管理，不能同時行內編輯…」），
+不論 `editable()` 與 `orderable()` 的呼叫先後；請拿掉那個欄位的 `editable()`。
+
+列表模式：
+
 ```php
 $grid->quickSearch('title')->orderable('sort')->perPage(20);
+$grid->orderSaved(fn (array $ids) => Banner::whereKey($ids)->get()->each->flushCache());
+```
+
+樹狀模式（另一個 Grid，不要和上面放在一起）：
+
+```php
 $grid->treeView('parent_id', 'position', maxDepth: 3);
 $grid->orderSaved(fn (array $ids) => Category::whereKey($ids)->get()->each->refreshTreePath());
 ```
@@ -1008,7 +1021,7 @@ frontend installation. Both install modes continue to be checked using actual pu
 
 All five `@brume-ui/brume-*` dependencies pin `0.1.0-alpha.22` with registry integrity in the
 frozen frontend lockfile. `check-package-origins.mjs` rejects source links before the distribution
-and ordinary workbench E2E gates. All 51 browser cases, including composition, run in ordinary E2E.
+and ordinary workbench E2E gates. All browser cases, including composition and ordering, run in ordinary E2E.
 Linux baseline generation remains opt-in; inspect every changed PNG and run ordinary non-update CI
 afterward. The composition baselines retain the reviewed prepublication source PNG bytes.
 
