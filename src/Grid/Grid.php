@@ -373,7 +373,8 @@ class Grid implements Renderable, Responsable
      * (1, 2, 3, ... from the first row; with 'desc', the first row gets the highest number). The
      * order covers the grid's query as given to make() (its conditions, global scopes and soft
      * deletes), never the list's search, filters or sort. Rows whose value is NULL come last, and
-     * get a number on the first save. Without defaultSort(), the list is shown in this order.
+     * get a number on the first save. The list is shown in this order (with defaultSort() the
+     * grid throws when it is built).
      * $label is the attribute the dialog shows per row: by default the primary column, else the
      * first column.
      */
@@ -424,6 +425,7 @@ class Grid implements Renderable, Responsable
     /**
      * Called after a new order is saved, inside its transaction, with the ids of the rows whose
      * value changed: fn (list<int|string> $changedIds): void. An exception rolls the order back.
+     * Without orderable() or treeView() the grid throws when it is built.
      */
     public function orderSaved(Closure $fn): static
     {
@@ -440,6 +442,10 @@ class Grid implements Renderable, Responsable
     public function ordering(): ?array
     {
         if ($this->ordering === null) {
+            if ($this->orderSaved !== null) {
+                throw new LogicException('orderSaved() 只能搭配 orderable() 或 treeView()：這個列表不能拖曳排序，順序不會被儲存。請加上 orderable() 或 treeView()，或拿掉 orderSaved()。');
+            }
+
             return null;
         }
 
@@ -450,6 +456,10 @@ class Grid implements Renderable, Responsable
         }
 
         $this->assertOrderingNotEdited();
+
+        if ($this->defaultSort !== null) {
+            throw new LogicException('orderable() 和 defaultSort() 不能同時使用：可拖曳排序的列表依排序欄位的順序顯示。請拿掉 defaultSort()。');
+        }
 
         return ['mode' => 'list', 'column' => $this->ordering['column'], 'direction' => $this->ordering['direction'], 'label' => $this->orderingLabel()];
     }
@@ -496,6 +506,10 @@ class Grid implements Renderable, Responsable
 
         if ($this->quickSearch !== []) {
             throw $remove('quickSearch()', '請拿掉 quickSearch()。');
+        }
+
+        if ($this->defaultSort !== null) {
+            throw $remove('defaultSort()', '請拿掉 defaultSort()。');
         }
 
         foreach ($this->columns as $column) {

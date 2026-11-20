@@ -364,6 +364,18 @@ test('row_deeper_than_max_depth_can_be_reordered_in_place_but_not_moved_deeper',
     postTreeMove(['id' => $n['A1']->id, 'parent' => $n['B']->id])->assertUnprocessable();
 });
 
+test('tree_view_with_default_sort_throws_when_the_grid_is_built', function () {
+    $this->withoutExceptionHandling();
+    treeNodes(['A' => [null, 1]]);
+    treeRoutes(fn (Grid $grid) => $grid->defaultSort('name'), uri: 'after');
+    treeRoutes(fn (Grid $grid) => $grid->defaultSort('name')->treeView(), tree: null, uri: 'before');
+
+    foreach (['after', 'before'] as $uri) {
+        expect(fn () => $this->get("/admin/{$uri}"))->toThrow(LogicException::class, '不能搭配defaultSort()')
+            ->and(fn () => postTreeMove(['id' => 1, 'parent' => null], "/admin/{$uri}/_brume/reorder"))->toThrow(LogicException::class, 'defaultSort()');
+    }
+});
+
 test('tree_view_with_filters_or_quick_search_throws', function () {
     $tree = fn () => Grid::make(TreeNode::class)->treeView();
     $cases = [

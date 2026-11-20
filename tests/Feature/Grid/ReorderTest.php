@@ -86,11 +86,28 @@ test('default_sort_puts_nulls_last', function () {
     $names = fn (string $uri) => array_column($this->get($uri)->assertOk()->viewData('page')['props']['envelope']['page']['rows'], 'name');
 
     expect($names('/admin/sorts'))->toBe(['C', 'B', 'A', 'D']);
+});
 
-    // An explicit defaultSort() wins over the ordering.
-    sortRoutes(fn (Grid $grid) => $grid->defaultSort('name', 'desc'), uri: 'named');
+test('orderable_with_default_sort_throws_when_the_grid_is_built', function () {
+    $this->withoutExceptionHandling();
+    sortItems(['A' => 1]);
+    // Either order of the two calls.
+    sortRoutes(fn (Grid $grid) => $grid->defaultSort('name', 'desc'), uri: 'after');
+    sortRoutes(fn (Grid $grid) => $grid->defaultSort('name')->orderable('sort'), orderable: false, uri: 'before');
 
-    expect($names('/admin/named'))->toBe(['D', 'C', 'B', 'A']);
+    foreach (['after', 'before'] as $uri) {
+        expect(fn () => $this->get("/admin/{$uri}"))->toThrow(LogicException::class, 'orderable() 和 defaultSort() 不能同時使用')
+            ->and(fn () => postReorder(['ids' => []], "/admin/{$uri}/_brume/reorder"))->toThrow(LogicException::class, 'defaultSort()');
+    }
+});
+
+test('order_saved_without_orderable_throws_when_the_grid_is_built', function () {
+    $this->withoutExceptionHandling();
+    sortItems(['A' => 1]);
+    sortRoutes(fn (Grid $grid) => $grid->orderSaved(fn (array $ids) => null), orderable: false);
+
+    expect(fn () => $this->get('/admin/sorts'))->toThrow(LogicException::class, 'orderSaved() 只能搭配 orderable() 或 treeView()')
+        ->and(fn () => postReorder(['ids' => []]))->toThrow(LogicException::class, 'orderSaved()');
 });
 
 test('move_after_renumbers_the_whole_scope_from_one', function () {
