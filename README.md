@@ -146,13 +146,13 @@ Route::brumeGrid('shops/{shop}/orders', [ShopOrderController::class, 'index'])
     ->name('brume.shop-orders.index');
 ```
 
-This registers five routes: the page (`GET shops/{shop}/orders`) and, under
-`shops/{shop}/orders/_brume/`, `POST actions/{action}`, `PATCH cells/{id}`, `GET export` and
-`GET options/{source}`. Every endpoint runs **the page's own controller action**, so it goes
+This registers eight routes: the page (`GET shops/{shop}/orders`) and, under
+`shops/{shop}/orders/_brume/`, `POST quick-create`, `POST actions/{action}`, `PATCH cells/{id}`,
+`GET export`, `GET options/{source}`, `GET reorder` and `POST reorder`. Every endpoint runs **the page's own controller action**, so it goes
 through the same middleware (group, route and controller middleware), route model binding and
 route caching as the page; the `Grid` the action returns then answers the endpoint instead of
 rendering the page. Modifiers chained on the result (`middleware`, `can`, `where*`,
-`scopeBindings`, `withTrashed`, `domain`, ...) apply to all five routes; `name()` names the page.
+`scopeBindings`, `withTrashed`, `domain`, ...) apply to all eight routes; `name()` names the page.
 
 A grid that declares actions, inline editing, an export or remote filter options on a plain
 `Route::get` throws in the `local` environment; elsewhere those features are left out and a
