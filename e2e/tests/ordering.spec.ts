@@ -5,7 +5,7 @@ import { axeViolations, login, useScheme } from './support';
 // (tree, maxDepth 2) and 分類排序 (tree over the product categories). Real endpoints throughout.
 // The screenshot checks run first, on the seeded data (banners 41-45 have no sort value yet).
 // Every flow below puts back what it moved: banners through a reset to the seeded id order,
-// the trees through 復原 or the opposite move.
+// the trees through 復原 or the opposite move. The tree groups also reset to the seed first.
 test.beforeEach(async ({ page }) => {
   await login(page);
 });
@@ -37,6 +37,34 @@ async function resetBanners(page: Page): Promise<void> {
     data: { ids: Array.from({ length: 45 }, (_, i) => i + 1) },
   });
   expect(response.status()).toBe(200);
+}
+
+/** Posts one tree move ({ id, parent, after? }) through the same endpoint the UI uses. */
+async function postMove(page: Page, path: string, move: Record<string, number | null>): Promise<void> {
+  const cookies = await page.context().cookies();
+  const xsrf = decodeURIComponent(cookies.find((c) => c.name === 'XSRF-TOKEN')?.value ?? '');
+  const response = await page.request.post(`${path}/_brume/reorder`, {
+    headers: { 'X-XSRF-TOKEN': xsrf, Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    data: move,
+  });
+  expect(response.status()).toBe(200);
+}
+
+/** Puts 網站選單 back to the seed (ids 1-5 are the roots, 6-18 their children in id order). */
+async function resetNavMenus(page: Page): Promise<void> {
+  const children: Array<[number, number]> = [
+    [1, 6], [1, 7], [1, 8], [2, 9], [2, 10], [2, 11], [3, 12], [3, 13], [3, 14], [4, 15], [4, 16], [5, 17], [5, 18],
+  ];
+  // Roots first (each goes last, so they end up 1..5), then every child last under its parent.
+  for (let id = 1; id <= 5; id++) await postMove(page, '/admin/nav-menus', { id, parent: null });
+  for (const [parent, id] of children) await postMove(page, '/admin/nav-menus', { id, parent });
+}
+
+/** Puts the category tree back to the seed: 服飾 (1), 家居 (2), and 外套 (3) under 服飾. */
+async function resetCategories(page: Page): Promise<void> {
+  await postMove(page, '/admin/product-category-tree', { id: 1, parent: null });
+  await postMove(page, '/admin/product-category-tree', { id: 2, parent: null });
+  await postMove(page, '/admin/product-category-tree', { id: 3, parent: 1 });
 }
 
 /** Keyboard move: focus the handle, pick up, press the keys, drop. */
@@ -169,7 +197,7 @@ test.describe('banners: a paged list in order by dragging', () => {
     // Esc puts it back without a request.
     const sent: string[] = [];
     page.on('request', (r) => {
-      if (r.method() === 'POST') sent.push(r.url());
+      if (r.method() === 'POST' && r.url().endsWith('/_brume/reorder')) sent.push(r.url());
     });
     const grip = handle(page, bannerTitle(1));
     await grip.focus();
@@ -220,7 +248,7 @@ test.describe('banners: a paged list in order by dragging', () => {
     // A disabled handle starts nothing, even from the keyboard.
     const sent: string[] = [];
     page.on('request', (r) => {
-      if (r.method() === 'POST') sent.push(r.url());
+      if (r.method() === 'POST' && r.url().endsWith('/_brume/reorder')) sent.push(r.url());
     });
     const before = await titles(page);
     await grip.focus();
@@ -273,6 +301,11 @@ test.describe('banners: a paged list in order by dragging', () => {
 });
 
 test.describe('網站選單: a two-level tree', () => {
+  // Start from the seeded tree even if an earlier test stopped halfway.
+  test.beforeEach(async ({ page }) => {
+    await resetNavMenus(page);
+  });
+
   test('the seeded tree: handles, toggles, 全部收合 / 全部展開', async ({ page }) => {
     await page.goto('/admin/nav-menus');
     await expect(handle(page, '品牌故事')).toBeVisible();
@@ -321,7 +354,7 @@ test.describe('網站選單: a two-level tree', () => {
     await expect(handle(page, '團隊介紹')).toBeVisible();
     const sent: string[] = [];
     page.on('request', (r) => {
-      if (r.method() === 'POST') sent.push(r.url());
+      if (r.method() === 'POST' && r.url().endsWith('/_brume/reorder')) sent.push(r.url());
     });
 
     // A child cannot go further in (level 3), and neither can a root that has children.
@@ -335,18 +368,16 @@ test.describe('網站選單: a two-level tree', () => {
     expect(await tree(page)).toEqual(SEEDED_MENU);
     expect(sent).toEqual([]);
 
-    // Pointer: a root with children pushed to the right of a child is never put at level 3.
+    // Pointer: a root with children pushed to the right of a child is never put at level 3,
+    // and since no legal drop target is left, nothing is saved.
     await pointerDrag(page, handle(page, '關於我們'), handle(page, '熱銷排行'), 80, 4);
     await page.waitForTimeout(500);
+    expect(sent).toEqual([]);
+    await expect(page.getByText(TOAST)).toHaveCount(0);
     const after = await tree(page);
-    // (A drop between roots is a legal move; if it saved one, take it back.)
-    const undo = page.getByRole('button', { name: '復原', exact: true });
-    if (await undo.isVisible()) {
-      await undo.click();
-      await expect(undo).toHaveCount(0);
-    }
     expect(Math.max(...after.map((n) => n.level))).toBe(2);
     for (const child of ['品牌故事', '團隊介紹', '聯絡我們']) expect(parentOf(after, child)).toBe('關於我們');
+    expect(after).toEqual(SEEDED_MENU);
     await page.reload();
     expect(await tree(page)).toEqual(SEEDED_MENU);
   });
@@ -361,6 +392,10 @@ test.describe('網站選單: a two-level tree', () => {
 });
 
 test.describe('分類排序: the category tree and the 商品分類 list', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetCategories(page);
+  });
+
   test('moving 外套 under 家居 updates the 商品分類 list; moving it back restores it', async ({ page }) => {
     const rowsLeft = async (names: string[]) => {
       const out: Record<string, number> = {};
