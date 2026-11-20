@@ -318,10 +318,50 @@ test('orphans_are_shown_as_roots', function () {
     expect(array_column($rows, 'name'))->toBe(['X', 'Y', 'P', 'Q', 'Qc', 'S'])
         ->and(array_map(fn (array $row) => $row['_meta']['parent'], $rows))->toBe([null, null, null, null, $n['Q']->id, null]);
 
-    // An orphan moves like any root.
+    // An orphan moves like any root, and keeps its stored parent while it stays among the roots.
     postTreeMove(['id' => $n['Y']->id, 'parent' => null, 'before' => $n['X']->id])->assertOk();
     expect(array_column(treePage()['rows'], 'name'))->toBe(['Y', 'X', 'P', 'Q', 'Qc', 'S'])
-        ->and(treeValues()['Y'])->toBe([null, 1]);
+        ->and(treeValues()['Y'])->toBe([$other->id, 1]);
+});
+
+test('orphan_reordered_among_roots_keeps_its_stored_parent', function () {
+    $other = TreeNode::query()->create(['shop_id' => 2, 'name' => 'other', 'order' => 1]);
+    $n = treeNodes(['A' => [null, 1], 'X' => [999, 2], 'Y' => [$other->id, 3]]);
+    treeRoutes();
+
+    postTreeMove(['id' => $n['X']->id, 'parent' => null])->assertOk();
+    postTreeMove(['id' => $n['Y']->id, 'parent' => null, 'before' => $n['A']->id])->assertOk();
+
+    expect(array_column(treePage()['rows'], 'name'))->toBe(['Y', 'A', 'X'])
+        ->and(treeValues())->toBe(['A' => [null, 2], 'X' => [999, 3], 'Y' => [$other->id, 1]]);
+});
+
+test('orphan_moved_under_a_visible_parent_gets_that_parent', function () {
+    $n = treeNodes(['A' => [null, 1], 'A1' => ['A', 1], 'X' => [999, 2]]);
+    treeRoutes();
+
+    postTreeMove(['id' => $n['X']->id, 'parent' => $n['A']->id, 'before' => $n['A1']->id])->assertOk();
+
+    expect(treeValues())->toBe(['A' => [null, 1], 'A1' => ['A', 2], 'X' => ['A', 1]]);
+});
+
+test('row_deeper_than_max_depth_can_be_reordered_in_place_but_not_moved_deeper', function () {
+    // Legacy data: A1a and A1b sit at depth 3 under maxDepth 2.
+    $n = treeNodes(['A' => [null, 1], 'A1' => ['A', 1], 'A1a' => ['A1', 1], 'A1b' => ['A1', 2], 'B' => [null, 2]]);
+    treeRoutes(tree: ['maxDepth' => 2]);
+
+    postTreeMove(['id' => $n['A1a']->id, 'parent' => $n['A1']->id, 'after' => $n['A1b']->id])->assertOk();
+    expect(treeValues())->toMatchArray(['A1a' => ['A1', 2], 'A1b' => ['A1', 1]]);
+
+    // A1 with its children (height 2) reorders in place under A too.
+    postTreeMove(['id' => $n['A1']->id, 'parent' => $n['A']->id])->assertOk();
+
+    $response = postTreeMove(['id' => $n['A1a']->id, 'parent' => $n['A1b']->id])->assertUnprocessable();
+    expect($response->json('message'))->toBe('最多只能有 2 層。')
+        ->and(treeValues()['A1a'])->toBe(['A1', 2]);
+
+    // Moving to another parent still checks the depth.
+    postTreeMove(['id' => $n['A1']->id, 'parent' => $n['B']->id])->assertUnprocessable();
 });
 
 test('tree_view_with_filters_or_quick_search_throws', function () {

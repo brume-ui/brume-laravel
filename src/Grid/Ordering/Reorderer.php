@@ -162,8 +162,8 @@ class Reorderer
 
     /**
      * Moves $id under $parent (null: a root), before or after its child $anchor or last. Only
-     * the old and the new siblings are renumbered 1..N; the row itself also gets its new parent,
-     * written as the tree's root value for a root.
+     * the old and the new siblings are renumbered 1..N; when the parent it is shown under changes,
+     * the row itself also gets its new parent, written as the tree's root value for a root.
      *
      * @return array{undo: array{id: int|string, parent: int|string|null, before?: int|string, after?: int|string}}
      */
@@ -184,12 +184,15 @@ class Reorderer
             throw ReorderConflict::make();
         }
 
-        if ($maxDepth !== null && ($parent !== null ? $tree->depth($parent) : 0) + $tree->height($id) > $maxDepth) {
+        $oldParent = $tree->parent($id);
+        $reparent = $oldParent !== $parent;
+
+        // Only a move to another parent checks the depth: rows already deeper (older data) still reorder in place.
+        if ($reparent && $maxDepth !== null && ($parent !== null ? $tree->depth($parent) : 0) + $tree->height($id) > $maxDepth) {
             throw ValidationException::withMessages(['parent' => __('brume::grid.reorder.max_depth', ['max' => $maxDepth])]);
         }
 
         $key = fn (?string $node) => $node !== null ? $tree->row($node)['key'] : null;
-        $oldParent = $tree->parent($id);
         $old = $tree->children($oldParent);
         $from = array_search($id, $old, true);
         $undo = ['id' => $key($id), 'parent' => $key($oldParent)] + match (true) {
@@ -199,7 +202,7 @@ class Reorderer
         };
 
         array_splice($old, $from, 1);
-        $new = $oldParent === $parent ? $old : $tree->children($parent);
+        $new = $reparent ? $tree->children($parent) : $old;
         $to = match ($side) {
             'before' => array_search($anchor, $new, true),
             'after' => array_search($anchor, $new, true) + 1,
@@ -211,12 +214,14 @@ class Reorderer
         $model = $rows->query()->getModel();
         $changed = [];
 
-        foreach ($oldParent === $parent ? [$new] : [$old, $new] as $siblings) {
+        foreach ($reparent ? [$old, $new] : [$new] as $siblings) {
             foreach ($siblings as $index => $node) {
                 $row = $tree->row($node);
                 $values = $this->sameValue($row['value'], $index + 1) ? [] : [$column => $index + 1];
 
-                if ($node === $id && ! $this->sameParent($row['parent'], $storedParent)) {
+                // Only when the shown parent changes: an orphan or a row on a cycle, shown as a
+                // root, keeps its stored parent while it is reordered among the roots.
+                if ($node === $id && $reparent && ! $this->sameParent($row['parent'], $storedParent)) {
                     $values[$parentColumn] = $storedParent;
                 }
 
