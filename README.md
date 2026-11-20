@@ -208,25 +208,34 @@ Esc 取消。成功後出現「已更新順序」提示與「復原」按鈕。
 - `orderable('sort')`：排序欄位 `$column`（預設 `order`），`$direction` 為 `asc`（預設，從 1 起編號）或
   `desc`（第一列得到最大的數字），`$label` 是「調整順序」視窗每列顯示的屬性（預設主欄位，再沒有就用第一欄）。
   排序範圍是交給 `Grid::make()` 的基礎查詢（含條件、global scope 與軟刪除），不含使用者的搜尋、篩選與排序。
-  排序值為 NULL 的列排在最後，第一次儲存時一起編號。沒有 `defaultSort()` 時，列表依這個順序顯示。
+  排序值為 NULL 的列排在最後，第一次儲存時一起編號。列表依這個順序顯示，所以不能搭配 `defaultSort()`。
   套用欄位排序、搜尋或篩選時，把手會停用（`aria-disabled`），並提示「請先清除排序／篩選，或使用「調整順序」」；
   工具列的「調整順序」開啟視窗，依名稱列出範圍內全部項目，提供「置頂」／「置底」與「儲存」／「取消」，
   可跨頁調整。「調整順序」視窗與整批儲存最多 1000 筆，範圍內超過時回 422「項目太多，無法一次調整順序」；單筆拖曳沒有上限。
   範圍很大時，請替排序欄位與範圍條件欄位（例如 `where('shop_id', ...)`）建立索引。
 - `treeView('parent_id', 'order', maxDepth: 2, root: null, addChild: true)`：以樹狀顯示並拖曳排序與換上層。
   `$parent` 是上層欄位，`$order` 是同層順序（NULL 排最後，第一次儲存時編號）。根節點的上層值預設是 NULL；
-  從 Dcat 搬來的資料表通常用 `0`，請傳 `root: 0`。樹狀一次顯示範圍內全部列，不分頁；上層不在範圍內的列視為根節點。
-  `maxDepth` 限制層數（根為第 1 層），到上限的節點不能再被放進子層（沒有放置目標，鍵盤縮排會被忽略）。
+  從 Dcat 搬來的資料表通常用 `0`，請傳 `root: 0`。樹狀一次載入並顯示範圍內全部列，不分頁也沒有筆數上限，適合小型的樹；
+  上層不在範圍內的列視為根節點，在根節點之間調整順序時保留原本的上層值，拖進某個節點底下才會改寫。
+  `maxDepth` 限制層數（根為第 1 層），到上限的節點不能再被放進子層（沒有放置目標，鍵盤縮排會被忽略）；
+  已經超過上限的舊資料仍可在原本的上層底下調整順序。
   有 Resource 時，每個節點的列選單有「新增子項」（`addChild`），會前往新增頁並預填上層欄位。工具列有「全部展開」／「全部收合」，
-  每個節點也可個別展開。樹狀列表不能搭配 `orderable()`，也沒有搜尋、篩選、欄位排序、批次動作與行內編輯。
+  每個節點也可個別展開。樹狀列表不能搭配 `orderable()` 與 `defaultSort()`，也沒有搜尋、篩選、欄位排序、批次動作與行內編輯。
 - `orderSaved(fn (array $changedIds) => ...)`：順序儲存後、在同一個 transaction 內呼叫，參數是值有變動的列的 id；
-  丟出例外會讓整次排序 rollback。寫回只更新有變動的列，用 query builder 批次 update，不觸發 model 事件，
-  也不動 `updated_at`，所以要同步快取或 materialized path 時請在這裡處理。沒有任何變動時不會呼叫。
+  丟出例外會讓整次排序 rollback。寫回只更新有變動的列：在同一個 transaction 內，每一筆有變動的列各用 query builder
+  送出一個 UPDATE，不觸發 model 事件，也不動 `updated_at`，所以要同步快取或 materialized path 時請在這裡處理。
+  沒有任何變動時不會呼叫。沒有 `orderable()` 或 `treeView()` 卻呼叫 `orderSaved()`，建立列表時會丟出 `LogicException`。
 
 `orderable()` 和 `treeView()` 是兩種互斥的模式，同一個 Grid 只能擇一（兩者都呼叫會丟出例外）。
 排序欄位不能同時是行內編輯欄位：若該欄位（或 `switch()`／`switchGroup()` 涵蓋的屬性）也設了 `editable()`，
-`orderable()` 會丟出 `LogicException`（「排序欄位「sort」由 orderable() 管理，不能同時行內編輯…」），
-不論 `editable()` 與 `orderable()` 的呼叫先後；請拿掉那個欄位的 `editable()`。
+會丟出 `LogicException`（「排序欄位「sort」由 orderable() 管理，不能同時行內編輯…」）：先呼叫 `editable()` 時，
+在 `orderable()` 當下丟出；否則在建立列表時丟出。請拿掉那個欄位的 `editable()`。
+`orderable()` 或 `treeView()` 搭配 `defaultSort()` 也會在建立列表時丟出 `LogicException`（不論呼叫先後），
+因為列表必須依排序欄位顯示，拖曳的結果才對得上；請拿掉 `defaultSort()`。
+
+排序的 `_brume/reorder` 端點（`POST` 儲存順序、`GET` 列出「調整順序」的項目）是寫入端點，和行內編輯的 `cells`
+端點一樣執行列表頁的 controller action（Resource 為 `index`），套用同一組 middleware；只保護 edit／update 路由的應用程式，
+也要一併保護這個端點。
 
 列表模式：
 
