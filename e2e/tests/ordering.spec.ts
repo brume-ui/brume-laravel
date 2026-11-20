@@ -61,6 +61,7 @@ async function resetNavMenus(page: Page): Promise<void> {
 }
 
 /** Puts the category tree back to the seed: 服飾 (1), 家居 (2), and 外套 (3) under 服飾. */
+// Assumes the seed has no category rows other than ids 1-3, so moving those three restores it all.
 async function resetCategories(page: Page): Promise<void> {
   await postMove(page, '/admin/product-category-tree', { id: 1, parent: null });
   await postMove(page, '/admin/product-category-tree', { id: 2, parent: null });
