@@ -47,12 +47,22 @@ return [
         'allow_fixed' => false,
         // null allows any class; a list keeps only those classes.
         'allowed_classes' => null,
-        // iframe src must match; null allows no iframe at all.
-        'iframe_regexp' => '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/%',
+        // iframe src must match; null allows no iframe at all. The default accepts YouTube /embed/<11-char id> only.
+        'iframe_regexp' => '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/(?!videoseries)[A-Za-z0-9_-]{11}(?:[?#][^\s"<>]*)?$%',
+        // Input refused before parsing (HtmlRejected; validate with HtmlSanitizer::limitViolation()). null disables either.
+        'max_bytes' => 1_000_000,
+        // Element nesting depth; unclosed tags count.
+        'max_depth' => 256,
+        // Extra values refused for id, input[name] and label[for], added to HtmlSanitizer::RESERVED_NAMES. 'prefix*' matches a prefix.
+        'reserved_names' => [],
         // null = storage_path('framework/cache/brume-htmlpurifier'), created on demand; false = no cache.
         'cache_path' => null,
         // callable(HTMLPurifier_Config): void, runs after Brume's settings and before the definition is built.
+        // The cached definition is keyed on the hook's source file and lines. If its behaviour depends on
+        // anything else (closure `use` variables, env, database), set cache_path to false or change
+        // configure_version whenever that behaviour changes.
         'configure' => null,
+        'configure_version' => null,
     ],
 
     'locale' => 'zh_TW',

@@ -1,5 +1,6 @@
 <?php
 
+use Brume\Html\HtmlRejected;
 use Brume\Html\HtmlSanitizer;
 use Brume\Tests\Support\HtmlNormalizer;
 use Dom\HTMLDocument;
@@ -12,8 +13,8 @@ const HTML_FIXTURES = __DIR__.'/../../fixtures/html';
  * Everything else must come back DOM-equivalent.
  */
 const HTML_FIXTURE_LOSSES = [
-    // `title` is not on the spec's attribute whitelist (only iframe[title] is).
-    '04-link-blocks.html' => [' title="全部商品"' => ''],
+    // A link inside a link is invalid HTML: the inner link is unwrapped, its text kept.
+    '13-links-around-blocks.html' => ['<a href="/demo/shop/gift-box" class="innerLink">禮盒包裝</a>' => '禮盒包裝'],
     // Misspelt properties: browsers ignore them, the sanitiser drops them.
     '11-invalid-css.html' => [
         ' style="colr: #4f7a4a; text-algin: center;"' => '',
@@ -84,8 +85,8 @@ function throwingErrorHandler(): void
 
 dataset('legacy fixtures', fn () => legacyHtmlFixtures());
 
-it('ships the twelve hand-written fixtures and the hostile one', function () {
-    expect(legacyHtmlFixtures())->toHaveCount(12)
+it('ships the hand-written fixtures (twelve from brume-ui, links around blocks) and the hostile one', function () {
+    expect(legacyHtmlFixtures())->toHaveCount(13)
         ->and(file_exists(HTML_FIXTURES.'/hostile.html'))->toBeTrue();
 });
 
@@ -125,6 +126,21 @@ it('normalises fixtures the same with the PHP 8.3 fallback parser', function (st
     $html = htmlFixture($name);
 
     expect(HtmlNormalizer::canonical($html, legacy: true))->toBe(HtmlNormalizer::canonical($html));
+})->with(array_diff(legacyHtmlFixtures(), [
+    // libxml's HTML 4 parser closes a link before a <table> and before a nested link, so on
+    // PHP 8.3 both sides of that fixture's comparison are parsed the same lossy way (see below).
+    '13-links-around-blocks.html',
+]));
+
+it('keeps a legacy fixture DOM-equivalent under the PHP 8.3 fallback parser too', function (string $name) {
+    $expected = htmlFixture($name);
+    foreach (HTML_FIXTURE_LOSSES[$name] ?? [] as $search => $replace) {
+        $expected = str_replace($search, $replace, $expected);
+    }
+
+    $clean = sanitizer()->clean(htmlFixture($name));
+
+    expect(HtmlNormalizer::canonical($clean, legacy: true))->toBe(HtmlNormalizer::canonical($expected, legacy: true));
 })->with('legacy fixtures');
 
 it('normalises style declarations but not their order', function () {
@@ -138,8 +154,8 @@ describe('hostile input', function () {
     $allowed = [
         'h1' => [], 'h2' => [], 'h3' => [], 'h4' => [], 'h5' => [], 'h6' => [], 'p' => [], 'ul' => [], 'ol' => ['start', 'type'], 'li' => [],
         'table' => ['border', 'cellpadding', 'cellspacing', 'width'], 'thead' => [], 'tbody' => [], 'tr' => [], 'th' => ['colspan', 'rowspan'],
-        'td' => ['colspan', 'rowspan', 'data-th'], 'colgroup' => [], 'col' => ['span', 'width'], 'img' => ['src', 'alt', 'width', 'height', 'loading'],
-        'a' => ['href', 'target', 'rel'], 'br' => [], 'strong' => [], 'b' => [], 'em' => [], 'i' => [], 'u' => [], 's' => [], 'sup' => [], 'sub' => [],
+        'td' => ['colspan', 'rowspan', 'data-th'], 'colgroup' => [], 'col' => ['span', 'width'], 'img' => ['src', 'alt', 'title', 'width', 'height', 'loading'],
+        'a' => ['href', 'target', 'rel', 'title'], 'br' => [], 'strong' => [], 'b' => [], 'em' => [], 'i' => [], 'u' => [], 's' => [], 'sup' => [], 'sub' => [],
         'span' => [], 'div' => [], 'article' => [], 'blockquote' => [], 'hr' => [],
         'iframe' => ['src', 'width', 'height', 'allowfullscreen', 'frameborder', 'title', 'loading'],
         'input' => ['type', 'name', 'checked'], 'label' => ['for'],
@@ -239,11 +255,12 @@ describe('hostile input', function () {
         expect(sanitizer()->clean('<p>a<img src="data:image/png;base64,iVBORw0KGgo=" alt="x"></p>'))->toBe('<p>a</p>');
     });
 
-    it('survives 500 nested divs in bounded time, losing nothing after them', function () {
+    it('rejects 500 nested divs by default, and with max_depth null keeps everything', function () {
         $html = '<p>before</p>'.str_repeat('<div>', 500).'deep<script>alert(1)</script>'.str_repeat('</div>', 500).'<p>after</p>';
         $start = microtime(true);
 
-        $clean = sanitizer()->clean($html);
+        expect(fn () => sanitizer()->clean($html))->toThrow(HtmlRejected::class);
+        $clean = sanitizer(['max_depth' => null])->clean($html);
 
         expect(microtime(true) - $start)->toBeLessThan(5.0)
             ->and($clean)->toContain('<p>before</p>')
@@ -253,17 +270,23 @@ describe('hostile input', function () {
             ->and(substr_count($clean, '<div>'))->toBe(500);
     });
 
-    it('drops invalid UTF-8 bytes without raising', function () {
+    it('replaces invalid UTF-8 with U+FFFD before parsing, keeping the structure', function () {
         throwingErrorHandler();
         try {
             $clean = sanitizer()->clean("<p>ok\xC3\x28 \xFF\xFE bytes</p><p>中文</p>");
+            $attributes = sanitizer()->clean("<p class=\"\xC0\" title=\"\xff\">a</p><p class=\"x\">b</p>");
         } finally {
             restore_error_handler();
         }
 
-        // HTMLPurifier drops an invalid sequence together with the byte that broke it.
-        expect($clean)->toBe('<p>ok  bytes</p><p>中文</p>')
+        expect($clean)->toBe("<p>ok\u{FFFD}( \u{FFFD}\u{FFFD} bytes</p><p>中文</p>")
+            ->and($attributes)->toBe("<p class=\"\u{FFFD}\">a</p><p class=\"x\">b</p>")
             ->and(mb_check_encoding($clean, 'UTF-8'))->toBeTrue();
+    });
+
+    it('strips NUL bytes', function () {
+        expect(sanitizer()->clean("<p>a\0b</p><img src=\"/a\0.png\" alt=\"\0x\">"))
+            ->toBe('<p>ab</p><img src="/a.png" alt="x">');
     });
 });
 
@@ -287,7 +310,7 @@ describe('legacy content gains nothing', function () {
         '<div style="position:sticky;top:calc(100% - 10px);z-index:9999;">x</div>',
         '<div style="display:flex;flex:1 1 0%;gap:clamp(8px, 2vw, 16px);">x</div>',
         '<div style="z-index:-9999;">x</div>',
-        '<p><iframe src="//www.youtube.com/embed/abc" title="video" loading="lazy"></iframe></p>',
+        '<p><iframe src="//www.youtube.com/embed/dQw4w9WgXcQ" title="video" loading="lazy"></iframe></p>',
     ]);
 
     it('keeps the value but drops !important, like the stock properties', function () {
@@ -366,6 +389,8 @@ describe('options', function () {
             sanitizer(['iframe_regexp' => '%^https://example\.com/%'])->definitionId(),
             sanitizer(['configure' => fn () => null])->definitionId(),
             sanitizer(['configure' => fn ($c) => $c])->definitionId(),
+            sanitizer(['configure' => fn ($c) => $c, 'configure_version' => 2])->definitionId(),
+            sanitizer(['reserved_names' => ['cart']])->definitionId(),
         ];
 
         expect(array_unique($ids))->toHaveCount(count($ids))
@@ -471,7 +496,11 @@ it('is bound as a singleton configured from brume.html', function () {
     expect(app(HtmlSanitizer::class))->toBe(app(HtmlSanitizer::class))
         ->and(app(HtmlSanitizer::class)->clean('<p class="only other">x</p>'))->toBe('<p class="only">x</p>')
         ->and(config('brume.html.allow_fixed'))->toBeFalse()
-        ->and(config('brume.html.iframe_regexp'))->toBe('%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/%');
+        ->and(config('brume.html.max_bytes'))->toBe(1_000_000)
+        ->and(config('brume.html.max_depth'))->toBe(256)
+        ->and(config('brume.html.reserved_names'))->toBe([])
+        ->and(config('brume.html.configure_version'))->toBeNull()
+        ->and(config('brume.html.iframe_regexp'))->toBe(HtmlSanitizer::DEFAULT_IFRAME_REGEXP);
 });
 
 describe('empty documents', function () {
@@ -547,4 +576,278 @@ it('cleans a 20 KB document well under 200 ms after warm-up', function () {
     }
 
     expect($best)->toBeLessThan(200.0);
+});
+
+it('re-parses with the HTML5 parser without creating elements or attributes', function (string $name) {
+    if (! class_exists(HTMLDocument::class)) {
+        $this->markTestSkipped('Dom\HTMLDocument needs PHP 8.4+.');
+    }
+    $clean = sanitizer()->clean(htmlFixture($name));
+
+    // Every element a browser builds from the output must be one the output spells out (same
+    // name, same attributes). The HTML5 parser may clone a link or close a <p> early around
+    // block content (input that already nests blocks inside <p> renders the same way), but it
+    // must never invent anything.
+    preg_match_all('/<([a-z][a-z0-9]*)((?:\s[^>]*)?)>/', $clean, $tags, PREG_SET_ORDER);
+    $written = [];
+    foreach ($tags as [, $tag, $attributes]) {
+        preg_match_all('/([^\s=]+)(?:="([^"]*)")?/', $attributes, $pairs, PREG_SET_ORDER);
+        $attrs = [];
+        foreach ($pairs as $pair) {
+            $attrs[$pair[1]] = html_entity_decode($pair[2] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+        ksort($attrs);
+        $written[$tag.json_encode($attrs, JSON_UNESCAPED_UNICODE)] = true;
+    }
+    $doc = HTMLDocument::createFromString('<!doctype html><html><body>'.$clean.'</body></html>', LIBXML_NOERROR);
+    foreach ($doc->body->querySelectorAll('*') as $element) {
+        $attrs = [];
+        foreach ($element->attributes as $attribute) {
+            $attrs[$attribute->name] = $attribute->value;
+        }
+        ksort($attrs);
+        expect($written)->toHaveKey(strtolower($element->localName).json_encode($attrs, JSON_UNESCAPED_UNICODE));
+    }
+})->with([...legacyHtmlFixtures(), 'hostile.html']);
+
+describe('links and spans around blocks', function () {
+    it('lets a link or span wrap any flow content, in any context', function (string $html) {
+        expect(sanitizer()->clean($html))->toBe($html);
+    })->with([
+        '<a href="/a"><h2>t</h2></a>',
+        '<a href="/a"><ul><li>x</li></ul></a>',
+        '<a href="/a"><ol><li>x</li></ol></a>',
+        '<a href="/a"><div><img src="/i.png" alt=""></div></a>',
+        '<a href="/a"><table><tbody><tr><td>c</td></tr></tbody></table></a>',
+        '<a href="/a"><p>x</p><blockquote>q</blockquote><hr></a>',
+        '<a href="/a">text <b>bold</b> <img src="/i.png" alt=""></a>',
+        '<p><a href="/a"><h2>x</h2></a></p>',
+        '<div><a href="/a"><div>x</div></a></div>',
+        '<ul><li><a href="/a"><ol><li>x</li></ol></a></li></ul>',
+        '<table><tbody><tr><td><a href="/a"><h3>x</h3></a></td></tr></tbody></table>',
+        '<span><a href="/a"><div>x</div></a></span>',
+        '<span><div>x</div></span>',
+        '<span class="x"><h2>t</h2><ul><li>x</li></ul></span>',
+        '<p><span><div>x</div></span></p>',
+    ]);
+
+    it('keeps > inside quoted attribute values and leaves non-tags alone', function (string $html, string $expected) {
+        expect(sanitizer()->clean($html))->toBe($expected);
+    })->with([
+        ['<p><a href="/a" title=\'x>y\'><img src="/a.png" alt="A > B"></a></p>', '<p><a href="/a" title="x&gt;y"><img src="/a.png" alt="A &gt; B"></a></p>'],
+        ['<script>var s = "<a href=x>";</script><p>ok</p>', '<p>ok</p>'],
+        ['<!-- <a href="/x"> --><p>ok</p>', '<p>ok</p>'],
+        ['<p>1 < 2, <abbr>a</abbr> <article-x>b</article-x></p>', '<p>1 &lt; 2, a b</p>'],
+        ['<brumelink href="/x">alias spelt out</brumelink>', '<a href="/x">alias spelt out</a>'],
+    ]);
+
+    it('unwraps a link nested in a link, keeping its content', function (string $html, string $expected) {
+        expect(sanitizer()->clean($html))->toBe($expected);
+    })->with([
+        ['<a href="/a">pre<a href="/b">x</a>post</a>', '<a href="/a">prexpost</a>'],
+        ['<a href="/a"><div><a href="/b"><img src="/i.png" alt="">x</a></div></a>', '<a href="/a"><div><img src="/i.png" alt="">x</div></a>'],
+        ['<a href="/a"><a href="/b"><a href="/c">deep</a></a> tail</a>', '<a href="/a">deep tail</a>'],
+        ['<p><a href="/a"><span><a href="/b">x</a></span></a> <a href="/c">y</a></p>', '<p><a href="/a"><span>x</span></a> <a href="/c">y</a></p>'],
+        ['<A HREF="/a">x<A href="/b" title="t">y</A></A>', '<a href="/a">xy</a>'],
+    ]);
+});
+
+describe('iframe embeds', function () {
+    it('accepts only real YouTube embeds by default', function (string $src, bool $kept) {
+        $clean = sanitizer()->clean('<p>v<iframe src="'.$src.'"></iframe></p>');
+
+        expect($clean)->toBe($kept ? '<p>v<iframe src="'.$src.'"></iframe></p>' : '<p>v</p>');
+    })->with([
+        'embed' => ['https://www.youtube.com/embed/dQw4w9WgXcQ', true],
+        'embed with start' => ['https://www.youtube.com/embed/dQw4w9WgXcQ?start=42', true],
+        'protocol-relative nocookie' => ['//www.youtube-nocookie.com/embed/dQw4w9WgXcQ', true],
+        'no www' => ['https://youtube.com/embed/dQw4w9WgXcQ', true],
+        'dot segments' => ['https://www.youtube.com/embed/../../redirect?q=https://evil.example.com/', false],
+        'encoded dot segments' => ['https://www.youtube.com/embed/%2e%2e/%2e%2e/redirect?q=x', false],
+        'encoded dot segments after id' => ['https://www.youtube.com/embed/dQw4w9WgXcQ/%2e%2e/%2e%2e/redirect', false],
+        'videoseries' => ['https://www.youtube.com/embed/videoseries?list=PL0123456789', false],
+        'short id' => ['https://www.youtube.com/embed/abc', false],
+        'watch page' => ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', false],
+        'other host' => ['https://www.youtube.com.evil.com/embed/dQw4w9WgXcQ', false],
+    ]);
+});
+
+describe('titles and reserved names', function () {
+    it('keeps title on links and images', function () {
+        $html = '<p><a href="/a" title="全部商品"><img src="/i.png" alt="" title="圖"></a></p>';
+
+        expect(sanitizer()->clean($html))->toBe($html);
+    });
+
+    it('drops a reserved id, name or for, keeping the element', function (string $html, string $expected) {
+        expect(sanitizer()->clean($html))->toBe($expected);
+    })->with([
+        ['<p id="submit">x</p>', '<p>x</p>'],
+        ['<p id="ParentNode">x</p>', '<p>x</p>'],
+        ['<p id="csrf-field">x</p>', '<p>x</p>'],
+        ['<p id="__x">x</p>', '<p>x</p>'],
+        ['<p id="_token">x</p>', '<p>x</p>'],
+        ['<p id="hasOwnProperty">x</p>', '<p>x</p>'],
+        ['<p><input type="checkbox" name="action"></p>', '<p><input type="checkbox"></p>'],
+        ['<p><input type="checkbox" name="__proto__" id="toString"></p>', '<p><input type="checkbox"></p>'],
+        ['<p><input type="radio" name="elements"><label for="getElementById">x</label></p>', '<p><input type="radio"><label>x</label></p>'],
+    ]);
+
+    it('keeps names that only contain a reserved word', function (string $html) {
+        expect(sanitizer()->clean($html))->toBe($html);
+    })->with([
+        '<p id="submitted">x</p>',
+        '<p id="mytoken">x</p>',
+        '<p><input type="radio" name="faq-group" id="faq1"><label for="faq1">x</label></p>',
+    ]);
+
+    it('adds reserved_names from config to the defaults', function () {
+        $sanitizer = sanitizer(['reserved_names' => ['cart', 'shop*']]);
+
+        expect($sanitizer->clean('<p id="cart">a</p><p id="shopConfig">b</p><p id="submit">c</p><p id="carts">d</p>'))
+            ->toBe('<p>a</p><p>b</p><p>c</p><p id="carts">d</p>');
+    });
+});
+
+describe('input limits', function () {
+    it('rejects parser floods before purify, quickly and without crashing', function (string $kind, ?int $maxBytes, string $reason) {
+        $html = match ($kind) {
+            'divs' => str_repeat('<div>', 50_000).'x'.str_repeat('</div>', 50_000),
+            'spans' => str_repeat('<span>', 100_000).'x'.str_repeat('</span>', 100_000),
+            'unclosed b' => str_repeat('<b>', 100_000).'x',
+        };
+        $start = microtime(true);
+
+        expect(fn () => sanitizer(['max_bytes' => $maxBytes])->clean($html))
+            ->toThrow(function (HtmlRejected $e) use ($reason) {
+                expect($e->reason)->toBe($reason)
+                    ->and($e->getMessage())->toContain('brume.html.max_'.$reason);
+            })
+            ->and(microtime(true) - $start)->toBeLessThan(1.0);
+    })->with([
+        ['divs', 1_000_000, 'depth'],
+        ['spans', 1_000_000, 'bytes'],
+        ['spans', null, 'depth'],
+        ['unclosed b', 1_000_000, 'depth'],
+    ]);
+
+    it('allows depth 256 and rejects 257', function () {
+        $ok = str_repeat('<div>', 256).'x'.str_repeat('</div>', 256);
+        $deep = str_repeat('<div>', 257).'x'.str_repeat('</div>', 257);
+
+        expect(sanitizer()->clean($ok))->toBe($ok)
+            ->and(sanitizer()->limitViolation($deep))->toBe('depth')
+            ->and(fn () => sanitizer()->clean($deep))->toThrow(function (HtmlRejected $e) {
+                expect($e->reason)->toBe('depth')->and($e->limit)->toBe(256);
+            });
+    });
+
+    it('lets max_depth null allow any depth', function () {
+        $html = str_repeat('<div>', 1000).'x'.str_repeat('</div>', 1000);
+
+        expect(sanitizer(['max_depth' => null])->clean($html))->toBe($html);
+    });
+
+    it('counts only open non-void elements', function (string $html) {
+        expect(sanitizer(['max_depth' => 5])->limitViolation($html))->toBeNull();
+    })->with([
+        'void and self-closed' => str_repeat('<br><img src="/a.png" alt=""><hr><input type="checkbox"><col><wbr><span/><DIV />', 300),
+        'closing tags floor at zero' => str_repeat('</div>', 1000).str_repeat('<div>', 5),
+        'tags inside a comment' => '<!--'.str_repeat('<div>', 1000).'-->',
+        'unterminated comment' => '<p>x</p><!--'.str_repeat('<div>', 1000),
+        'not tags' => str_repeat('< div> <1> <> 3<4 a < b ', 1000),
+    ]);
+
+    it('counts the tag a > inside a quoted attribute does not end', function () {
+        expect(sanitizer(['max_depth' => 2])->limitViolation('<div title="a>b"><div title=\'>\'><div>x</div></div></div>'))->toBe('depth')
+            ->and(sanitizer(['max_depth' => 3])->limitViolation('<div title="a>b"><div title=\'>\'><div>x</div></div></div>'))->toBeNull();
+    });
+
+    it('rejects input over max_bytes, and max_bytes null disables it', function () {
+        $html = '<p>'.str_repeat('a', 93).'</p>';
+
+        expect(strlen($html))->toBe(100)
+            ->and(sanitizer(['max_bytes' => 100])->clean($html))->toBe($html)
+            ->and(sanitizer(['max_bytes' => 99])->limitViolation($html))->toBe('bytes')
+            ->and(fn () => sanitizer(['max_bytes' => 99])->clean($html))->toThrow(function (HtmlRejected $e) {
+                expect($e->reason)->toBe('bytes')->and($e->limit)->toBe(99);
+            })
+            ->and(sanitizer(['max_bytes' => null])->limitViolation(str_repeat('a', 2_000_000)))->toBeNull()
+            ->and(sanitizer()->limitViolation(null))->toBeNull()
+            ->and(sanitizer()->limitViolation('<p>x</p>'))->toBeNull();
+    });
+
+    it('scans 5 MB of garbage in linear time', function (string $kind) {
+        $size = 5_000_000;
+        $html = match ($kind) {
+            'random bytes' => random_bytes($size),
+            'open brackets' => str_repeat('<', $size),
+            'unterminated quotes' => str_repeat('<a "', intdiv($size, 4)),
+            'unterminated single quotes' => str_repeat("<a b='", intdiv($size, 6)),
+            'comment openers' => str_repeat('<!--', intdiv($size, 4)),
+            'bogus comments' => str_repeat('<!x', intdiv($size, 3)),
+            'tags' => str_repeat('<b></b>', intdiv($size, 7)),
+        };
+        // A depth limit that is never reached forces a scan of every byte.
+        $sanitizer = sanitizer(['max_bytes' => null, 'max_depth' => PHP_INT_MAX]);
+        $start = microtime(true);
+
+        expect($sanitizer->limitViolation($html))->toBeNull();
+
+        expect(microtime(true) - $start)->toBeLessThan(2.0);
+    })->with(['random bytes', 'open brackets', 'unterminated quotes', 'unterminated single quotes', 'comment openers', 'bogus comments', 'tags']);
+
+    it('cleans a 900 KB realistic document', function () {
+        $fixtures = implode('', array_map(htmlFixture(...), legacyHtmlFixtures()));
+        $html = str_repeat($fixtures, (int) ceil(900_000 / strlen($fixtures)));
+        $sanitizer = sanitizer();
+        $sanitizer->clean('<p>warm</p>');
+        // The suite's process has grown by now; the budget asserted below is what cleaning adds.
+        $limit = ini_set('memory_limit', '1G');
+        try {
+            memory_reset_peak_usage();
+            $before = memory_get_usage();
+            $start = microtime(true);
+
+            $clean = $sanitizer->clean($html);
+
+            $seconds = microtime(true) - $start;
+            $megabytes = (memory_get_peak_usage() - $before) / 1_048_576;
+        } finally {
+            // Only when it fits: late in the whole suite the process alone can be over 128 MB.
+            if ($limit !== false && memory_get_usage(true) < ini_parse_quantity($limit)) {
+                ini_set('memory_limit', $limit);
+            }
+        }
+        expect(strlen($html))->toBeLessThan(1_000_000)
+            ->and($clean)->toContain('冬季禮盒')
+            ->and($seconds)->toBeLessThan(5.0)
+            ->and($megabytes)->toBeLessThan(128.0);
+    });
+});
+
+it('is idempotent, safe and never nests links on random tag soup', function () {
+    $parts = ['<div>', '</div>', '<a href="/x">', '</a>', '<A HREF="/y">', '<a>', '<p>', '</p>', '<table>', '<tr>', '<td>', '</td>', '</table>',
+        '<ul>', '<li>', '<b>', '</b>', '<h2>', '</h2>', '<span>', '</span>', '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ">', '</iframe>',
+        '<input type=checkbox>', '<label>', '</label>', 'x', '&nbsp;', '<!--', '-->', "\xC0", '"', "'", '<', '>', '<img src=x alt="a>b">',
+        '<span style="top:calc(1px)">', '<svg>', '<style>', '<script>', '</script>', '<noscript>', '<textarea>', '<brumelink>', '<a/>', '<a title=">">'];
+    $sanitizer = sanitizer();
+    mt_srand(20261123);
+    try {
+        foreach (range(1, 1500) as $_) {
+            $html = '';
+            foreach (range(1, mt_rand(1, 30)) as $__) {
+                $html .= $parts[mt_rand(0, count($parts) - 1)];
+            }
+            $once = $sanitizer->clean($html);
+
+            expect($sanitizer->clean((string) $once))->toBe($once);
+            if ($once !== null) {
+                expect($once)->not->toMatch('/<(script|style|svg|noscript|textarea|brumelink)|\son\w+=/i')
+                    ->not->toMatch('/<a\b[^>]*>(?:(?!<\/a>).)*<a\b/s');
+            }
+        }
+    } finally {
+        mt_srand();
+    }
 });

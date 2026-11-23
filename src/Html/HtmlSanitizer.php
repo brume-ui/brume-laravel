@@ -12,6 +12,7 @@ use HTMLPurifier_AttrDef_Enum;
 use HTMLPurifier_AttrDef_HTML_ID;
 use HTMLPurifier_AttrTransform_ImgRequired;
 use HTMLPurifier_Config;
+use HTMLPurifier_TagTransform_Simple;
 use ReflectionFunction;
 use Throwable;
 
@@ -26,7 +27,7 @@ use Throwable;
 final class HtmlSanitizer
 {
     /** Bump when the definition built below changes, so cached definitions are rebuilt. */
-    private const SCHEMA = 1;
+    private const SCHEMA = 2;
 
     private const ELEMENTS = [
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li',
@@ -37,8 +38,8 @@ final class HtmlSanitizer
 
     private const ATTRIBUTES = [
         '*.class', '*.style', '*.id',
-        'a.href', 'a.target', 'a.rel',
-        'img.src', 'img.alt', 'img.width', 'img.height', 'img.loading',
+        'a.href', 'a.target', 'a.rel', 'a.title',
+        'img.src', 'img.alt', 'img.title', 'img.width', 'img.height', 'img.loading',
         'th.colspan', 'th.rowspan', 'td.colspan', 'td.rowspan', 'td.data-th',
         'table.border', 'table.cellpadding', 'table.cellspacing', 'table.width',
         'ol.start', 'ol.type', 'col.span', 'col.width',
@@ -63,10 +64,25 @@ final class HtmlSanitizer
         'border-radius', 'border-top-left-radius', 'border-top-right-radius', 'border-bottom-left-radius', 'border-bottom-right-radius',
     ];
 
-    /** Ids that would shadow globals scripts commonly read (DOM clobbering). */
-    private const ID_BLACKLIST = '/^(?:__|(?:app|admin|csrf|token|login|password|submit|action|form|document|location|window|name|cookie)$)/i';
+    /**
+     * Values refused for `id`, `input[name]` and `label[for]` (DOM and form clobbering): whole
+     * value, case-insensitive; a trailing `*` matches a prefix. Only the attribute is dropped.
+     * `brume.html.reserved_names` adds to this list.
+     */
+    public const RESERVED_NAMES = [
+        'submit', 'reset', 'action', 'method', 'target', 'elements', 'length', 'name', 'id',
+        'parentNode', 'children', 'attributes', 'nodeName', 'body', 'head', 'forms', 'documentElement',
+        'document', 'window', 'location', 'cookie', 'domain', 'constructor', 'prototype', '__proto__',
+        'toString', 'valueOf', 'hasOwnProperty', 'getElementById', 'querySelector',
+        '_token', 'csrf*', 'token', 'login', 'password', 'app', 'admin', 'form', '__*',
+    ];
 
-    public const DEFAULT_IFRAME_REGEXP = '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/%';
+    /** Real embeds only: an 11-character video id (`videoseries` is 11 characters too), then only a query or fragment. */
+    public const DEFAULT_IFRAME_REGEXP = '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/(?!videoseries)[A-Za-z0-9_-]{11}(?:[?#][^\s"<>]*)?$%';
+
+    public const DEFAULT_MAX_BYTES = 1_000_000;
+
+    public const DEFAULT_MAX_DEPTH = 256;
 
     private bool $allowFixed;
 
@@ -77,6 +93,15 @@ final class HtmlSanitizer
 
     private string|false $cachePath;
 
+    private ?int $maxBytes;
+
+    private ?int $maxDepth;
+
+    /** @var list<string> */
+    private array $reservedNames;
+
+    private string|int|null $configureVersion;
+
     /** @var (callable(HTMLPurifier_Config): void)|null */
     private $configure;
 
@@ -85,7 +110,7 @@ final class HtmlSanitizer
     private ?HTMLPurifier $purifier = null;
 
     /**
-     * @param  array{allow_fixed?: bool, allowed_classes?: list<string>|null, iframe_regexp?: string|null, cache_path?: string|false|null, configure?: (callable(HTMLPurifier_Config): void)|null}  $options
+     * @param  array{allow_fixed?: bool, allowed_classes?: list<string>|null, iframe_regexp?: string|null, cache_path?: string|false|null, max_bytes?: int|null, max_depth?: int|null, reserved_names?: list<string>, configure?: (callable(HTMLPurifier_Config): void)|null, configure_version?: string|int|null}  $options
      */
     public function __construct(array $options = [])
     {
@@ -95,18 +120,110 @@ final class HtmlSanitizer
         $this->iframeRegexp = array_key_exists('iframe_regexp', $options) ? ($options['iframe_regexp'] ?: null) : self::DEFAULT_IFRAME_REGEXP;
         $cachePath = $options['cache_path'] ?? null;
         $this->cachePath = $cachePath === false ? false : (string) ($cachePath ?? storage_path('framework/cache/brume-htmlpurifier'));
+        $this->maxBytes = array_key_exists('max_bytes', $options) ? self::limit($options['max_bytes']) : self::DEFAULT_MAX_BYTES;
+        $this->maxDepth = array_key_exists('max_depth', $options) ? self::limit($options['max_depth']) : self::DEFAULT_MAX_DEPTH;
+        $this->reservedNames = array_values(array_unique([...self::RESERVED_NAMES, ...array_map('strval', $options['reserved_names'] ?? [])]));
         $this->configure = $options['configure'] ?? null;
+        $this->configureVersion = $options['configure_version'] ?? null;
     }
 
-    /** Sanitised HTML, or null when the input is null or nothing but empty markup and whitespace. */
+    private static function limit(mixed $value): ?int
+    {
+        return $value === null ? null : (int) $value;
+    }
+
+    /**
+     * Sanitised HTML, or null when the input is null or nothing but empty markup and whitespace.
+     *
+     * @throws HtmlRejected when the input is over max_bytes or max_depth. Save paths should check
+     *                      {@see self::limitViolation()} first and report a validation error; on the
+     *                      read path the exception tells the operator which limit to raise.
+     */
     public function clean(?string $html): ?string
     {
         if ($html === null || $html === '') {
             return null;
         }
-        $clean = $this->purifier()->purify($html);
+        $violation = $this->limitViolation($html);
+        if ($violation !== null) {
+            throw new HtmlRejected($violation, $violation === 'bytes' ? $this->maxBytes : $this->maxDepth);
+        }
+        $clean = $this->purify(self::scrub($html));
+        $unwrapped = self::unwrapNestedLinks($clean);
+        if ($unwrapped !== $clean) {
+            // Garbage where libxml and TagScanner disagree (an unterminated <style>, say) can still
+            // nest a link. Unwrapping it may leave a block where only inline content may go, so
+            // the now well-formed result is cleaned once more; that is stable.
+            $clean = self::unwrapNestedLinks($this->purify($unwrapped));
+        }
 
         return self::isEmpty($clean) ? null : $clean;
+    }
+
+    private function purify(string $html): string
+    {
+        return $this->purifier()->purify(TagScanner::prepareLinks($html));
+    }
+
+    /**
+     * Which limit the input breaks before any parsing: 'bytes' (over max_bytes), 'depth'
+     * (elements nested deeper than max_depth, unclosed tags included) or null. Linear time.
+     *
+     * @return 'bytes'|'depth'|null
+     */
+    public function limitViolation(?string $html): ?string
+    {
+        if ($html === null || $html === '') {
+            return null;
+        }
+        if ($this->maxBytes !== null && strlen($html) > $this->maxBytes) {
+            return 'bytes';
+        }
+        if ($this->maxDepth !== null && TagScanner::maxDepth($html, $this->maxDepth) > $this->maxDepth) {
+            return 'depth';
+        }
+
+        return null;
+    }
+
+    /**
+     * Invalid UTF-8 becomes U+FFFD before lexing (dropping bytes could merge an attribute into
+     * its neighbour); NUL bytes go.
+     */
+    private static function scrub(string $html): string
+    {
+        $html = str_replace("\0", '', $html);
+        if (mb_check_encoding($html, 'UTF-8')) {
+            return $html;
+        }
+        $previous = mb_substitute_character();
+        mb_substitute_character(0xFFFD);
+        try {
+            return mb_scrub($html, 'UTF-8');
+        } finally {
+            mb_substitute_character($previous);
+        }
+    }
+
+    /**
+     * Backstop for {@see TagScanner::prepareLinks()}, which already unwraps links nested in links
+     * before parsing: should libxml still produce one, the output never contains a link inside a
+     * link. Runs on HTMLPurifier's output: balanced, lowercase tags, `>` escaped in values.
+     */
+    private static function unwrapNestedLinks(string $html): string
+    {
+        if (substr_count($html, '<a ') + substr_count($html, '<a>') < 2) {
+            return $html;
+        }
+        $depth = 0;
+
+        return preg_replace_callback('/<(\/?)a(?=[\s>])[^>]*>/', function (array $tag) use (&$depth) {
+            if ($tag[1] === '/') {
+                return --$depth > 0 ? '' : $tag[0];
+            }
+
+            return $depth++ > 0 ? '' : $tag[0];
+        }, $html);
     }
 
     /**
@@ -148,7 +265,9 @@ final class HtmlSanitizer
             $this->allowFixed,
             $this->allowedClasses,
             $this->iframeRegexp,
+            $this->reservedNames,
             $this->configure === null ? null : self::callableFingerprint($this->configure),
+            $this->configureVersion,
         ])), 0, 24);
     }
 
@@ -197,8 +316,10 @@ final class HtmlSanitizer
         $config->autoFinalize = false;
         // Every set() must happen before maybeGetRawHTMLDefinition().
         $config->set('Core.Encoding', 'UTF-8');
-        // libxml stops at nesting depth 256 and silently drops the rest of the document; with
-        // this flag it parses deeper (cost stays linear: 20 000 levels ≈ 0.1 s).
+        // Lexing stays with libxml (DOMLex): HTMLPurifier's DirectLex ends a tag at the first `>`,
+        // even inside a quoted value, and would mangle `alt="A > B"`. libxml stops at depth 256
+        // counting its own wrapper elements and silently drops the rest; max_depth guards depth
+        // instead (with max_depth null, tens of thousands of levels can crash the process).
         $config->set('Core.AllowParseManyTags', true);
         // HTML 4.01 serialises void elements as <br>, <img …> and boolean attributes minimised.
         // Transitional keeps u, s, target, table border/cellpadding, ol type.
@@ -212,7 +333,7 @@ final class HtmlSanitizer
 
         $config->set('Attr.EnableID', true);
         $config->set('Attr.ID.HTML5', true);
-        $config->set('Attr.IDBlacklistRegexp', self::ID_BLACKLIST);
+        $config->set('Attr.IDBlacklistRegexp', $this->reservedNamesRegexp());
         $config->set('Attr.AllowedClasses', $this->allowedClasses);
         $config->set('Attr.AllowedFrameTargets', ['_blank', 'blank']);
         $config->set('Attr.AllowedRel', ['noopener', 'noreferrer', 'nofollow']);
@@ -254,15 +375,26 @@ final class HtmlSanitizer
             }
             if (! isset($defined['input'])) {
                 // CSS-only accordions. type is required; nothing here can submit or take text input.
-                $def->addElement('input', 'Inline', 'Empty', 'Common', ['type*' => 'Enum#checkbox,radio', 'name' => 'Text', 'checked' => 'Bool']);
+                // name is a selector-style ID def: same reserved-name check as id, no uniqueness.
+                $def->addElement('input', 'Inline', 'Empty', 'Common', ['type*' => 'Enum#checkbox,radio', 'name' => new HTMLPurifier_AttrDef_HTML_ID(true), 'checked' => 'Bool']);
             }
             if (! isset($defined['label'])) {
                 $def->addElement('label', 'Inline', 'Inline', 'Common', ['for' => new HTMLPurifier_AttrDef_HTML_ID(true)]);
             }
-            // HTML5 lets a link wrap blocks (legacy cards do); HTML 4 would split the link apart.
-            $a = $def->addBlankElement('a');
-            $a->content_model = '#SUPER | Block';
-            $a->content_model_type = 'optional';
+            // HTML5 lets a link (and legacy content lets a span) wrap any flow content: headings,
+            // lists, tables, divs. HTML 4's inline-only model would split them apart. `Flow`
+            // alone omits text, hence #PCDATA. A link nested in a link stays nested here (no
+            // `excludes`, which would delete the inner subtree); TagScanner::prepareLinks() unwraps
+            // it beforehand. libxml sees links as TagScanner::LINK_ALIAS; this maps them back.
+            $def->getAnonymousModule()->info_tag_transform[TagScanner::LINK_ALIAS] = new HTMLPurifier_TagTransform_Simple('a');
+            foreach (['a', 'span'] as $name) {
+                $flow = $def->addBlankElement($name);
+                $flow->content_model = '#PCDATA | Flow';
+                $flow->content_model_type = 'optional';
+                if ($name === 'a') {
+                    $flow->excludes = ['a' => false];
+                }
+            }
         }
         $config->finalize();
 
@@ -348,6 +480,16 @@ final class HtmlSanitizer
             /** @var HTMLPurifier_AttrDef $def */
             $css->info[$property] = new HTMLPurifier_AttrDef_CSS_ImportantDecorator($def, $important);
         }
+    }
+
+    private function reservedNamesRegexp(): string
+    {
+        $alternatives = array_map(
+            fn (string $name) => str_ends_with($name, '*') ? preg_quote(substr($name, 0, -1), '/').'.*' : preg_quote($name, '/'),
+            $this->reservedNames,
+        );
+
+        return '/^(?:'.implode('|', $alternatives).')\z/is';
     }
 
     /** A stable identity for the configure hook: where it is defined and when that file changed. */
