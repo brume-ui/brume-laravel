@@ -74,7 +74,7 @@ it('requires csrf and accepts the page encrypted xsrf cookie', function () {
 });
 
 it('rejects upload and structural quick and action fields', function () {
-    foreach ([fn (Form $form) => $form->file('document'), fn (Form $form) => $form->embeds('meta', 'Meta', fn ($nested) => $nested->text('title'))] as $fields) {
+    foreach ([fn (Form $form) => $form->file('document'), fn (Form $form) => $form->editor('body'), fn (Form $form) => $form->embeds('meta', 'Meta', fn ($nested) => $nested->text('title'))] as $fields) {
         expect(fn () => Grid::make(CellItem::class)->quickCreate($fields)->quickForm())->toThrow(InvalidArgumentException::class);
         expect(fn () => Action::make('bad', 'Bad')->form($fields))->toThrow(InvalidArgumentException::class);
     }

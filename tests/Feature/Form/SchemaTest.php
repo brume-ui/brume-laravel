@@ -32,7 +32,7 @@ it('serializes every field variant exactly', function (string $method, array $ex
         'switch' => false, default => null,
     };
     expect(Arr::except($field->toSchema(null), ['rules']))->toBe(($default !== null ? ['defaultValue' => $default] : []) + ['type' => match ($method) {
-        'image', 'multipleImage', 'file', 'multipleFile' => 'upload', 'switch' => 'switch', default => $method
+        'image', 'multipleImage', 'file', 'multipleFile' => 'upload', 'switch' => 'switch', 'editor' => 'richText', default => $method
     }, 'name' => 'value', 'label' => 'Value'] + $extra);
 })->with([
     ['text', []], ['textarea', []], ['email', []], ['url', []], ['mobile', []], ['password', []], ['hidden', []], ['display', []], ['number', []], ['decimal', ['decimals' => 2]], ['currency', ['decimals' => 0, 'symbol' => 'NT$']], ['date', []], ['datetime', []], ['dateRange', []], ['datetimeRange', []], ['select', ['options' => []]], ['multipleSelect', ['options' => []]], ['radio', ['options' => []]], ['checkbox', ['options' => []]], ['switch', []], ['tags', []],
@@ -40,6 +40,7 @@ it('serializes every field variant exactly', function (string $method, array $ex
     ['multipleImage', ['kind' => 'image', 'multiple' => true, 'accept' => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], 'maxSize' => 10485760]],
     ['file', ['kind' => 'file', 'multiple' => false, 'accept' => [], 'maxSize' => 10485760]],
     ['multipleFile', ['kind' => 'file', 'multiple' => true, 'accept' => [], 'maxSize' => 10485760]],
+    ['editor', ['images' => ['accept' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], 'maxSize' => 10485760]]],
 ]);
 
 it('resolves defaults, explicit hidden reads and readonly callbacks', function () {

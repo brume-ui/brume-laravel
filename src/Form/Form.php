@@ -488,6 +488,12 @@ class Form implements Renderable, Responsable
         return $this->add(new Fields\Textarea($name, $label));
     }
 
+    /** Rich text (HTML) editor; values are sanitised on save and before they reach the browser. */
+    public function editor(string $name, ?string $label = null): Fields\RichText
+    {
+        return $this->add(new Fields\RichText($name, $label));
+    }
+
     public function email(string $name, ?string $label = null): Fields\Email
     {
         return $this->add(new Fields\Email($name, $label));

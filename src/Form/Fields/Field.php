@@ -327,7 +327,7 @@ class Field
 
     public function isLong(): bool
     {
-        return ($this->schema['span'] ?? null) === 'full' || in_array($this->type(), ['textarea', 'tags', 'upload', 'checkbox', 'dateRange', 'datetimeRange'], true);
+        return ($this->schema['span'] ?? null) === 'full' || in_array($this->type(), ['textarea', 'richText', 'tags', 'upload', 'checkbox', 'dateRange', 'datetimeRange'], true);
     }
 
     public function attribute(string $attribute): static

@@ -92,7 +92,7 @@ it('encodes empty component props as an omitted key, never as a list', function 
 it('validates complete create and edit forms against the emitted schema 0.3', function () {
     $form = Form::make(User::class)->id('users')->name('User')->description('All fields')->submitTo('post', '/users')->tabs();
     $form->section('Basics', function ($f) {
-        foreach (['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'image', 'multipleImage', 'file', 'multipleFile'] as $type) {
+        foreach (['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'image', 'multipleImage', 'file', 'multipleFile', 'editor'] as $type) {
             $field = $f->$type($type);
             if (in_array($type, ['select', 'multipleSelect', 'radio', 'checkbox'])) {
                 $field->options([1 => 'One']);
@@ -111,6 +111,9 @@ it('validates complete create and edit forms against the emitted schema 0.3', fu
         });
         $f->embeds('meta', 'Meta', fn ($e) => $e->text('color')->default('blue'));
         $f->multipleImage('gallery')->extra(fn ($e) => $e->text('caption'));
+        $f->editor('styled')->required()->maxLength(5000)->height(480)->contentCss(['/css/site.css', ''])->accept(['image/png'])->maxSize(512)->default('<p>Hi<img src=x onerror=alert(1)></p>');
+        $f->editor('plain')->withoutImages()->readOnly();
+        $f->repeater('blocks', 'Blocks', fn ($r) => $r->editor('body')->required());
     });
     expect(JsonSchema::errors(envelope($form), 'PageEnvelope'))->toBe([]);
     $form->forRecord((new User)->forceFill(['id' => 9, 'name' => 'Alice']));
