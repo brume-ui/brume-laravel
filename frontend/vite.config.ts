@@ -17,14 +17,17 @@ const stubs = resolve(packageRoot, 'stubs/frontend');
 
 /**
  * The fonts are SIL OFL 1.1, which requires the license to travel with the font files. Vite copies
- * the woff2 files but not the license texts next to them, so emit those into dist/ as well.
+ * the woff2 files but not the license texts next to them, so emit those into dist/ as well. The
+ * lazy rich text editor chunk bundles Jodit (MIT), whose notice must travel with it too.
  */
 function fontLicenses(): Plugin {
   const brumeReact = realpathSync(resolve(frontend, 'node_modules/@brume-ui/brume-react'));
   const nunito = dirname(
     createRequire(resolve(brumeReact, 'package.json')).resolve('@fontsource-variable/nunito/package.json'),
   );
+  const jodit = dirname(createRequire(resolve(brumeReact, 'package.json')).resolve('jodit/package.json'));
   const licenses = {
+    'licenses/jodit.txt': resolve(jodit, 'LICENSE.txt'),
     'licenses/jf-openhuninn.txt': resolve(brumeReact, 'dist/fonts/LICENSE-jf-openhuninn.txt'),
     'licenses/nunito.txt': resolve(nunito, 'LICENSE'),
   };

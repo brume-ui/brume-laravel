@@ -1,20 +1,22 @@
 # Vendored schema provenance
 
 The committed `v0.json` is copied byte-for-byte from the actual npm package
-`@brume-ui/brume-schema@0.1.0-alpha.14`, path `schema/v0.json`, installed using the
+`@brume-ui/brume-schema@0.1.0-alpha.24`, path `schema/v0.json`, installed using the
 frozen `frontend/pnpm-lock.yaml`. Its registry tarball is
-`https://registry.npmjs.org/@brume-ui/brume-schema/-/brume-schema-0.1.0-alpha.14.tgz`.
+`https://registry.npmjs.org/@brume-ui/brume-schema/-/brume-schema-0.1.0-alpha.24.tgz`.
 Registry integrity:
-`sha512-wYMeCUkyz5F/hmpljMia7bK0zdmL4Mseg9+wSw3v/5Kpy3ZPAUS/yptNgVmguT3GOS21tsvBEmKUoVZMQZtj+Q==`.
-Schema SHA-256: `ddf64808127250adb9cf696663b4f93c5360ae97d4e74794af306b469e6554fd`.
+`sha512-CpFewQt44jJw/hx9cELJUIyer5/03Gl5wKesPiQEHMw7RslFfhODv+OcHy7Rfss+1c2IghyUesNfutX2gsFOeQ==`.
+Schema SHA-256: `cfc3c4b9f16a4375ae9b5204a8314e63ad95a7c340a67b186aeaa3fead6b2b13`.
 
-This is schema `0.4.0`, published from reviewed UI commit
-`28a053a1af6733965993c737421a690953336292` by the `v0.1.0-alpha.14` release.
-It includes resolved `FormDef.rowFields`, normalized `defaultValue`, `hydrateAuthority`
-capability and scoped selected-owner `PickerSearchResponse.data[].authority` snapshots.
-The published bytes match the previously reviewed source schema exactly.
+This is schema `0.4.0` (`BrumeManager::SCHEMA_VERSION`), published from UI commit
+`59faeb0da2e7b02bd85b5cdb850877cc69ec27fe` by the `v0.1.0-alpha.24` release (the same
+commit `.ci/ui-integration.json` pins). Since alpha.14 it has gained, among others, the
+`richText` form field (`height`, `contentCss`, `images { accept, maxSize }`; value
+`string | null`), which is not a plain field: it is rejected in Action forms, quick-create
+forms and upload `extra` fields.
 
-`tests/fixtures/conditions/evaluation.json` is the unchanged 23-case shared UI fixture.
+`tests/fixtures/conditions/evaluation.json` is the unchanged 23-case shared UI fixture,
+byte-identical to `packages/schema/fixtures/conditions/evaluation.json` at that commit.
 SHA-256: `bb61fb21bd1f0764c481678cdb780a55d1122570713d0e8bda2bd58c93637d35`.
 
 After a frozen frontend install, `composer sync-schema` copies this published schema.

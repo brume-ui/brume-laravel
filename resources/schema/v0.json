@@ -3816,6 +3816,20 @@
         }
       ]
     },
+    "RichTextImageResponse": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
     "ReorderMoveRequest": {
       "type": "object",
       "required": [
@@ -6759,6 +6773,220 @@
             },
             "displayOnly": {
               "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "name",
+            "label"
+          ],
+          "properties": {
+            "type": {
+              "const": "richText",
+              "type": "string"
+            },
+            "name": {
+              "pattern": "^(?!_brume$).*$",
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "defaultValue": {},
+            "help": {
+              "type": "string"
+            },
+            "placeholder": {
+              "type": "string"
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "readOnly": {
+              "type": "boolean"
+            },
+            "disabled": {
+              "type": "boolean"
+            },
+            "span": {
+              "anyOf": [
+                {
+                  "const": "auto",
+                  "type": "string"
+                },
+                {
+                  "const": "full",
+                  "type": "string"
+                }
+              ]
+            },
+            "width": {
+              "minimum": 1,
+              "maximum": 12,
+              "type": "integer"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "rule",
+                      "message"
+                    ],
+                    "properties": {
+                      "rule": {
+                        "anyOf": [
+                          {
+                            "const": "required",
+                            "type": "string"
+                          },
+                          {
+                            "const": "email",
+                            "type": "string"
+                          },
+                          {
+                            "const": "url",
+                            "type": "string"
+                          },
+                          {
+                            "const": "integer",
+                            "type": "string"
+                          },
+                          {
+                            "const": "numeric",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "rule",
+                      "value",
+                      "message"
+                    ],
+                    "properties": {
+                      "rule": {
+                        "anyOf": [
+                          {
+                            "const": "minLength",
+                            "type": "string"
+                          },
+                          {
+                            "const": "maxLength",
+                            "type": "string"
+                          },
+                          {
+                            "const": "maxFiles",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "value": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "rule",
+                      "value",
+                      "message"
+                    ],
+                    "properties": {
+                      "rule": {
+                        "anyOf": [
+                          {
+                            "const": "min",
+                            "type": "string"
+                          },
+                          {
+                            "const": "max",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "value": {
+                        "type": "number"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "rule",
+                      "pattern",
+                      "message"
+                    ],
+                    "properties": {
+                      "rule": {
+                        "const": "pattern",
+                        "type": "string"
+                      },
+                      "pattern": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "showWhen": {
+              "$ref": "#/$defs/Condition"
+            },
+            "enableWhen": {
+              "$ref": "#/$defs/Condition"
+            },
+            "height": {
+              "minimum": 120,
+              "maximum": 2000,
+              "type": "integer"
+            },
+            "contentCss": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "images": {
+              "type": "object",
+              "required": [
+                "accept",
+                "maxSize"
+              ],
+              "properties": {
+                "accept": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "maxSize": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
             }
           }
         },
