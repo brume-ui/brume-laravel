@@ -5,7 +5,10 @@ namespace Brume\Html;
 use Generator;
 
 /**
- * A forward-only, byte-level pass over raw HTML that finds tags without building a tree.
+ * A forward-only, byte-level pass over raw HTML that finds tags without building a tree, used
+ * only to prepare links for libxml ({@see self::prepareLinks()}). It is not a limit check: a
+ * string scanner can disagree with libxml about tag boundaries, so depth and size are measured
+ * on libxml's own tree ({@see MeasuringLexer}).
  *
  * Comments, `<!…>` and `<?…>` are skipped; quoted attribute values may contain `>`; the content
  * of `script` and `style` is raw text (as for libxml's parser). Every byte is visited a bounded
@@ -17,36 +20,8 @@ use Generator;
  */
 final class TagScanner
 {
-    private const VOID = [
-        'area' => true, 'base' => true, 'br' => true, 'col' => true, 'embed' => true, 'hr' => true, 'img' => true,
-        'input' => true, 'link' => true, 'meta' => true, 'source' => true, 'track' => true, 'wbr' => true,
-    ];
-
     /** Name used for `a` while libxml parses; mapped back to `a` by a tag transform. */
     public const LINK_ALIAS = 'brumelink';
-
-    /**
-     * Element nesting depth: an opening tag that is not void and not self-closed (`<x/>`) adds a
-     * level, a closing tag removes one (never below zero), so unclosed tags count. Returns as
-     * soon as the depth passes $stopAbove.
-     */
-    public static function maxDepth(string $html, ?int $stopAbove = null): int
-    {
-        $depth = 0;
-        $max = 0;
-        foreach (self::tags($html) as [, , , $name, $closing, $selfClosed]) {
-            if ($closing) {
-                $depth = $depth > 0 ? $depth - 1 : 0;
-            } elseif (! $selfClosed && ! isset(self::VOID[$name]) && ++$depth > $max) {
-                $max = $depth;
-                if ($stopAbove !== null && $max > $stopAbove) {
-                    return $max;
-                }
-            }
-        }
-
-        return $max;
-    }
 
     /**
      * Prepares links for libxml:

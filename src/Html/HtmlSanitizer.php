@@ -11,7 +11,9 @@ use HTMLPurifier_AttrDef_CSS_ImportantDecorator;
 use HTMLPurifier_AttrDef_Enum;
 use HTMLPurifier_AttrDef_HTML_ID;
 use HTMLPurifier_AttrTransform_ImgRequired;
+use HTMLPurifier_ChildDef_Required;
 use HTMLPurifier_Config;
+use HTMLPurifier_Context;
 use HTMLPurifier_TagTransform_Simple;
 use ReflectionFunction;
 use Throwable;
@@ -27,7 +29,7 @@ use Throwable;
 final class HtmlSanitizer
 {
     /** Bump when the definition built below changes, so cached definitions are rebuilt. */
-    private const SCHEMA = 2;
+    private const SCHEMA = 3;
 
     private const ELEMENTS = [
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li',
@@ -77,12 +79,17 @@ final class HtmlSanitizer
         '_token', 'csrf*', 'token', 'login', 'password', 'app', 'admin', 'form', '__*',
     ];
 
-    /** Real embeds only: an 11-character video id (`videoseries` is 11 characters too), then only a query or fragment. */
-    public const DEFAULT_IFRAME_REGEXP = '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/(?!videoseries)[A-Za-z0-9_-]{11}(?:[?#][^\s"<>]*)?$%';
+    /**
+     * Real embeds only: an 11-character video id (`videoseries`, in any case, is 11 characters
+     * too), then only a query or fragment, up to the very end (`\z`, not `$`).
+     */
+    public const DEFAULT_IFRAME_REGEXP = '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/(?!(?i:videoseries))[A-Za-z0-9_-]{11}(?:[?#][^\s"<>]*)?\z%';
 
-    public const DEFAULT_MAX_BYTES = 1_000_000;
+    public const DEFAULT_MAX_BYTES = 300_000;
 
     public const DEFAULT_MAX_DEPTH = 256;
+
+    public const DEFAULT_MAX_ELEMENTS = 20_000;
 
     private bool $allowFixed;
 
@@ -97,6 +104,15 @@ final class HtmlSanitizer
 
     private ?int $maxDepth;
 
+    private ?int $maxElements;
+
+    private ?MeasuringLexer $lexer = null;
+
+    /** @var array<string, array{?string, ?HtmlRejected}> last results by input hash, newest last */
+    private array $memo = [];
+
+    private const MEMO_SIZE = 8;
+
     /** @var list<string> */
     private array $reservedNames;
 
@@ -110,7 +126,7 @@ final class HtmlSanitizer
     private ?HTMLPurifier $purifier = null;
 
     /**
-     * @param  array{allow_fixed?: bool, allowed_classes?: list<string>|null, iframe_regexp?: string|null, cache_path?: string|false|null, max_bytes?: int|null, max_depth?: int|null, reserved_names?: list<string>, configure?: (callable(HTMLPurifier_Config): void)|null, configure_version?: string|int|null}  $options
+     * @param  array{allow_fixed?: bool, allowed_classes?: list<string>|null, iframe_regexp?: string|null, cache_path?: string|false|null, max_bytes?: int|null, max_depth?: int|null, max_elements?: int|null, reserved_names?: list<string>, configure?: (callable(HTMLPurifier_Config): void)|null, configure_version?: string|int|null}  $options
      */
     public function __construct(array $options = [])
     {
@@ -122,6 +138,7 @@ final class HtmlSanitizer
         $this->cachePath = $cachePath === false ? false : (string) ($cachePath ?? storage_path('framework/cache/brume-htmlpurifier'));
         $this->maxBytes = array_key_exists('max_bytes', $options) ? self::limit($options['max_bytes']) : self::DEFAULT_MAX_BYTES;
         $this->maxDepth = array_key_exists('max_depth', $options) ? self::limit($options['max_depth']) : self::DEFAULT_MAX_DEPTH;
+        $this->maxElements = array_key_exists('max_elements', $options) ? self::limit($options['max_elements']) : self::DEFAULT_MAX_ELEMENTS;
         $this->reservedNames = array_values(array_unique([...self::RESERVED_NAMES, ...array_map('strval', $options['reserved_names'] ?? [])]));
         $this->configure = $options['configure'] ?? null;
         $this->configureVersion = $options['configure_version'] ?? null;
@@ -135,19 +152,45 @@ final class HtmlSanitizer
     /**
      * Sanitised HTML, or null when the input is null or nothing but empty markup and whitespace.
      *
-     * @throws HtmlRejected when the input is over max_bytes or max_depth. Save paths should check
-     *                      {@see self::limitViolation()} first and report a validation error; on the
-     *                      read path the exception tells the operator which limit to raise.
+     * The result itself is within every limit, so it can always be cleaned again (HTMLPurifier
+     * may add elements, e.g. reopening <b> after a block, so this is checked, not assumed).
+     * Results are memoised per instance for the last few inputs.
+     *
+     * @throws HtmlRejected exactly when {@see self::limitViolation()} reports a limit. Save paths
+     *                      should check that first and report a validation error; on the read path
+     *                      the exception tells the operator which limit to raise.
      */
     public function clean(?string $html): ?string
     {
         if ($html === null || $html === '') {
             return null;
         }
-        $violation = $this->limitViolation($html);
-        if ($violation !== null) {
-            throw new HtmlRejected($violation, $violation === 'bytes' ? $this->maxBytes : $this->maxDepth);
+        $key = hash('xxh128', $html);
+        if (! array_key_exists($key, $this->memo)) {
+            try {
+                $this->memo[$key] = [$this->cleanUncached($html), null];
+            } catch (HtmlRejected $e) {
+                $this->memo[$key] = [null, $e];
+            }
+            if (count($this->memo) > self::MEMO_SIZE) {
+                array_shift($this->memo);
+            }
         }
+        [$clean, $rejected] = $this->memo[$key];
+        if ($rejected !== null) {
+            throw new HtmlRejected($rejected->reason, $rejected->limit);
+        }
+
+        return $clean;
+    }
+
+    private function cleanUncached(string $html): ?string
+    {
+        if ($this->maxBytes !== null && strlen($html) > $this->maxBytes) {
+            throw new HtmlRejected('bytes', $this->maxBytes);
+        }
+        // Depth and element count are measured by the lexer on the tree it parses, before
+        // HTMLPurifier's later stages run (MeasuringLexer throws HtmlRejected).
         $clean = $this->purify(self::scrub($html));
         $unwrapped = self::unwrapNestedLinks($clean);
         if ($unwrapped !== $clean) {
@@ -157,33 +200,74 @@ final class HtmlSanitizer
             $clean = self::unwrapNestedLinks($this->purify($unwrapped));
         }
 
-        return self::isEmpty($clean) ? null : $clean;
+        if (self::isEmpty($clean)) {
+            return null;
+        }
+        $violation = $this->measuredViolation($clean);
+        if ($violation !== null) {
+            throw new HtmlRejected($violation, $this->limitFor($violation));
+        }
+
+        return $clean;
     }
 
     private function purify(string $html): string
     {
-        return $this->purifier()->purify(TagScanner::prepareLinks($html));
+        $clean = $this->purifier()->purify(TagScanner::prepareLinks($html));
+
+        // Where TagScanner renamed an `a` that libxml then read as text (inside a <textarea>, say),
+        // the alias would show escaped in the output; spell it as the author wrote it.
+        return str_contains($clean, TagScanner::LINK_ALIAS)
+            ? str_ireplace(['&lt;'.TagScanner::LINK_ALIAS, '&lt;/'.TagScanner::LINK_ALIAS], ['&lt;a', '&lt;/a'], $clean)
+            : $clean;
     }
 
     /**
-     * Which limit the input breaks before any parsing: 'bytes' (over max_bytes), 'depth'
-     * (elements nested deeper than max_depth, unclosed tags included) or null. Linear time.
+     * Which limit clean() refuses this input for: 'bytes' (over max_bytes; checked first, nothing
+     * parsed), 'depth' (deeper than max_depth) or 'elements' (more than max_elements), both
+     * measured on the tree libxml builds from exactly what HTMLPurifier would lex, and again on
+     * the result. null when clean() accepts it. It is clean() with the exception caught (and
+     * memoised), so validation and saving can never disagree.
      *
-     * @return 'bytes'|'depth'|null
+     * @return 'bytes'|'depth'|'elements'|null
      */
     public function limitViolation(?string $html): ?string
     {
-        if ($html === null || $html === '') {
-            return null;
-        }
-        if ($this->maxBytes !== null && strlen($html) > $this->maxBytes) {
-            return 'bytes';
-        }
-        if ($this->maxDepth !== null && TagScanner::maxDepth($html, $this->maxDepth) > $this->maxDepth) {
-            return 'depth';
+        try {
+            $this->clean($html);
+        } catch (HtmlRejected $e) {
+            return $e->reason;
         }
 
         return null;
+    }
+
+    /**
+     * The limits clean() checks on its input, applied to a string without purifying it.
+     *
+     * @return 'bytes'|'depth'|'elements'|null
+     */
+    private function measuredViolation(string $html): ?string
+    {
+        if ($this->maxBytes !== null && strlen($html) > $this->maxBytes) {
+            return 'bytes';
+        }
+        if ($this->maxDepth === null && $this->maxElements === null) {
+            return null;
+        }
+        $config = $this->purifier()->config;
+
+        return $this->lexer->violation(TagScanner::prepareLinks(self::scrub($html)), $config, new HTMLPurifier_Context);
+    }
+
+    /** @param 'bytes'|'depth'|'elements' $reason */
+    private function limitFor(string $reason): int
+    {
+        return (int) match ($reason) {
+            'bytes' => $this->maxBytes,
+            'depth' => $this->maxDepth,
+            'elements' => $this->maxElements,
+        };
     }
 
     /**
@@ -396,6 +480,9 @@ final class HtmlSanitizer
                 }
             }
         }
+        // Set last, after the hook, so the limits always apply.
+        $this->lexer = new MeasuringLexer($this->maxDepth, $this->maxElements);
+        $config->set('Core.LexerImpl', $this->lexer);
         $config->finalize();
 
         $html = $config->getHTMLDefinition();
@@ -407,6 +494,12 @@ final class HtmlSanitizer
             $img->attr_transform_pre = $keep($img->attr_transform_pre);
             $img->attr_transform_post = $keep($img->attr_transform_post);
             $img->required_attr = ['src'];
+        }
+        // A row, tbody or thead left with whitespace only must go on the first pass, not the second.
+        foreach ($html->info as $element) {
+            if (is_object($element->child) && get_class($element->child) === HTMLPurifier_ChildDef_Required::class) {
+                $element->child = new StrictRequiredChildDef($element->child->elements);
+            }
         }
         // An iframe whose src was rejected would otherwise stay as an empty shell.
         if (isset($html->info['iframe'])) {

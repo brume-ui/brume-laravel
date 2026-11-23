@@ -2,9 +2,12 @@
 
 use Brume\Html\HtmlRejected;
 use Brume\Html\HtmlSanitizer;
+use Brume\Html\TagScanner;
 use Brume\Tests\Support\HtmlNormalizer;
 use Dom\HTMLDocument;
 use Illuminate\Support\Facades\File;
+
+require_once __DIR__.'/bypass-shapes.php';
 
 const HTML_FIXTURES = __DIR__.'/../../fixtures/html';
 
@@ -118,6 +121,26 @@ it('is idempotent', function (string $name) {
 
     expect(sanitizer()->clean($once))->toBe($once);
 })->with([...legacyHtmlFixtures(), 'hostile.html']);
+
+it('reaches a fixed point in one pass', function (string $html, ?string $expected) {
+    $once = sanitizer()->clean($html);
+
+    expect($once)->toBe($expected)
+        ->and(sanitizer()->clean((string) $once))->toBe($once);
+})->with([
+    'row left with whitespace only' => ['<table><tr>><t> ', null],
+    'row with stray text and a cell' => ['<table><tr>z <td>c</td></tr></table>', '<table><tr><td>c</td></tr></table>'],
+    'body left with whitespace only' => ['<table><tbody>z </tbody></table>', null],
+    'stray text in a list' => ['<ul>>x </ul>', '<ul><li>&gt;x </li></ul>'],
+]);
+
+it('never lets the link alias show, even as text', function (string $html, string $expected) {
+    expect(sanitizer()->clean($html))->toBe($expected);
+})->with([
+    // libxml reads a CDATA section as text; TagScanner had renamed the tags inside it.
+    'link tags inside CDATA' => ['<![CDATA[<a href="/x">t</a>]]><p>ok</p>', '&lt;a href="/x"&gt;t&lt;/a&gt;<p>ok</p>'],
+    'closing tag inside CDATA' => ['<p>x<![CDATA[</A >]]></p>', '<p>x&lt;/A &gt;</p>'],
+]);
 
 it('normalises fixtures the same with the PHP 8.3 fallback parser', function (string $name) {
     if (! class_exists(HTMLDocument::class)) {
@@ -498,6 +521,7 @@ it('is bound as a singleton configured from brume.html', function () {
         ->and(config('brume.html.allow_fixed'))->toBeFalse()
         ->and(config('brume.html.max_bytes'))->toBe(300_000)
         ->and(config('brume.html.max_depth'))->toBe(256)
+        ->and(config('brume.html.max_elements'))->toBe(20_000)
         ->and(config('brume.html.reserved_names'))->toBe([])
         ->and(config('brume.html.configure_version'))->toBeNull()
         ->and(config('brume.html.iframe_regexp'))->toBe(HtmlSanitizer::DEFAULT_IFRAME_REGEXP);
@@ -669,7 +693,15 @@ describe('iframe embeds', function () {
         'short id' => ['https://www.youtube.com/embed/abc', false],
         'watch page' => ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', false],
         'other host' => ['https://www.youtube.com.evil.com/embed/dQw4w9WgXcQ', false],
+        'videoseries in other case' => ['https://www.youtube.com/embed/VideoSeries?list=PL0123456789', false],
     ]);
+
+    it('anchors the default pattern at the very end', function () {
+        expect(preg_match(HtmlSanitizer::DEFAULT_IFRAME_REGEXP, "https://www.youtube.com/embed/dQw4w9WgXcQ\n"))->toBe(0)
+            ->and(preg_match(HtmlSanitizer::DEFAULT_IFRAME_REGEXP, 'https://www.youtube.com/embed/dQw4w9WgXcQ'))->toBe(1)
+            ->and(preg_match(HtmlSanitizer::DEFAULT_IFRAME_REGEXP, 'https://www.youtube.com/embed/VIDEOSERIES'))->toBe(0)
+            ->and(config('brume.html.iframe_regexp'))->toBe(HtmlSanitizer::DEFAULT_IFRAME_REGEXP);
+    });
 });
 
 describe('titles and reserved names', function () {
@@ -715,6 +747,7 @@ describe('input limits', function () {
             'divs' => str_repeat('<div>', 50_000).'x'.str_repeat('</div>', 50_000),
             'spans' => str_repeat('<span>', 100_000).'x'.str_repeat('</span>', 100_000),
             'unclosed b' => str_repeat('<b>', 100_000).'x',
+            'flat elements' => str_repeat('<b>x</b>', 100_000),
         };
         $start = microtime(true);
 
@@ -726,10 +759,111 @@ describe('input limits', function () {
             ->and(microtime(true) - $start)->toBeLessThan(1.0);
     })->with([
         ['divs', 1_000_000, 'depth'],
+        ['flat elements', 1_000_000, 'elements'],
         ['spans', 1_000_000, 'bytes'],
         ['spans', null, 'depth'],
         ['unclosed b', 1_000_000, 'depth'],
     ]);
+
+    it('measures what libxml builds, so scanner-confusing input cannot hide depth', function (string $kind) {
+        $html = bypassShape($kind, 1000);
+        $sanitizer = sanitizer(['max_bytes' => null]);
+
+        expect($sanitizer->limitViolation($html))->toBe('depth')
+            ->and(fn () => $sanitizer->clean($html))->toThrow(function (HtmlRejected $e) {
+                expect($e->reason)->toBe('depth');
+            });
+    })->with(['quote', 'nul', 'pi', 'plain']);
+
+    it('rejects the bypass shapes at 50 000 levels without crashing the process', function (string $kind) {
+        // Run in a child process: before this fix these inputs segfaulted PHP.
+        $code = 'require '.var_export(dirname(__DIR__, 3).'/vendor/autoload.php', true).';'
+            .'require '.var_export(__DIR__.'/bypass-shapes.php', true).';'
+            .'$s = new Brume\Html\HtmlSanitizer(["cache_path" => false, "max_bytes" => null]);'
+            .'$h = bypassShape('.var_export($kind, true).', 50000); $t = microtime(true);'
+            .'try { $s->clean($h); echo "accepted"; } catch (Brume\Html\HtmlRejected $e) { echo "rejected:", $e->reason; }'
+            .'echo " ", round(microtime(true) - $t, 3);';
+        exec(escapeshellarg(PHP_BINARY).' -d memory_limit=512M -r '.escapeshellarg($code).' 2>&1', $output, $exit);
+
+        expect($exit)->toBe(0)
+            ->and($output[0] ?? '')->toStartWith('rejected:depth ')
+            ->and((float) explode(' ', $output[0])[1])->toBeLessThan(2.0);
+    })->with(['quote', 'nul', 'pi', 'plain']);
+
+    it('allows max_elements and rejects one more', function () {
+        $sanitizer = sanitizer(['max_elements' => 100]);
+        $ok = str_repeat('<i>x</i>', 100);
+        $over = str_repeat('<i>x</i>', 101);
+
+        expect($sanitizer->clean($ok))->toBe($ok)
+            ->and($sanitizer->limitViolation($over))->toBe('elements')
+            ->and(fn () => $sanitizer->clean($over))->toThrow(function (HtmlRejected $e) {
+                expect($e->reason)->toBe('elements')->and($e->limit)->toBe(100)
+                    ->and($e->getMessage())->toContain('brume.html.max_elements');
+            })
+            ->and(sanitizer(['max_elements' => null])->limitViolation($over))->toBeNull()
+            ->and(sanitizer(['max_elements' => 500])->limitViolation(str_repeat('<br>', 500)))->toBeNull()
+            ->and(sanitizer(['max_elements' => 500])->limitViolation(str_repeat('<br>', 501)))->toBe('elements')
+            ->and(HtmlSanitizer::DEFAULT_MAX_ELEMENTS)->toBe(20_000);
+    });
+
+    it('never returns a result that would be rejected when cleaned again', function () {
+        // 3 elements in; HTMLPurifier reopens <b> around the block, so 5 come out.
+        $html = '<p><b>a<div>x</div>y</b></p>';
+        $clean = '<p><b>a</b></p><div><b>x</b></div><b>y</b>';
+
+        expect(sanitizer(['max_elements' => 5])->clean($html))->toBe($clean)
+            ->and(sanitizer(['max_elements' => 5])->clean($clean))->toBe($clean)
+            ->and(sanitizer(['max_elements' => 4])->limitViolation($html))->toBe('elements')
+            ->and(fn () => sanitizer(['max_elements' => 4])->clean($html))->toThrow(HtmlRejected::class);
+    });
+
+    it('accepts legacy lists and paragraphs that never close their tags', function () {
+        $list = '<ul>'.str_repeat('<li>item', 300).'</ul>';
+        $paragraphs = str_repeat('<p>para', 300);
+
+        expect(sanitizer()->limitViolation($list))->toBeNull()
+            ->and(sanitizer()->clean($list))->toBe('<ul>'.str_repeat('<li>item</li>', 300).'</ul>')
+            ->and(sanitizer()->limitViolation($paragraphs))->toBeNull()
+            ->and(sanitizer()->clean($paragraphs))->toBe(str_repeat('<p>para</p>', 300));
+    });
+
+    it('agrees with clean() on every input: clean throws exactly when limitViolation reports', function () {
+        $parts = ['<div>', '</div>', '<b>', '</b>', '<p>', '<li>', '<ul>', '<table>', '<tr>', '<td>', '<a href="/x">', '</a>', '<span>',
+            "<b x=a'b>", "'>", "<\0b>", '<?x ', '<b a=">">', '<!--', '-->', '<script>', '</script>', '<style>', 'x', '"', "'", '<', '>', '<br>', '<img src=x>'];
+        $sanitizers = [
+            sanitizer(['max_bytes' => 500, 'max_depth' => 8, 'max_elements' => 40]),
+            sanitizer(['max_bytes' => null, 'max_depth' => null, 'max_elements' => 30]),
+        ];
+        $seen = ['bytes' => 0, 'depth' => 0, 'elements' => 0, 'none' => 0];
+        mt_srand(424242);
+        try {
+            foreach (range(1, 2000) as $i) {
+                $sanitizer = $sanitizers[$i % 2];
+                $html = '';
+                foreach (range(1, mt_rand(1, 120)) as $__) {
+                    $html .= $parts[mt_rand(0, count($parts) - 1)];
+                }
+                $violation = $sanitizer->limitViolation($html);
+                try {
+                    $sanitizer->clean($html);
+                    $thrown = null;
+                } catch (HtmlRejected $e) {
+                    $thrown = $e->reason;
+                }
+
+                expect($thrown)->toBe($violation);
+                $seen[$violation ?? 'none']++;
+            }
+        } finally {
+            mt_srand();
+        }
+
+        expect($seen['bytes'])->toBeGreaterThan(0)
+            ->and($seen['depth'])->toBeGreaterThan(0)
+            ->and($seen['elements'])->toBeGreaterThan(0)
+            ->and($seen['none'])->toBeGreaterThan(0);
+    });
 
     it('allows depth 256 and rejects 257', function () {
         $ok = str_repeat('<div>', 256).'x'.str_repeat('</div>', 256);
@@ -748,10 +882,13 @@ describe('input limits', function () {
         expect(sanitizer(['max_depth' => null])->clean($html))->toBe($html);
     });
 
-    it('counts only open non-void elements', function (string $html) {
+    it('measures depth on the tree libxml builds', function (string $html) {
         expect(sanitizer(['max_depth' => 5])->limitViolation($html))->toBeNull();
     })->with([
-        'void and self-closed' => str_repeat('<br><img src="/a.png" alt=""><hr><input type="checkbox"><col><wbr><span/><DIV />', 300),
+        // (not <wbr>: libxml's HTML 4 parser does not know it and nests it)
+        'void elements' => str_repeat('<br><img src="/a.png" alt=""><hr><input type="checkbox"><col>', 300),
+        'unclosed li, auto-closed by the parser' => '<ul>'.str_repeat('<li>item ', 300).'</ul>',
+        'unclosed p, auto-closed by the parser' => str_repeat('<p>para ', 300),
         'closing tags floor at zero' => str_repeat('</div>', 1000).str_repeat('<div>', 5),
         'tags inside a comment' => '<!--'.str_repeat('<div>', 1000).'-->',
         'unterminated comment' => '<p>x</p><!--'.str_repeat('<div>', 1000),
@@ -777,8 +914,8 @@ describe('input limits', function () {
             ->and(sanitizer()->limitViolation('<p>x</p>'))->toBeNull();
     });
 
-    it('scans 5 MB of garbage in linear time', function (string $kind) {
-        $size = 5_000_000;
+    it('prepares links in linear time on 2 MB of garbage', function (string $kind) {
+        $size = 2_000_000;
         $html = match ($kind) {
             'random bytes' => random_bytes($size),
             'open brackets' => str_repeat('<', $size),
@@ -787,20 +924,19 @@ describe('input limits', function () {
             'comment openers' => str_repeat('<!--', intdiv($size, 4)),
             'bogus comments' => str_repeat('<!x', intdiv($size, 3)),
             'tags' => str_repeat('<b></b>', intdiv($size, 7)),
+            'links' => str_repeat('<a href="/x">', intdiv($size, 13)),
         };
-        // A depth limit that is never reached forces a scan of every byte.
-        $sanitizer = sanitizer(['max_bytes' => null, 'max_depth' => PHP_INT_MAX]);
         $start = microtime(true);
 
-        expect($sanitizer->limitViolation($html))->toBeNull();
+        TagScanner::prepareLinks($html);
 
-        expect(microtime(true) - $start)->toBeLessThan(2.0);
-    })->with(['random bytes', 'open brackets', 'unterminated quotes', 'unterminated single quotes', 'comment openers', 'bogus comments', 'tags']);
+        expect(microtime(true) - $start)->toBeLessThan(1.0);
+    })->with(['random bytes', 'open brackets', 'unterminated quotes', 'unterminated single quotes', 'comment openers', 'bogus comments', 'tags', 'links']);
 
-    it('cleans a 900 KB realistic document', function () {
+    it('cleans a 900 KB realistic document when the limits allow it', function () {
         $fixtures = implode('', array_map(htmlFixture(...), legacyHtmlFixtures()));
         $html = str_repeat($fixtures, (int) ceil(900_000 / strlen($fixtures)));
-        $sanitizer = sanitizer();
+        $sanitizer = sanitizer(['max_bytes' => 1_000_000, 'max_elements' => null]);
         $sanitizer->clean('<p>warm</p>');
         // The suite's process has grown by now; the budget asserted below is what cleaning adds.
         $limit = ini_set('memory_limit', '1G');
@@ -843,7 +979,7 @@ it('is idempotent, safe and never nests links on random tag soup', function () {
 
             expect($sanitizer->clean((string) $once))->toBe($once);
             if ($once !== null) {
-                expect($once)->not->toMatch('/<(script|style|svg|noscript|textarea|brumelink)|\son\w+=/i')
+                expect($once)->not->toMatch('/<(script|style|svg|noscript|textarea)|\son\w+=|brumelink/i')
                     ->not->toMatch('/<a\b[^>]*>(?:(?!<\/a>).)*<a\b/s');
             }
         }

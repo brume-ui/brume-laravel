@@ -48,12 +48,15 @@ return [
         // null allows any class; a list keeps only those classes.
         'allowed_classes' => null,
         // iframe src must match; null allows no iframe at all. The default accepts YouTube /embed/<11-char id> only.
-        'iframe_regexp' => '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/(?!videoseries)[A-Za-z0-9_-]{11}(?:[?#][^\s"<>]*)?$%',
-        // Input refused before parsing (HtmlRejected; validate with HtmlSanitizer::limitViolation()). null disables either.
+        'iframe_regexp' => '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/(?!(?i:videoseries))[A-Za-z0-9_-]{11}(?:[?#][^\s"<>]*)?\z%',
+        // Input refused before HTMLPurifier processes it (HtmlRejected; validate with HtmlSanitizer::limitViolation()).
+        // null disables any of the three. Depth and elements are measured on the tree libxml parses.
         // Bytes: dense markup needs roughly 260 MB of memory to purify at 1 MB, so keep this well below that.
         'max_bytes' => 300_000,
-        // Element nesting depth; unclosed tags count.
+        // Element nesting depth, as parsed (tags the parser closes itself, like <li> and <p>, do not add up).
         'max_depth' => 256,
+        // Element count, as parsed. Memory grows with it (see the README).
+        'max_elements' => 20_000,
         // Extra values refused for id, input[name] and label[for], added to HtmlSanitizer::RESERVED_NAMES. 'prefix*' matches a prefix.
         'reserved_names' => [],
         // null = storage_path('framework/cache/brume-htmlpurifier'), created on demand; false = no cache.
