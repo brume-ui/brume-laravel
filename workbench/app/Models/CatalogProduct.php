@@ -21,6 +21,7 @@ class CatalogProduct extends Model
         return [
             'price' => 'decimal:2',
             'gallery' => 'array',
+            'faqs' => 'array',
             'is_published' => 'boolean',
             'is_preorder' => 'boolean',
             'is_bundle' => 'boolean',

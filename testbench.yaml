@@ -11,6 +11,11 @@ workbench:
   start: '/admin'
   install: false
   health: false
+  # Linked into the skeleton's public/ while `testbench serve` runs: the 商品說明 editor's
+  # contentCss and the seeded sample's images (/storefront/...).
+  sync:
+    - from: ./workbench/public/storefront
+      to: public/storefront
   discovers:
     web: false
     api: false

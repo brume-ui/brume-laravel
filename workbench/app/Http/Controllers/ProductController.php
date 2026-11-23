@@ -23,6 +23,9 @@ class ProductController extends Resource
 
     protected string $name = '商品';
 
+    /** The made-up storefront stylesheet (workbench/public/storefront) the editors render with. */
+    private const STOREFRONT_CSS = '/storefront/content.css';
+
     protected function grid(Grid $grid): void
     {
         $grid->title('商品')->description('商品資料、上下架與限購設定。ERP 同步的商品，基本資料唯讀。')
@@ -68,9 +71,20 @@ class ProductController extends Resource
             $form->currency('price', '價格（NT$）')->decimals(0)->min(0)->required()->default(0)->readOnly($erpLocked);
             $form->number('stock', '庫存')->min(0)->required()->default(0)->readOnly($erpLocked);
             $form->text('barcode', '條碼')->maxLength(50);
-            $form->textarea('description', '商品說明')->maxLength(2000);
             $form->switch('is_published', '上架')->default(false);
             $form->display('erp_updated_at', 'ERP 同步時間')->value(fn (CatalogProduct $product) => $product->erp_updated_at?->format('Y-m-d H:i'));
+            // Written by the ERP sync only: a read-only editor shows the stored HTML (sanitised).
+            $form->editor('erp_note', 'ERP 備註')->readOnly()->withoutImages()->contentCss(self::STOREFRONT_CSS)
+                ->help('由 ERP 同步，後台唯讀。');
+        });
+        $form->section('商品介紹', function (Form $form) {
+            $form->editor('description', '商品說明')->height(520)->contentCss(self::STOREFRONT_CSS)->maxSize(2048)
+                ->help('貼上或拖放的圖片會立即上傳（JPEG、PNG、GIF、WebP，2 MB 以內）。');
+            // A JSON repeater whose answers are editors: required, and without image uploads.
+            $form->repeater('faqs', '常見問題', function (Form $faq) {
+                $faq->text('question', '問題')->required()->maxLength(120);
+                $faq->editor('answer', '回答')->required()->withoutImages()->height(280)->contentCss(self::STOREFRONT_CSS);
+            })->max(6);
         });
         $form->section('圖片', function (Form $form) {
             $form->image('cover', '封面圖');

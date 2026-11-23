@@ -1,8 +1,12 @@
 <?php
 
+use Brume\Html\HtmlSanitizer;
 use Brume\Http\Middleware\HandleBrumeRequests;
+use Brume\Tests\Support\JsonSchema;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Workbench\App\Http\Controllers\ProductController;
 use Workbench\App\Models\CatalogProduct;
 use Workbench\App\Models\PromotionFreebie;
@@ -24,7 +28,7 @@ function productValues($test, string $url): array
 
 it('creates and edits a product with grouped fields, images, preorder rules and components', function () {
     $form = $this->getJson('/admin/products/create', ['X-Brume-Form' => '1'])->assertOk();
-    expect(array_column($form->json('page.form.nodes'), 'title'))->toBe(['基本資料', '圖片', '預購', '銷售與限購', '組合內容']);
+    expect(array_column($form->json('page.form.nodes'), 'title'))->toBe(['基本資料', '商品介紹', '圖片', '預購', '銷售與限購', '組合內容']);
     $values = array_replace($form->json('page.values'), ['identifier' => 'NEW-001', 'name' => '新商品', 'price' => '120', 'stock' => 5, 'is_preorder' => true]);
 
     $this->postJson('/admin/products', ['values' => $values])->assertUnprocessable()->assertJsonValidationErrors('preorder_ships_at');
@@ -156,4 +160,103 @@ it('refuses to delete a bundle component or a live gift, and deletes a bundle wi
         ->and(CatalogProduct::count())->toBe($count - 2);
     deleteProducts($this, [$id(1)]);
     expect(CatalogProduct::where('identifier', 'DEMO-001')->exists())->toBeFalse();
+});
+
+function productEnvelope($test, string $url): array
+{
+    return $test->getJson($url, ['X-Brume-Form' => '1'])->assertOk()->json();
+}
+
+it('declares the rich text editors and their FAQ repeater, and the edit page validates against PageEnvelope', function () {
+    $product = CatalogProduct::where('identifier', 'DEMO-001')->firstOrFail();
+    $envelope = productEnvelope($this, "/admin/products/{$product->id}/edit");
+    expect(JsonSchema::errors($envelope, 'PageEnvelope'))->toBe([]);
+    expect(JsonSchema::errors(productEnvelope($this, '/admin/products/create'), 'PageEnvelope'))->toBe([]);
+
+    $fields = [];
+    $walk = function (array $nodes) use (&$walk, &$fields) {
+        foreach ($nodes as $node) {
+            if (isset($node['field']['name'])) {
+                $fields[$node['field']['name']] = $node['field'];
+                $walk($node['field']['nodes'] ?? []);
+            }
+            $walk($node['children'] ?? []);
+        }
+    };
+    $walk($envelope['page']['form']['nodes']);
+
+    expect($fields['description'])->toMatchArray(['type' => 'richText', 'height' => 520, 'contentCss' => ['/storefront/content.css']])
+        ->and($fields['description']['images'])->toBe(['accept' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], 'maxSize' => 2048 * 1024])
+        ->and($fields['erp_note'])->toMatchArray(['type' => 'richText', 'readOnly' => true])
+        ->and($fields['erp_note'])->not->toHaveKey('images')
+        ->and($fields['faqs']['type'])->toBe('repeater');
+    expect($fields['answer'])->toMatchArray(['type' => 'richText', 'required' => true])->and($fields['answer'])->not->toHaveKey('images');
+});
+
+it('seeds the storefront sample, FAQ rows and ERP notes idempotently and sends them sanitised', function () {
+    $this->seed(CatalogSeeder::class);
+    $clean = app(HtmlSanitizer::class);
+    $sample = CatalogSeeder::storefrontSample();
+    expect($sample)->toContain('<table')->toContain('youtube.com/embed/')->toContain('<ol>')->toContain('/storefront/images/');
+
+    foreach (range(1, CatalogSeeder::PRODUCTS) as $i) {
+        $product = CatalogProduct::where('identifier', sprintf('DEMO-%03d', $i))->firstOrFail();
+        expect($product->description)->toBe(in_array($i, CatalogSeeder::RICH_TEXT_SAMPLE, true) ? $sample : null)
+            ->and($product->faqs === null)->toBe(! in_array($i, CatalogSeeder::RICH_TEXT_FAQS, true))
+            ->and($product->erp_note === null)->toBe(! in_array($i, CatalogSeeder::RICH_TEXT_ERP_NOTE, true));
+    }
+
+    $product = CatalogProduct::where('identifier', 'DEMO-005')->firstOrFail();
+    $values = productValues($this, "/admin/products/{$product->id}/edit");
+    expect($values['description'])->toBe($clean->clean($sample))
+        ->and($values['erp_note'])->toBe($clean->clean($product->erp_note));
+    $faqs = productValues($this, '/admin/products/'.CatalogProduct::where('identifier', 'DEMO-001')->value('id').'/edit')['faqs'];
+    expect(array_column($faqs, 'question'))->toBe(['敏感肌可以使用嗎？', '開封後可以放多久？'])
+        ->and($faqs[1]['answer'])->toBe($clean->clean(CatalogSeeder::richText(1)['faqs'][1]['answer']));
+});
+
+it('stores the untouched seeded sample as the sanitiser cleans it, and saving again changes nothing', function () {
+    $product = CatalogProduct::where('identifier', 'DEMO-001')->firstOrFail();
+    $url = "/admin/products/{$product->id}";
+    $this->putJson($url, ['values' => productValues($this, "{$url}/edit")])->assertOk();
+    $stored = $product->fresh()->description;
+    expect($stored)->toBe(app(HtmlSanitizer::class)->clean(CatalogSeeder::storefrontSample()));
+
+    $this->putJson($url, ['values' => productValues($this, "{$url}/edit")])->assertOk();
+    expect($product->fresh()->description)->toBe($stored);
+});
+
+it('sanitises the description and FAQ answers on save, requires an answer and ignores the read-only ERP note', function () {
+    $product = CatalogProduct::where('identifier', 'DEMO-003')->firstOrFail();
+    $url = "/admin/products/{$product->id}";
+    $values = productValues($this, "{$url}/edit");
+    $hostile = '<p>保留</p><script>window.__xss=1</script><img src="x" onerror="window.__xss=1"><iframe src="https://evil.example/"></iframe>';
+
+    $empty = array_replace($values, ['faqs' => [['_brume' => ['key' => 'new-1'], 'question' => '空白回答？', 'answer' => '<p><br></p>']]]);
+    $this->putJson($url, ['values' => $empty])->assertUnprocessable()->assertJsonValidationErrors('faqs.0.answer');
+
+    $this->putJson($url, ['values' => array_replace($values, [
+        'description' => $hostile,
+        'erp_note' => '<p>forged</p>',
+        'faqs' => [['_brume' => ['key' => 'new-1'], 'question' => '甲', 'answer' => $hostile], ['_brume' => ['key' => 'new-2'], 'question' => '乙', 'answer' => '<p>第二列<b>獨立</b></p>']],
+    ])])->assertOk();
+
+    $fresh = $product->fresh();
+    expect($fresh->description)->toBe('<p>保留</p><img src="x">')
+        ->and(array_column($fresh->faqs, 'answer'))->toBe(['<p>保留</p><img src="x">', '<p>第二列<b>獨立</b></p>'])
+        ->and($fresh->erp_note)->toBe($product->erp_note);
+});
+
+it('accepts editor images for the product description and refuses them for the FAQ answer and the ERP note', function () {
+    Storage::fake('public');
+    $product = CatalogProduct::where('identifier', 'DEMO-002')->firstOrFail();
+    $upload = productEnvelope($this, "/admin/products/{$product->id}/edit")['page']['uploadUrl'];
+    $post = fn (string $field) => $this->post($upload, ['field' => $field, 'file' => UploadedFile::fake()->image('photo.png', 8, 8)], ['Accept' => 'application/json']);
+
+    $url = $post('description')->assertOk()->json('url');
+    expect($url)->toStartWith('/storage/brume/brume.products/editor/')->toEndWith('.png');
+    Storage::disk('public')->assertExists(substr($url, strlen('/storage/')));
+
+    $post('erp_note')->assertUnprocessable();
+    $post('faqs.0.answer')->assertUnprocessable();
 });

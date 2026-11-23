@@ -5,6 +5,7 @@
 
 use Brume\Dashboard\Dashboard;
 use Brume\Facades\Brume;
+use Brume\Html\HtmlSanitizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Workbench\App\Http\Controllers\AdminUserController;
@@ -17,7 +18,9 @@ use Workbench\App\Http\Controllers\ProductCategoryController;
 use Workbench\App\Http\Controllers\ProductCategoryTreeController;
 use Workbench\App\Http\Controllers\ProductController;
 use Workbench\App\Http\Controllers\PromotionController;
+use Workbench\App\Models\CatalogProduct;
 use Workbench\App\Models\ShowcaseItem;
+use Workbench\Database\Seeders\CatalogSeeder;
 
 Route::get('users', AdminUserController::class)->name('brume.users.index');
 Route::brumeResource('compositions', CompositionController::class)->names('brume.compositions');
@@ -59,3 +62,28 @@ Route::get('_demo/swatch/{color}.svg', function (Request $request, string $color
     return response($svg, 200, ['Content-Type' => 'image/svg+xml']
         + ($request->boolean('download') ? ['Content-Disposition' => 'attachment; filename="swatch-'.$color.'.svg"'] : []));
 })->where('color', '[a-z]+')->name('brume.demo.swatch');
+
+// Workbench only (e2e, not in the menu): the 商品 rich text columns. `reset` puts the seeded values
+// back on every DEMO product that has one, `legacy` writes HTML straight into the database (as a
+// migration from an older system would, skipping the sanitiser), and `raw` returns what is stored.
+Route::post('_demo/rich-text/reset', function () {
+    foreach (array_unique([...CatalogSeeder::RICH_TEXT_SAMPLE, ...CatalogSeeder::RICH_TEXT_FAQS, ...CatalogSeeder::RICH_TEXT_ERP_NOTE]) as $i) {
+        CatalogProduct::query()->where('identifier', sprintf('DEMO-%03d', $i))->firstOrFail()->forceFill(CatalogSeeder::richText($i))->save();
+    }
+
+    return response()->json(['ok' => true]);
+})->name('brume.demo.rich-text.reset');
+
+Route::post('_demo/rich-text/legacy/{product}', function (Request $request, CatalogProduct $product) {
+    $product->newQuery()->whereKey($product->getKey())->update(['description' => (string) $request->input('html')]);
+
+    return response()->json(['ok' => true]);
+})->name('brume.demo.rich-text.legacy');
+
+Route::get('_demo/rich-text/raw/{product}', fn (CatalogProduct $product) => response()->json([
+    'description' => $product->getRawOriginal('description'),
+    'faqs' => $product->faqs,
+    'sample' => CatalogSeeder::storefrontSample(),
+    // The seeded sample as the sanitiser cleans it: what an untouched save must store.
+    'sanitisedSample' => app(HtmlSanitizer::class)->clean(CatalogSeeder::storefrontSample()),
+]))->name('brume.demo.rich-text.raw');

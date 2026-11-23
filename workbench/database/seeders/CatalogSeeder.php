@@ -18,6 +18,15 @@ class CatalogSeeder extends Seeder
 {
     public const PRODUCTS = 64;
 
+    /** Products whose 商品說明 is the storefront layout sample (rich text demo and e2e). */
+    public const RICH_TEXT_SAMPLE = [1, 2, 5];
+
+    /** Products with seeded 常見問題 rows (answers are editors). */
+    public const RICH_TEXT_FAQS = [1, 2];
+
+    /** The ERP rows: they carry a read-only ERP 備註 (rendered by the read-only editor). */
+    public const RICH_TEXT_ERP_NOTE = [3, 5];
+
     public function run(): void
     {
         $this->seedCategories();
@@ -60,6 +69,7 @@ class CatalogSeeder extends Seeder
                 'remaining_limit' => in_array($i, [3, 5], true) ? 100 - $i : null,
                 'sold_count' => in_array($i, [3, 5], true) ? $i : 0,
                 'erp_updated_at' => in_array($i, [3, 5], true) ? $at : null,
+                ...self::richText($i),
                 'created_at' => $at,
                 'updated_at' => $at,
             ]);
@@ -70,6 +80,33 @@ class CatalogSeeder extends Seeder
             CatalogProduct::query()->where('identifier', 'DEMO-001')->value('id') => ['quantity' => 2, 'position' => 1],
             CatalogProduct::query()->where('identifier', 'DEMO-002')->value('id') => ['quantity' => 1, 'position' => 2],
         ]);
+    }
+
+    /**
+     * The rich text columns of DEMO-{$i} as seeded: written as they are (no sanitiser), like
+     * content migrated from an older system. The e2e suite restores them through the
+     * workbench-only _demo/rich-text/reset route.
+     *
+     * @return array{description: ?string, faqs: ?array<int, array<string, mixed>>, erp_note: ?string}
+     */
+    public static function richText(int $i): array
+    {
+        return [
+            'description' => in_array($i, self::RICH_TEXT_SAMPLE, true) ? self::storefrontSample() : null,
+            'faqs' => in_array($i, self::RICH_TEXT_FAQS, true) ? [
+                ['_brume' => ['key' => "faq-{$i}-1"], 'question' => '敏感肌可以使用嗎？', 'answer' => '<p>可以。配方<strong>不含香精與色素</strong>，第一次使用建議先在耳後試擦。</p>'],
+                ['_brume' => ['key' => "faq-{$i}-2"], 'question' => '開封後可以放多久？', 'answer' => "<p>開封後請於&nbsp;<b>六個月</b>&nbsp;內用完：</p>\n<ul>\n<li>放在陰涼處</li>\n<li>避免陽光直射</li>\n</ul>"],
+            ] : null,
+            'erp_note' => in_array($i, self::RICH_TEXT_ERP_NOTE, true)
+                ? "<p class=\"font_lv5\"><strong>ERP 出貨備註</strong>：本品由中央倉出貨。</p>\n<ul>\n<li>每箱 24 入</li>\n<li>效期標示於盒底</li>\n</ul>"
+                : null,
+        ];
+    }
+
+    /** The hand-written storefront layout sample (headings, lists, a table, images, a YouTube embed). */
+    public static function storefrontSample(): string
+    {
+        return rtrim((string) file_get_contents(__DIR__.'/rich-text/storefront-sample.html'));
     }
 
     private function seedPromotion(): void
