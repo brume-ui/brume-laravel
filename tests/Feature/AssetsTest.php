@@ -57,3 +57,32 @@ it('accepts published assets that match the package manifest in local', function
 
     expect(Assets::tags()->toHtml())->toContain('/vendor/brume/assets/app-B1x2y3z4.js');
 });
+
+it('ships every file the committed manifest references, the lazy editor chunk and its css included', function () {
+    $dist = dirname(__DIR__, 2).'/dist';
+    $manifest = json_decode(file_get_contents("{$dist}/.vite/manifest.json"), true, 512, JSON_THROW_ON_ERROR);
+    $entry = $manifest[Assets::ENTRY];
+
+    // The entry reaches the editor only through a dynamic import, never through the printed tags.
+    $editor = collect($manifest)->first(fn (array $chunk) => str_starts_with(basename($chunk['file']), 'jodit-editor-'));
+    expect($editor)->not->toBeNull()
+        ->and($editor['isDynamicEntry'] ?? false)->toBeTrue()
+        ->and($editor['css'] ?? [])->not->toBeEmpty()
+        ->and(array_map(fn (string $key) => $manifest[$key]['file'], $entry['dynamicImports'] ?? []))->toContain($editor['file'])
+        ->and(Assets::tags()->toHtml())->not->toContain('jodit');
+    // The app chunk imports it relative to its own URL (dist is built with base './'), so it is
+    // found next to the entry wherever vendor:publish puts dist/.
+    expect(file_get_contents("{$dist}/{$entry['file']}"))->toContain('import(`./'.basename($editor['file']).'`)');
+
+    $files = [];
+    foreach ($manifest as $chunk) {
+        array_push($files, $chunk['file'], ...($chunk['css'] ?? []), ...($chunk['assets'] ?? []));
+        foreach ([...($chunk['imports'] ?? []), ...($chunk['dynamicImports'] ?? [])] as $key) {
+            expect($manifest)->toHaveKey($key);
+        }
+    }
+    foreach (array_unique($files) as $file) {
+        expect(is_file("{$dist}/{$file}"))->toBeTrue("dist/{$file} is missing");
+    }
+    expect(is_file("{$dist}/licenses/jodit.txt"))->toBeTrue();
+});

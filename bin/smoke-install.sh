@@ -135,6 +135,25 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$script")
 [[ "$code" == 200 ]] || fail "frontend entry ${script} returned ${code}"
 echo "frontend entry ${script#"$BASE"} 200"
 
+if [[ "$MODE" == precompiled ]]; then
+  # The page prints only the entry's tags; lazy chunks (the rich text editor and its CSS) are
+  # fetched later relative to the entry, so every file the published manifest names must be served.
+  step "GET every file in public/vendor/brume/.vite/manifest.json"
+  count=0
+  while IFS= read -r file; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/vendor/brume/$file")
+    [[ "$code" == 200 ]] || fail "/vendor/brume/${file} returned ${code}"
+    count=$((count + 1))
+  done < <(php -r '
+    $m = json_decode(file_get_contents($argv[1]), true, flags: JSON_THROW_ON_ERROR);
+    $files = [];
+    foreach ($m as $chunk) { array_push($files, $chunk["file"], ...($chunk["css"] ?? []), ...($chunk["assets"] ?? [])); }
+    echo implode("\n", array_unique($files)), "\n";
+  ' public/vendor/brume/.vite/manifest.json)
+  grep -q '"isDynamicEntry": true' public/vendor/brume/.vite/manifest.json || fail "the manifest has no lazy chunk"
+  echo "${count} precompiled files 200 (lazy chunks included)"
+fi
+
 step "POST /admin/login"
 xsrf=$(awk '$6 == "XSRF-TOKEN" { print $7 }' "$JAR" | php -r 'echo urldecode(trim(stream_get_contents(STDIN)));')
 [[ -n "$xsrf" ]] || fail "no XSRF-TOKEN cookie after GET /admin/login"
