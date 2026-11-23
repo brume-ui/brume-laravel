@@ -17,4 +17,5 @@ return [
     'rich_text_image_dimensions' => 'The image is larger than :max pixels on a side.',
     'rich_text_bytes' => 'The :attribute content is too large to save.',
     'rich_text_depth' => 'The :attribute content is nested too deeply to save.',
+    'rich_text_elements' => 'The :attribute content has too many elements to save.',
 ];

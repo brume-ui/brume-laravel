@@ -442,11 +442,12 @@ it('rejects over-limit submissions with a translated validation error and never 
     '2 MB' => [fn () => '<p>'.str_repeat('a', 2_000_000).'</p>', 'bytes'],
     '300 nested divs' => [fn () => richDeep(300), 'depth'],
     '300 nested empty divs' => [fn () => richDeep(300, ''), 'depth'],
+    '25,000 flat elements' => [fn () => str_repeat('<b>x</b>', 25_000), 'elements'],
 ])->with(['optional' => false, 'required' => true]);
 
 it('translates the limit messages', function (string $locale) {
     app()->setLocale($locale);
-    foreach (['bytes', 'depth'] as $reason) {
+    foreach (['bytes', 'depth', 'elements'] as $reason) {
         expect(__('brume::form.rich_text_'.$reason, ['attribute' => 'X']))->not->toBe('brume::form.rich_text_'.$reason)->toContain('X');
     }
 })->with(['en', 'zh_TW', 'zh_CN']);

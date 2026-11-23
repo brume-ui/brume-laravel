@@ -17,4 +17,5 @@ return [
     'rich_text_image_dimensions' => '图片任一边超过 :max 像素。',
     'rich_text_bytes' => ':attribute 的内容过大，无法保存。',
     'rich_text_depth' => ':attribute 的内容嵌套过深，无法保存。',
+    'rich_text_elements' => ':attribute 的内容元素过多，无法保存。',
 ];
