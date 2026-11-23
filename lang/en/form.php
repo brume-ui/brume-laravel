@@ -13,6 +13,8 @@ return [
     'upload_type' => 'Unsupported file type. Please upload :types.',
     'upload_max' => 'At most :max files.',
     'rich_text_images_disabled' => 'Image upload is not enabled for this field.',
+    'rich_text_no_public_url' => 'The upload disk of the editor has no public URL; ask an administrator to configure a public disk.',
+    'rich_text_image_dimensions' => 'The image is larger than :max pixels on a side.',
     'rich_text_bytes' => 'The :attribute content is too large to save.',
     'rich_text_depth' => 'The :attribute content is nested too deeply to save.',
 ];

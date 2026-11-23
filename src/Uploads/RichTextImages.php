@@ -16,15 +16,20 @@ use Illuminate\Validation\ValidationException;
  * Images pasted or dropped into a rich text field. Unlike an Upload field they are stored
  * permanently at once: the HTML holds the final URL, so there is no temporary token.
  *
+ * The upload disk must be publicly readable with a stable URL (never signed or temporary URLs,
+ * which would expire inside saved content) and must never execute the files it serves.
+ *
  * No brume_uploads row is written and nothing is registered with the cleanup or archiver
  * machinery. An image whose editor session is abandoned, or that is later deleted from the
  * document, stays on disk. That is accepted by design (spec 4): the document is the only
  * reference and scanning HTML for orphans is out of scope.
+ *
+ * Safety rests on: the sniffed type is in the raster allow-list, getimagesize() succeeds within
+ * the dimension cap, and the stored name and extension are chosen by the server. File bytes are
+ * not scanned for markup: legitimate photos match such patterns by chance.
  */
 class RichTextImages
 {
-    private const DECODABLE = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-
     /** @return array{url: string, name: string} */
     public function store(UploadedFile $file, Form $form, RichText $field): array
     {
@@ -38,41 +43,40 @@ class RichTextImages
         [$mime, $extension] = TempUploads::sniff($file);
         $accepted = $field->acceptedMimes();
         // SVG is never an editor image, whatever the host put in safe_extensions.
-        if ($extension === null || $extension === 'svg' || str_contains($mime, 'svg') || ! in_array($mime, $accepted, true) || ! $this->decodes($file, $mime)) {
+        // SVG is never an editor image, whatever the host put in safe_extensions.
+        if ($mime === null || $extension === null || $extension === 'svg' || str_contains($mime, 'svg') || ! in_array($mime, $accepted, true)) {
             $this->fail(__('brume::form.upload_type', ['types' => $this->types($accepted)]));
-        }
-        abort_unless(Auth::guard((string) config('brume.auth.guard'))->check(), 401);
-
-        $disk = Storage::disk($field->diskName());
-        $path = $disk->putFileAs(trim($field->directoryFor($formId), '/'), $file, (string) Str::uuid().'.'.$extension);
-        if ($path === false) {
-            throw new \RuntimeException('Unable to store rich text image.');
-        }
-        $url = Href::safe($disk->url($path));
-        if ($url === null) {
-            $disk->delete($path);
-            throw new \RuntimeException('The rich text image disk produced an unsafe URL.');
-        }
-
-        return ['url' => $url, 'name' => $this->name($file)];
-    }
-
-    /**
-     * A cheap proof that the bytes are a real image. getimagesize() only reads the header, so
-     * `GIF89a<?php ...` still parses; the markup scan refuses such polyglots. A full decode is
-     * avoided on purpose: it needs memory proportional to the pixel count.
-     */
-    private function decodes(UploadedFile $file, string $mime): bool
-    {
-        if (! in_array($mime, self::DECODABLE, true)) {
-            return true;
         }
         $info = @getimagesize($file->getRealPath());
         if ($info === false || ($info['mime'] ?? null) !== $mime) {
-            return false;
+            $this->fail(__('brume::form.upload_type', ['types' => $this->types($accepted)]));
+        }
+        $limit = config('brume.uploads.max_image_dimension', 12000);
+        if ($limit !== null && max($info[0], $info[1]) > (int) $limit) {
+            $this->fail(__('brume::form.rich_text_image_dimensions', ['max' => (int) $limit]));
+        }
+        abort_unless(Auth::guard((string) config('brume.auth.guard'))->check(), 401);
+
+        $directory = trim($field->directoryFor($formId), '/');
+        if (! UploadArchiver::isSafePath($directory)) {
+            throw new \LogicException('Unsafe rich text image directory.');
+        }
+        $disk = Storage::disk($field->diskName());
+        $path = $disk->putFileAs($directory, $file, (string) Str::uuid().'.'.$extension);
+        if ($path === false) {
+            throw new \RuntimeException('Unable to store rich text image.');
+        }
+        try {
+            $url = Href::safe($disk->url($path));
+        } catch (\Throwable) {
+            $url = null;
+        }
+        if ($url === null || $url === '') {
+            $disk->delete($path);
+            $this->fail(__('brume::form.rich_text_no_public_url'));
         }
 
-        return preg_match('/<\?(?:php|=)|<script|<svg|<html/i', (string) file_get_contents($file->getRealPath())) !== 1;
+        return ['url' => $url, 'name' => $this->name($file)];
     }
 
     private function types(array $mimes): string

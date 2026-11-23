@@ -35,6 +35,8 @@ return [
         'connections' => null,
         'disk' => env('BRUME_UPLOAD_DISK', 'public'),
         'temp_disk' => 'local',
+        // Longest side (px) accepted for rich text editor images; null disables the cap.
+        'max_image_dimension' => 12000,
         'temp_ttl' => 1440,
         'max_size' => 10240,
         'schedule_cleanup' => true,

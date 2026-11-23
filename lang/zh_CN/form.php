@@ -13,6 +13,8 @@ return [
     'upload_type' => '不支持这种文件格式，请上传 :types。',
     'upload_max' => '最多 :max 个文件。',
     'rich_text_images_disabled' => '此字段未开放上传图片。',
+    'rich_text_no_public_url' => '编辑器的上传磁盘没有公开网址，请联系管理员配置公开磁盘。',
+    'rich_text_image_dimensions' => '图片任一边超过 :max 像素。',
     'rich_text_bytes' => ':attribute 的内容过大，无法保存。',
     'rich_text_depth' => ':attribute 的内容嵌套过深，无法保存。',
 ];

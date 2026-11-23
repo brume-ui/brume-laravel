@@ -7,6 +7,7 @@ use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Resource\Resource;
 use Brume\Tests\Support\JsonSchema;
 use Brume\Uploads\UploadController;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -118,9 +119,46 @@ it('rejects a php file renamed to jpg', function () {
     expect(Storage::disk('public')->allFiles())->toBe([])->and(Storage::disk('local')->allFiles())->toBe([]);
 });
 
-it('rejects a gif header polyglot that does not decode', function () {
-    richUpload($this, UploadedFile::fake()->createWithContent('poly.gif', 'GIF89a<?php system($_GET["c"]); ?>'))->assertUnprocessable();
+it('rejects a file whose body is not an image', function () {
+    richUpload($this, UploadedFile::fake()->createWithContent('trunc.gif', 'GIF89a'))->assertUnprocessable();
+    richUpload($this, UploadedFile::fake()->createWithContent('trunc.png', "\x89PNG\r\n\x1a\n garbage"))->assertUnprocessable();
     expect(Storage::disk('public')->allFiles())->toBe([]);
+});
+
+it('stores an accepted gif header polyglot only under a server chosen name', function () {
+    config(['brume.uploads.max_image_dimension' => null]);
+    $response = richUpload($this, UploadedFile::fake()->createWithContent('../../shell.php.gif', 'GIF89a<?php system($_GET["c"]); ?>'))->assertOk();
+    $files = Storage::disk('public')->allFiles();
+    expect($files)->toHaveCount(1)->and($files[0])->toMatch('~^brume/rich-images/editor/[0-9a-f-]{36}\.gif$~');
+    expect($response->json('url'))->not->toContain('shell')->and($files[0])->not->toContain('php');
+});
+
+it('rejects absurd pixel dimensions by default', function () {
+    // 50000 x 50000 PNG header (IHDR only; getimagesize reads the header).
+    $png = "\x89PNG\r\n\x1a\n".pack('N', 13).'IHDR'.pack('NNCCCCC', 50000, 50000, 8, 2, 0, 0, 0).pack('N', crc32('IHDR'.pack('NNCCCCC', 50000, 50000, 8, 2, 0, 0, 0)));
+    richUpload($this, UploadedFile::fake()->createWithContent('huge.png', $png))->assertUnprocessable();
+    richUpload($this, UploadedFile::fake()->createWithContent('poly.gif', 'GIF89a<?php system(1); ?>'))->assertUnprocessable();
+    expect(Storage::disk('public')->allFiles())->toBe([]);
+    config(['brume.uploads.max_image_dimension' => 4]);
+    richUpload($this, UploadedFile::fake()->image('a.png', 8, 8))->assertUnprocessable();
+    richUpload($this, UploadedFile::fake()->image('a.png', 4, 4))->assertOk();
+});
+
+it('accepts a normal directory and refuses an unsafe one at use time', function () {
+    richConfigure(fn (Form $f) => $f->editor('body')->directory('a/b/c'));
+    richUpload($this, UploadedFile::fake()->image('a.png'))->assertOk();
+    expect(Storage::disk('public')->allFiles()[0])->toStartWith('a/b/c/');
+});
+
+it('answers 422 and leaves no file when the disk has no public url', function () {
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('putFileAs')->once()->andReturn('brume/rich-images/editor/x.png');
+    $disk->shouldReceive('url')->andThrow(new RuntimeException('no url'));
+    $disk->shouldReceive('delete')->once()->with('brume/rich-images/editor/x.png');
+    Storage::set('nourl', $disk);
+    richConfigure(fn (Form $f) => $f->editor('body')->disk('nourl'));
+    $response = richUpload($this, UploadedFile::fake()->image('a.png'))->assertUnprocessable();
+    expect($response->json('errors.file.0'))->toBe(__('brume::form.rich_text_no_public_url'));
 });
 
 it('never accepts svg', function () {
@@ -147,6 +185,9 @@ it('rejects uploads when images are disabled', function () {
 
 it('has translated messages in every locale', function (string $locale) {
     app()->setLocale($locale);
+    foreach (['rich_text_no_public_url', 'rich_text_image_dimensions'] as $key) {
+        expect(__('brume::form.'.$key))->not->toBe('brume::form.'.$key);
+    }
     expect(__('brume::form.rich_text_images_disabled'))->not->toBe('brume::form.rich_text_images_disabled');
 })->with(['en', 'zh_TW', 'zh_CN']);
 

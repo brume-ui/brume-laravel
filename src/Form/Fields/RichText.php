@@ -4,6 +4,7 @@ namespace Brume\Form\Fields;
 
 use Brume\Html\HtmlSanitizer;
 use Brume\Support\Href;
+use Brume\Uploads\UploadArchiver;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
@@ -83,12 +84,19 @@ class RichText extends Field
 
     public function directory(string $directory): static
     {
+        if (! UploadArchiver::isSafePath($directory)) {
+            throw new InvalidArgumentException('Editor image directory must be a relative path without "." or ".." segments.');
+        }
         $this->directoryName = $directory;
 
         return $this;
     }
 
-    /** Raster image MIME types accepted for pasted or dropped images. SVG is never accepted. */
+    /**
+     * Raster image types accepted for pasted or dropped images: a subset of image/jpeg, image/png,
+     * image/gif and image/webp. SVG is never accepted; other formats (AVIF, ...) can be added later
+     * deliberately, once they are verified to be decodable by the upload checks.
+     */
     public function accept(array $mimes): static
     {
         if ($mimes === []) {
@@ -97,8 +105,8 @@ class RichText extends Field
         $accept = [];
         foreach ($mimes as $mime) {
             $normalized = is_string($mime) ? strtolower(trim($mime)) : '';
-            if (! preg_match('~^image/[a-z0-9][a-z0-9!#$&^_.+-]*\z~', $normalized) || str_contains($normalized, 'svg')) {
-                throw new InvalidArgumentException('Editor images must be raster image types; SVG is never accepted.');
+            if (! in_array($normalized, self::DEFAULT_ACCEPT, true)) {
+                throw new InvalidArgumentException('Editor images must be image/jpeg, image/png, image/gif or image/webp; SVG is never accepted.');
             }
             $accept[] = $normalized;
         }

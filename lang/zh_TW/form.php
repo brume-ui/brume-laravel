@@ -13,6 +13,8 @@ return [
     'upload_type' => '不支援這種檔案格式，請上傳 :types。',
     'upload_max' => '最多 :max 個檔案。',
     'rich_text_images_disabled' => '這個欄位未開放上傳圖片。',
+    'rich_text_no_public_url' => '編輯器的上傳磁碟沒有公開網址，請聯絡管理員設定公開磁碟。',
+    'rich_text_image_dimensions' => '圖片任一邊超過 :max 像素。',
     'rich_text_bytes' => ':attribute 的內容過大，無法儲存。',
     'rich_text_depth' => ':attribute 的內容巢狀過深，無法儲存。',
 ];

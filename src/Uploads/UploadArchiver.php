@@ -193,6 +193,12 @@ class UploadArchiver
 
     protected function safePath(string $path): bool
     {
+        return self::isSafePath($path);
+    }
+
+    /** A relative storage path: non-empty, no leading slash, backslash, control characters or dot segments. */
+    public static function isSafePath(string $path): bool
+    {
         return $path !== '' && ! str_starts_with($path, '/') && ! str_contains($path, '\\') && ! preg_match('/[\x00-\x1f\x7f]/', $path) && ! in_array('..', explode('/', $path), true) && ! in_array('.', explode('/', $path), true);
     }
 
