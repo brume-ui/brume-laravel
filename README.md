@@ -788,50 +788,91 @@ $form->editor('erp_note')->readOnly();              // shown in a sandboxed, scr
 a Composer dependency of this package) both when it is saved and before it is sent to the browser.
 A legacy row that contains `<script>`, event handlers or `javascript:` links is cleaned before
 it reaches the editor, so nothing in it runs in the admin's session; opening and saving such a
-record stores the cleaned version. `saving` hooks see the raw submitted value; what is written
-is always the cleaned one. A read-only editor never writes, so its stored value stays as it was.
+record stores the cleaned version. `saving` hooks see the submitted value (an empty document as
+`null`); what is written is always the cleaned one. A read-only editor never writes, so its
+stored value stays as it was.
 
-Printing the stored HTML on a storefront (`{!! $product->description !!}`) is safe only because of
-this sanitiser. Do not bypass it: raw DB writes, imports or seeders that write the column
-directly store whatever they are given (Brume cleans it again on its next read, but your site
-does not). Likewise, **do not combine a Grid inline `text`/`textarea` editor with a column that a
-form edits with `editor()`**: inline edits store their text unsanitised. Escape such columns on
-output if you do.
+Printing the stored HTML on a storefront (`{!! $product->description !!}`) is safe only because
+every write went through this sanitiser.
 
-What is kept (the whitelist, in summary):
+**What the sanitiser does not protect.** The host owns these:
 
-- Elements: `h1`–`h6`, `p`, `ul`, `ol`, `li`, tables (`table`, `thead`, `tbody`, `tr`, `th`, `td`,
-  `colgroup`, `col`), `img`, `a`, `br`, `hr`, `strong`, `b`, `em`, `i`, `u`, `s`, `sup`, `sub`,
-  `span`, `div`, `article`, `blockquote`, `iframe`, and checkbox/radio `input` + `label` (CSS-only
-  accordions). Links may wrap block content; a link nested in a link is unwrapped.
-- Attributes: `class`, `style`, `id` everywhere; `href`/`target`/`rel`/`title` on links;
-  `src`/`alt`/`title`/`width`/`height`/`loading` on images; table spans, `border`,
-  `cellpadding`/`cellspacing`, `td[data-th]`; `ol[start|type]`; iframe `src`/`width`/`height`/
-  `allowfullscreen`/`frameborder`/`title`/`loading`.
+- **Your own writers.** A `saveUsing()` writer receives the cleaned value (or `null` for an empty
+  document); a writer that reads the request itself (`request('description')`) bypasses cleaning.
+  The over-limit guard below (an empty save does not overwrite a stored over-limit value) does not
+  apply under `saveUsing()`: the closure simply gets `null` for an empty submission.
+- **Raw database writes.** Imports, seeders, queue jobs or SQL that write the column directly store
+  whatever they are given. Brume cleans it again on its next read, but your storefront does not.
+- **Grid inline editors.** A Grid inline `text`/`textarea` editor on a column that a form edits with
+  `editor()` stores its text unsanitised. Do not combine them, and escape such columns on output.
+- **`allow_fixed => true`** lets content pin blocks over the whole viewport (full-screen overlays).
+- **The `configure` hook** can widen the whitelist; whatever it allows is the host's risk. It must
+  not rely on owning `AutoFormat.Custom`: Brume appends its own injectors after the hook runs.
+- **Classes.** With `allowed_classes => null` (the default) content may use any class of your
+  storefront stylesheet, including ones that hide or reposition things. Give a list to restrict.
+- **Layout inside the content.** Absolutely positioned overlays (within the content, `z-index` up
+  to 9999) and `display:none` are allowed, so content can cover or hide its own parts.
+- **External resources.** An `img` or `background-image` URL on another host makes every visitor's
+  browser fetch it (tracking pixels, hotlinking). Upload images instead if that matters.
+- **Embeds** are limited to YouTube; nothing else is checked about the video itself.
+
+What is kept (from the constants in `src/Html/HtmlSanitizer.php`):
+
+- Elements: `h1`, `h2`, `h3`, `h4`, `h5`, `h6`, `p`, `ul`, `ol`, `li`, `table`, `caption`,
+  `thead`, `tbody`, `tfoot`, `tr`, `th`, `td`, `colgroup`, `col`, `img`, `a`, `br`, `strong`, `b`,
+  `em`, `i`, `u`, `s`, `sup`, `sub`, `span`, `div`, `article`, `blockquote`, `hr`, `iframe`,
+  `input`, `label`. Links may wrap block content.
+- Attributes:
+  - everywhere: `class`, `style`, `id`;
+  - `a[href|target|rel|title]`, `img[src|alt|title|width|height|loading]`;
+  - `th`/`td[colspan|rowspan]`, `td[data-th]`, `table[width|border|cellpadding|cellspacing]`,
+    `col[span|width]`, `ol[start|type]`;
+  - `iframe[src|width|height|allowfullscreen|frameborder|title|loading]`;
+  - `input[type|name|checked]` with `type` required and only `checkbox` or `radio`, and
+    `label[for]` (CSS-only accordions; nothing can submit or take text input).
+- Reserved names: `id`, `input[name]` and `label[for]` values that could clobber the DOM or a form
+  (`document`, `location`, `submit`, `_token`, `csrf*`, `__*`, …; `HtmlSanitizer::RESERVED_NAMES`)
+  are dropped, attribute only; `brume.html.reserved_names` adds to the list.
 - Inline CSS for layout: sizes, margins, padding, borders and radius, colours, fonts and text,
   backgrounds (including `url()`), lists, float, flex (`display`, `justify-content`, `gap`, …),
   `position` with `top`/`right`/`bottom`/`left`, `z-index` up to 9999, `overflow`, `opacity`,
   `box-shadow`, `object-fit`.
 - URLs (`href`, `src`, CSS `url()`): http, https, protocol-relative and relative; links also
   `mailto:` and `tel:`. Never `javascript:`, `data:` (images must be uploaded) or other schemes.
-- Embeds: YouTube only (`youtube.com` / `youtube-nocookie.com` `/embed/<11-character id>`); every
-  other iframe is removed. The toolbar's video button accepts YouTube URLs only.
+- Embeds: an iframe is kept only if its `src` matches `iframe_regexp`; the default is YouTube
+  (`youtube.com` / `youtube-nocookie.com`) `/embed/<11-character id>` plus an optional query or
+  fragment. The toolbar's video button accepts YouTube URLs only.
 - Removed: scripts, styles, forms and other inputs, `object`/`embed`, event handlers,
-  `position:fixed` (unless `allow_fixed`), reserved `id`/`name` values (DOM clobbering, see
-  `reserved_names`), duplicate ids, HTML comments and `!important`.
+  `position:fixed` (unless `allow_fixed`), duplicate ids, HTML comments and `!important`.
 
-The output is HTMLPurifier's serialisation, so it renders the same but is not byte-identical:
-`&nbsp;` and other entities become UTF-8 characters (U+00A0), `style` text is compacted and
-`url('x')` becomes `url("x")`, named colours become hex (`red` → `#FF0000`), punctuation is
-stripped from `tel:` numbers, boolean attributes are minimised, and invalid UTF-8 becomes U+FFFD.
+The output renders the same as the input but is not byte-identical:
+
+- `&nbsp;` and other entities become UTF-8 characters (U+00A0), invalid UTF-8 becomes U+FFFD;
+- `style` text is compacted, `url('x')` becomes `url("x")`, named colours become hex
+  (`red` → `#FF0000`), punctuation is stripped from `tel:` numbers, boolean attributes are minimised;
+- inline formatting around blocks is split: `<b>a<div>x</div>y</b>` becomes
+  `<b>a</b><div><b>x</b></div><b>y</b>`, and empty formatting shells may appear around blocks;
+- a `<tfoot>` written after `<tbody>` moves before it; a stray `<col>` outside a table is dropped;
+- a link nested inside a link is unwrapped, keeping its text.
+
 Cleaning is idempotent: saving a cleaned value again changes nothing.
 
-**Limits.** Values over `max_bytes`, deeper than `max_depth` or with more than `max_elements`
-(measured on the tree the parser builds) are refused before HTMLPurifier runs: a save returns 422
-with a field error. A *stored* value over a limit loads as an empty editor with a logged warning
-(the page still opens), and saving the form without new content does not overwrite it; only new,
-non-empty content replaces it. Memory grows with the limits (dense markup near 1 MB needs about
-260 MB), so lower them on small workers rather than raising them.
+**Limits.** Three limits bound what one value may cost to clean; the defaults are about ten times
+the largest real legacy document we measured (23 KB, shallow) while keeping a 128 MB PHP worker
+safe on the densest markup that fits under them:
+
+- `max_bytes` (300,000): the raw input size, checked first, before anything is parsed.
+- `max_depth` (256): element nesting, measured on the tree the parser builds (tags it closes
+  itself, like an unclosed `<li>` or `<p>`, do not add up).
+- `max_elements` (20,000): elements counted on HTMLPurifier's *projected output*, so heavily nested
+  formatting around many blocks (which is split and repeated, see above) is rejected earlier than
+  its raw tag count suggests. The result is checked again.
+
+A save over a limit returns 422 with a field error. Because the cleaned result is checked against
+the same limits, a value that saved can always be read back. A *stored* value over a limit (legacy
+data, a raw write) loads as an empty editor with a logged warning, so the page still opens; saving
+the form without new content does not overwrite it, only new non-empty content replaces it. Raise a
+limit only if real content needs it; memory grows with it.
 
 `config('brume.html')` (defaults):
 
@@ -839,14 +880,14 @@ non-empty content replaces it. Memory grows with the limits (dense markup near 1
 |---|---|---|
 | `allow_fixed` | `false` | keep `position:fixed` |
 | `allowed_classes` | `null` | `null` keeps any class; a list keeps only those |
-| `iframe_regexp` | YouTube `/embed/<id>` | iframe `src` must match; `null` allows no iframe |
+| `iframe_regexp` | YouTube `/embed/<11-char id>` | iframe `src` must match; `null` allows no iframe |
 | `reserved_names` | `[]` | extra values refused for `id`, `input[name]`, `label[for]` (`'prefix*'` matches a prefix) |
 | `max_bytes` | `300_000` | input size limit; `null` disables |
-| `max_depth` | `256` | element nesting limit; `null` disables (tens of thousands of levels can crash PHP) |
-| `max_elements` | `20_000` | element count limit (about 45 MB of sanitiser memory at the limit) |
+| `max_depth` | `256` | nesting limit; `null` disables (tens of thousands of levels can crash PHP) |
+| `max_elements` | `20_000` | projected element limit; `null` disables |
 | `cache_path` | `null` | `storage/framework/cache/brume-htmlpurifier`, created on demand; `false` disables |
 | `configure` | `null` | `callable(HTMLPurifier_Config)`, runs after Brume's settings, before the definition is built |
-| `configure_version` | `null` | part of the cache key; change it when the hook's behaviour changes |
+| `configure_version` | `null` | part of the definition cache key; change it when the hook's behaviour changes |
 
 Changing an option or the hook's source invalidates the cached definition automatically. Use an
 invokable class or `[Class::class, 'method']` for `configure` (a closure breaks `config:cache`);
