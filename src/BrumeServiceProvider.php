@@ -7,6 +7,7 @@ use Brume\Console\InstallCommand;
 use Brume\Console\PasswordCommand;
 use Brume\Console\UserCommand;
 use Brume\Grid\GridRouteRegistrar;
+use Brume\Html\HtmlSanitizer;
 use Brume\Http\Controllers\NotFoundController;
 use Brume\Http\Middleware\Authenticate;
 use Brume\Http\Middleware\HandleBrumeRequests;
@@ -38,6 +39,7 @@ class BrumeServiceProvider extends ServiceProvider
 
         $this->app->singleton(BrumeManager::class);
         $this->app->singleton(UploadTransactions::class);
+        $this->app->singleton(HtmlSanitizer::class, fn ($app) => new HtmlSanitizer($app['config']->get('brume.html', [])));
 
         // Brume cannot work without Inertia; register it even when package discovery is off.
         $this->app->register(InertiaServiceProvider::class);

