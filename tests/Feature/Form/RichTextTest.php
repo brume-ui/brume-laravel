@@ -13,6 +13,8 @@ use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\Models\CellItem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 
 class RichPost extends Model
@@ -402,4 +404,211 @@ it('rejects editor in action forms, quick create and upload extras', function ()
     expect(fn () => Grid::make(CellItem::class)->quickCreate($fields)->quickForm())->toThrow(InvalidArgumentException::class, 'Upload extras must be flat non-upload fields.')
         ->and(fn () => Action::make('bad', 'Bad')->form($fields))->toThrow(InvalidArgumentException::class, 'Upload extras must be flat non-upload fields.')
         ->and(fn () => Form::make(RichPost::class)->image('cover')->extra($fields))->toThrow(InvalidArgumentException::class, 'Upload extras must be flat non-upload fields.');
+});
+
+// Fix round 1: input limits on the write path
+
+function richDeep(int $levels, string $text = 'x'): string
+{
+    return str_repeat('<div>', $levels).$text.str_repeat('</div>', $levels);
+}
+
+function richErrors(Closure $save): array
+{
+    try {
+        $save();
+    } catch (ValidationException $e) {
+        return $e->errors();
+    }
+    test()->fail('Expected validation failure');
+}
+
+it('rejects over-limit submissions with a translated validation error and never sanitises them', function (Closure $html, string $reason, bool $required) {
+    $post = RichPost::create(['body' => '<p>old</p>']);
+    $form = richForm($post);
+    $field = $form->editor('body', 'Body');
+    if ($required) {
+        $field->required();
+    }
+    // An HtmlRejected from clean() would escape richErrors() and fail the test.
+    expect(richErrors(fn () => richSave($form, $post, ['body' => $html()])))->toBe(['body' => [__('brume::form.rich_text_'.$reason, ['attribute' => 'Body'])]])
+        ->and($post->fresh()->body)->toBe('<p>old</p>');
+})->with([
+    '2 MB' => [fn () => '<p>'.str_repeat('a', 2_000_000).'</p>', 'bytes'],
+    '300 nested divs' => [fn () => richDeep(300), 'depth'],
+    '300 nested empty divs' => [fn () => richDeep(300, ''), 'depth'],
+])->with(['optional' => false, 'required' => true]);
+
+it('translates the limit messages', function (string $locale) {
+    app()->setLocale($locale);
+    foreach (['bytes', 'depth'] as $reason) {
+        expect(__('brume::form.rich_text_'.$reason, ['attribute' => 'X']))->not->toBe('brume::form.rich_text_'.$reason)->toContain('X');
+    }
+})->with(['en', 'zh_TW', 'zh_CN']);
+
+it('keys over-limit errors to nested json row and relation row paths', function () {
+    $post = RichPost::create();
+    $section = $post->sections()->create(['body' => '<p>old</p>']);
+    $form = richForm($post);
+    $form->repeater('blocks', 'Blocks', fn (Form $row) => $row->editor('body', 'Body'));
+    expect(array_keys(richErrors(fn () => richSave($form, $post, ['blocks' => [['_brume' => ['key' => 'a'], 'body' => richDeep(300)]]]))))->toBe(['blocks.0.body']);
+    $form = richForm($post);
+    $form->repeater('sections', 'Sections', fn (Form $row) => $row->editor('body', 'Body'))->relation('sections');
+    expect(array_keys(richErrors(fn () => richSave($form, $post, ['sections' => [['_brume' => ['key' => 'record:'.$section->id, 'id' => (string) $section->id], 'body' => '<p>'.str_repeat('a', 2_000_000).'</p>']]]))))->toBe(['sections.0.body'])
+        ->and($section->fresh()->body)->toBe('<p>old</p>');
+});
+
+// Fix round 1: over-limit values already stored
+
+it('sends null for an over-limit stored value, logs it, and keeps it unless new content replaces it', function () {
+    Log::spy();
+    $deep = richDeep(400);
+    $post = RichPost::create(['body' => $deep, 'title' => 'Old']);
+    $build = function () use ($post) {
+        $form = richForm($post);
+        $form->text('title');
+        $form->editor('body');
+
+        return $form;
+    };
+    Route::get('/rich-edit/{id}', fn ($id) => $build());
+    $response = $this->getJson('/rich-edit/'.$post->id, ['X-Brume-Form' => '1'])->assertOk();
+    expect($response->json('page.values.body'))->toBeNull();
+    Log::shouldHaveReceived('warning')->withArgs(fn ($message, $context = []) => ($context['field'] ?? null) === 'body' && ($context['reason'] ?? null) === 'depth');
+    richSave($build(), $post, ['title' => 'New', 'body' => null]);
+    expect($post->fresh()->body)->toBe($deep)->and($post->fresh()->title)->toBe('New');
+    richSave($build(), $post, ['body' => '<p><br></p>']);
+    expect($post->fresh()->body)->toBe($deep);
+    richSave($build(), $post, ['body' => '<p>new</p>']);
+    expect($post->fresh()->body)->toBe('<p>new</p>');
+});
+
+it('reads an over-limit stored value as null for read-only and conditional fields without throwing', function () {
+    $post = RichPost::create(['body' => richDeep(400), 'notes' => '<p>'.str_repeat('a', 400_000).'</p>', 'title' => 'Old']);
+    $form = richForm($post);
+    $form->text('title');
+    $form->editor('body')->readOnly();
+    $form->editor('notes')->showWhen(Conditions::eq(Conditions::root('title'), 'show'));
+    expect(richPage($form)['values'])->toMatchArray(['body' => null, 'notes' => null]);
+    richSave($form, $post, ['title' => 'New']);
+    expect($post->fresh()->body)->toBe(richDeep(400))->and($post->fresh()->title)->toBe('New');
+});
+
+it('keeps an over-limit value stored in a json row unless new content replaces it', function () {
+    $deep = richDeep(400);
+    $post = RichPost::create(['blocks' => [['_brume' => ['key' => 'a'], 'body' => $deep, 'other' => 1]]]);
+    $build = function () use ($post) {
+        $form = richForm($post);
+        $form->repeater('blocks', 'Blocks', fn (Form $row) => $row->editor('body'));
+
+        return $form;
+    };
+    expect(richPage($build())['values']['blocks'][0]['body'])->toBeNull();
+    richSave($build(), $post, ['blocks' => [['_brume' => ['key' => 'a'], 'body' => null]]]);
+    expect($post->fresh()->blocks[0]['body'])->toBe($deep)->and($post->fresh()->blocks[0]['other'])->toBe(1);
+    richSave($build(), $post, ['blocks' => [['_brume' => ['key' => 'a'], 'body' => '<p>new</p>']]]);
+    expect($post->fresh()->blocks[0]['body'])->toBe('<p>new</p>');
+});
+
+// Fix round 1: Laravel's required family sees an empty document as null
+
+it('applies required_if to empty documents natively', function (string $status, bool $fails) {
+    $form = richForm();
+    $form->text('status');
+    $form->editor('body', 'Body')->rules('required_if:status,published');
+    if ($fails) {
+        expect(richErrors(fn () => FormValidator::validate($form, ['status' => $status, 'body' => '<p><br></p>'])))->toBe(['body' => [__('validation.required_if', ['attribute' => 'Body', 'other' => 'Status', 'value' => 'published'])]]);
+    } else {
+        expect(FormValidator::validate($form, ['status' => $status, 'body' => '<p><br></p>']))->toBe(['status' => $status, 'body' => null]);
+    }
+})->with([['published', true], ['draft', false]]);
+
+it('lets required_with on another field see an empty document as missing', function () {
+    $form = richForm();
+    $form->editor('body', 'Body');
+    $form->text('summary', 'Summary')->rules('required_with:body');
+    expect(FormValidator::validate($form, ['body' => '<p>&nbsp;</p>', 'summary' => null]))->toBe(['body' => null, 'summary' => null])
+        ->and(array_keys(richErrors(fn () => FormValidator::validate($form, ['body' => '<p>x</p>', 'summary' => null]))))->toBe(['summary']);
+});
+
+it('skips required when the editor is hidden by showWhen', function () {
+    $form = richForm();
+    $form->text('status');
+    $form->editor('body', 'Body')->required()->showWhen(Conditions::eq(Conditions::root('status'), 'published'));
+    expect(FormValidator::validate($form, ['status' => 'draft', 'body' => '<p><br></p>']))->toBe(['status' => 'draft'])
+        ->and(array_keys(richErrors(fn () => FormValidator::validate($form, ['status' => 'published', 'body' => '<p><br></p>']))))->toBe(['body']);
+});
+
+it('stores null for an empty nullable document and honours sometimes', function () {
+    $post = RichPost::create(['body' => '<p>old</p>', 'title' => 'Old']);
+    $form = richForm($post);
+    $form->text('title');
+    $form->editor('body')->rules('nullable');
+    richSave($form, $post, ['body' => '<p><br></p>']);
+    expect($post->fresh()->body)->toBeNull();
+    $form = richForm();
+    $form->editor('body', 'Body')->rules('sometimes|required');
+    expect(FormValidator::validate($form, []))->toBe([])
+        ->and(array_keys(richErrors(fn () => FormValidator::validate($form, ['body' => '<p><br></p>']))))->toBe(['body']);
+});
+
+// Fix round 1: dotted names
+
+it('reads and writes a dotted name on a json attribute', function () {
+    $post = RichPost::create(['blocks' => ['content' => RICH_HOSTILE, 'other' => 'keep']]);
+    $build = function () use ($post) {
+        $form = richForm($post);
+        $form->editor('blocks.content');
+
+        return $form;
+    };
+    $page = richPage($build());
+    expectRichSafe($page['values']['blocks']['content']);
+    richSave($build(), $post, ['blocks' => ['content' => RICH_HOSTILE]]);
+    expect($post->fresh()->blocks)->toBe(['content' => richClean(RICH_HOSTILE), 'other' => 'keep']);
+    richSave($build(), $post, ['blocks' => ['content' => '<p><br></p>']]);
+    expect($post->fresh()->blocks)->toBe(['content' => null, 'other' => 'keep']);
+});
+
+it('reads and writes a dotted name inside a json repeater row', function () {
+    $post = RichPost::create(['blocks' => [['_brume' => ['key' => 'a'], 'meta' => ['body' => RICH_HOSTILE, 'x' => 1]]]]);
+    $build = function () use ($post) {
+        $form = richForm($post);
+        $form->repeater('blocks', 'Blocks', fn (Form $row) => $row->editor('meta.body'));
+
+        return $form;
+    };
+    expectRichSafe(richPage($build())['values']['blocks'][0]['meta']['body']);
+    richSave($build(), $post, ['blocks' => [['_brume' => ['key' => 'a'], 'meta' => ['body' => RICH_HOSTILE]]]]);
+    expect($post->fresh()->blocks[0]['meta'])->toBe(['body' => richClean(RICH_HOSTILE), 'x' => 1]);
+});
+
+// Fix round 1: build-time checks
+
+it('refuses unsafe content stylesheet urls', function (string $url) {
+    expect(fn () => Form::make(RichPost::class)->editor('body')->contentCss(['/ok.css', $url]))->toThrow(InvalidArgumentException::class, '用了不允許的協定');
+})->with(['javascript:alert(1)', 'data:text/css,body{}', ' JaVaScRiPt:alert(1)', 'mailto:a@example.com']);
+
+it('requires a stable form id when an editor accepts images', function () {
+    $form = Form::make(RichPost::class)->submitTo('post', '/posts');
+    $form->editor('body');
+    expect(fn () => $form->toSchema(Request::create('/')))->toThrow(LogicException::class, 'Configure Form::id()');
+    $nested = Form::make(RichPost::class)->submitTo('post', '/posts');
+    $nested->repeater('blocks', 'Blocks', fn (Form $row) => $row->editor('body'));
+    expect(fn () => $nested->toSchema(Request::create('/')))->toThrow(LogicException::class, 'Configure Form::id()');
+    $plain = Form::make(RichPost::class)->submitTo('post', '/posts');
+    $plain->editor('body')->withoutImages();
+    $plain->repeater('blocks', 'Blocks', fn (Form $row) => $row->editor('body')->withoutImages());
+    expect($plain->toSchema(Request::create('/'))['formId'])->toBe('/');
+});
+
+it('never serves a cleaned value across sanitiser configurations', function () {
+    $html = '<p class="only other">x</p>';
+    $post = RichPost::create(['body' => $html]);
+    $form = richForm($post);
+    $form->editor('body');
+    expect(richPage($form)['values']['body'])->toBe($html);
+    config(['brume.html.allowed_classes' => ['only']]);
+    app()->forgetInstance(HtmlSanitizer::class);
+    expect(richPage($form)['values']['body'])->toBe('<p class="only">x</p>');
 });

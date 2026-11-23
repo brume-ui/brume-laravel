@@ -496,7 +496,7 @@ it('is bound as a singleton configured from brume.html', function () {
     expect(app(HtmlSanitizer::class))->toBe(app(HtmlSanitizer::class))
         ->and(app(HtmlSanitizer::class)->clean('<p class="only other">x</p>'))->toBe('<p class="only">x</p>')
         ->and(config('brume.html.allow_fixed'))->toBeFalse()
-        ->and(config('brume.html.max_bytes'))->toBe(1_000_000)
+        ->and(config('brume.html.max_bytes'))->toBe(300_000)
         ->and(config('brume.html.max_depth'))->toBe(256)
         ->and(config('brume.html.reserved_names'))->toBe([])
         ->and(config('brume.html.configure_version'))->toBeNull()

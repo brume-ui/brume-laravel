@@ -12,4 +12,6 @@ return [
     'upload_too_large' => 'The file exceeds :max. Please choose a smaller file.',
     'upload_type' => 'Unsupported file type. Please upload :types.',
     'upload_max' => 'At most :max files.',
+    'rich_text_bytes' => 'The :attribute content is too large to save.',
+    'rich_text_depth' => 'The :attribute content is nested too deeply to save.',
 ];

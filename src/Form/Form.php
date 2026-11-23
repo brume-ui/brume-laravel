@@ -733,7 +733,7 @@ class Form implements Renderable, Responsable
         $size = $this->size === 'auto' ? ($this->layout === 'horizontal' || $count > 8 ? 'lg' : ($count <= 3 && ! $long ? 'sm' : 'md')) : $this->size;
         $page = [
             'type' => 'form', 'title' => $this->title ?? __($this->record === null ? 'brume::form.create_title' : 'brume::form.edit_title', ['name' => $this->name]),
-            'formId' => $this->id ?? (count(array_filter($this->fields, fn ($field) => $field instanceof Upload)) > 0 ? $this->formId() : ($request->route()?->getName() ?? $request->path())), 'name' => $this->name, 'mode' => $this->record === null ? 'create' : 'edit',
+            'formId' => $this->id ?? ($this->needsStableId($this->fields, true) ? $this->formId() : ($request->route()?->getName() ?? $request->path())), 'name' => $this->name, 'mode' => $this->record === null ? 'create' : 'edit',
             'form' => ['layout' => $this->layout, 'nodes' => $this->nodesSchema($this->record, $this->record)] + ($this->tabs ? ['sections' => 'tabs'] : []),
             'values' => array_is_list($values) ? (object) $values : $values,
             'submit' => $this->submit, 'after' => $this->afterSchema(), 'presentation' => $presentation, 'size' => $size,
@@ -767,6 +767,21 @@ class Form implements Renderable, Responsable
         $sections = count(array_filter($this->nodes, fn ($node) => $node instanceof FormNode && $node->type === 'section'));
 
         return $this->presentation === 'auto' ? ($sections >= 3 || count($this->fields) > 16 ? 'page' : 'modal') : $this->presentation;
+    }
+
+    /** Root uploads and any rich text editor that uploads images (at any depth) need Form::id(). */
+    private function needsStableId(array $fields, bool $root): bool
+    {
+        foreach ($fields as $field) {
+            if (($root && $field instanceof Upload) || ($field instanceof Fields\RichText && $field->imagesEnabled())) {
+                return true;
+            }
+            if (($field instanceof Fields\Repeater || $field instanceof Fields\RelationPicker) && $this->needsStableId($field->rowForm()->fields(), false)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function hasEmbeds(): bool

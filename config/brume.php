@@ -50,7 +50,8 @@ return [
         // iframe src must match; null allows no iframe at all. The default accepts YouTube /embed/<11-char id> only.
         'iframe_regexp' => '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/(?!videoseries)[A-Za-z0-9_-]{11}(?:[?#][^\s"<>]*)?$%',
         // Input refused before parsing (HtmlRejected; validate with HtmlSanitizer::limitViolation()). null disables either.
-        'max_bytes' => 1_000_000,
+        // Bytes: dense markup needs roughly 260 MB of memory to purify at 1 MB, so keep this well below that.
+        'max_bytes' => 300_000,
         // Element nesting depth; unclosed tags count.
         'max_depth' => 256,
         // Extra values refused for id, input[name] and label[for], added to HtmlSanitizer::RESERVED_NAMES. 'prefix*' matches a prefix.

@@ -6,6 +6,7 @@ use Brume\Form\Fields\CustomField;
 use Brume\Form\Fields\Field;
 use Brume\Form\Fields\RelationPicker;
 use Brume\Form\Fields\Repeater;
+use Brume\Form\Fields\RichText;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
@@ -43,6 +44,13 @@ class FormValidator
     {
         self::translations();
         $values = self::structuralValues($fields, $values);
+        foreach ($fields as $path => $field) {
+            // An empty rich text document is "no value", so Laravel's required* rules, custom
+            // messages and attribute names apply natively. Over-limit input is left as submitted.
+            if ($field instanceof RichText && is_string($input = Arr::get($values, $path)) && RichText::isEmptyDocument($input)) {
+                Arr::set($values, $path, null);
+            }
+        }
         if ($rowPath === null) {
             $registry = new DeclarationRegistry($fields, $record ?? $model);
             foreach ($registry->entries as $entry) {
