@@ -12,6 +12,7 @@ return [
     'upload_too_large' => '檔案超過 :max，請換一個較小的檔案。',
     'upload_type' => '不支援這種檔案格式，請上傳 :types。',
     'upload_max' => '最多 :max 個檔案。',
+    'rich_text_images_disabled' => '這個欄位未開放上傳圖片。',
     'rich_text_bytes' => ':attribute 的內容過大，無法儲存。',
     'rich_text_depth' => ':attribute 的內容巢狀過深，無法儲存。',
 ];

@@ -3,6 +3,7 @@
 namespace Brume\Uploads;
 
 use Brume\Form\DeclarationRegistry;
+use Brume\Form\Fields\RichText;
 use Brume\Form\Fields\Upload;
 use Brume\Form\Form;
 use Brume\Options\FormOptionContext;
@@ -16,7 +17,7 @@ final class UploadContext
         $form->initialize();
         $registry = new DeclarationRegistry($form->fields(), $form->record() ?? $form->query()->getModel());
         foreach ($registry->entries as $template => $entry) {
-            if (! $entry['field'] instanceof Upload || ! preg_match('~^'.str_replace('\\*', '(?:0|[1-9][0-9]*)', preg_quote($template, '~')).'$~D', $path)) {
+            if (! ($entry['field'] instanceof Upload || $entry['field'] instanceof RichText) || ! preg_match('~^'.str_replace('\\*', '(?:0|[1-9][0-9]*)', preg_quote($template, '~')).'$~D', $path)) {
                 continue;
             }
             $resolver = new FormOptionContext($form, $registry, $ancestors);
@@ -26,7 +27,8 @@ final class UploadContext
             if ($locked || ! $entry['field']->isEditable($callback)) {
                 break;
             }
-            if ($storage !== null && $storage->getConnection()->getName() !== TempUploads::connection($form)) {
+            // Rich text images are stored permanently and never touch brume_uploads.
+            if (! $entry['field'] instanceof RichText && $storage !== null && $storage->getConnection()->getName() !== TempUploads::connection($form)) {
                 throw ValidationException::withMessages(['rowContext' => 'Mixed upload connections are not supported.']);
             }
 

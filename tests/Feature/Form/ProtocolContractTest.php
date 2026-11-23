@@ -26,6 +26,7 @@ class FormProtocolResource extends Resource
         $form->text('username')->required();
         $form->text('name')->required();
         $form->image('avatar');
+        $form->editor('bio');
         $form->saving(function ($record) {
             if (! $record->exists) {
                 $record->password = 'test-password';
@@ -56,5 +57,7 @@ it('validates resource create edit submission validation and uploads against the
     foreach ([$create->json('page.uploadUrl'), $edit->json('page.uploadUrl')] as $url) {
         $upload = $this->post($url, ['field' => 'avatar', 'file' => UploadedFile::fake()->image('avatar.png')], ['Accept' => 'application/json'])->assertOk();
         expect(JsonSchema::errors($upload->json(), 'UploadTempResponse'))->toBe([]);
+        $image = $this->post($url, ['field' => 'bio', 'file' => UploadedFile::fake()->image('inline.png')], ['Accept' => 'application/json'])->assertOk();
+        expect(JsonSchema::errors($image->json(), 'RichTextImageResponse'))->toBe([])->and($image->json('url'))->toBeString();
     }
 });

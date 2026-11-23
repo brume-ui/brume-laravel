@@ -2,6 +2,7 @@
 
 namespace Brume\Uploads;
 
+use Brume\Form\Fields\RichText;
 use Brume\Form\Fields\Upload;
 use Brume\Form\Form;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,11 @@ class UploadController
         }
         $rowContext = array_map(fn ($row) => $row instanceof \stdClass ? get_object_vars($row) : $row, $rowContext);
         $definition = is_string($field) ? UploadContext::resolve($form, $field, $rowContext, $ancestors)['field'] : null;
+        if ($definition instanceof RichText) {
+            $request->validate(['file' => 'required|file']);
+
+            return response()->json(app(RichTextImages::class)->store($request->file('file'), $form, $definition));
+        }
         if (! $definition instanceof Upload) {
             throw ValidationException::withMessages(['field' => 'Invalid upload field.']);
         }

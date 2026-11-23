@@ -40,6 +40,21 @@ class TempUploads
         return $name;
     }
 
+    /**
+     * Sniff the content type (never the client's claim) and derive the extension from it.
+     * The extension is null unless it is allowed by uploads.safe_extensions.
+     *
+     * @return array{0: ?string, 1: ?string} [mime, safe extension]
+     */
+    public static function sniff(UploadedFile $file): array
+    {
+        $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($file->getRealPath()) ?: null;
+        $extensions = MimeTypes::getDefault()->getExtensions($mime ?? '');
+        $safe = $mime !== null && $extensions !== [] && in_array($extensions[0], config('brume.uploads.safe_extensions', []), true);
+
+        return [$mime, $safe ? $extensions[0] : null];
+    }
+
     public function store(UploadedFile $file, Form $form, string $field, Upload $definition, array $rowContext = [], array $ancestorSources = []): array
     {
         $resolved = UploadContext::resolve($form, $field, $rowContext, $ancestorSources);
@@ -50,14 +65,13 @@ class TempUploads
         self::connection($form);
         $settings = $definition->settings();
         Validator::make(['file' => $file], ['file' => ['required', 'file', 'max:'.($settings['maxSize'] / 1024)]])->validate();
-        $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($file->getRealPath()) ?: null;
-        $extensions = MimeTypes::getDefault()->getExtensions($mime ?? '');
-        if ($mime === null || $extensions === [] || ! in_array($extensions[0], config('brume.uploads.safe_extensions', []), true) || ($settings['accept'] !== [] && ! in_array($mime, $settings['accept'], true))) {
+        [$mime, $extension] = self::sniff($file);
+        if ($extension === null || ($settings['accept'] !== [] && ! in_array($mime, $settings['accept'], true))) {
             throw ValidationException::withMessages(['file' => 'Unsupported file type.']);
         }
         $token = Str::random(40);
         $disk = config('brume.uploads.temp_disk', 'local');
-        $path = 'brume-tmp/'.$token.'.'.$extensions[0];
+        $path = 'brume-tmp/'.$token.'.'.$extension;
         $connection = self::connection($form);
         $guard = (string) config('brume.auth.guard');
         abort_unless(Auth::guard($guard)->check(), 401);
