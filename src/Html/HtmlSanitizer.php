@@ -29,11 +29,11 @@ use Throwable;
 final class HtmlSanitizer
 {
     /** Bump when the definition built below changes, so cached definitions are rebuilt. */
-    private const SCHEMA = 3;
+    private const SCHEMA = 4;
 
     private const ELEMENTS = [
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li',
-        'table', 'thead', 'tbody', 'tr', 'th', 'td', 'colgroup', 'col',
+        'table', 'caption', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'colgroup', 'col',
         'img', 'a', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'sup', 'sub',
         'span', 'div', 'article', 'blockquote', 'hr', 'iframe', 'input', 'label',
     ];
@@ -108,6 +108,11 @@ final class HtmlSanitizer
 
     private ?MeasuringLexer $lexer = null;
 
+    private ?ElementBudgetInjector $budget = null;
+
+    /** Test switch: false turns off the element projection so the runtime backstop is exercised alone. */
+    private bool $projection;
+
     /** @var array<string, array{?string, ?HtmlRejected}> last results by input hash, newest last */
     private array $memo = [];
 
@@ -139,6 +144,7 @@ final class HtmlSanitizer
         $this->maxBytes = array_key_exists('max_bytes', $options) ? self::limit($options['max_bytes']) : self::DEFAULT_MAX_BYTES;
         $this->maxDepth = array_key_exists('max_depth', $options) ? self::limit($options['max_depth']) : self::DEFAULT_MAX_DEPTH;
         $this->maxElements = array_key_exists('max_elements', $options) ? self::limit($options['max_elements']) : self::DEFAULT_MAX_ELEMENTS;
+        $this->projection = (bool) ($options['projection'] ?? true);
         $this->reservedNames = array_values(array_unique([...self::RESERVED_NAMES, ...array_map('strval', $options['reserved_names'] ?? [])]));
         $this->configure = $options['configure'] ?? null;
         $this->configureVersion = $options['configure_version'] ?? null;
@@ -213,13 +219,44 @@ final class HtmlSanitizer
 
     private function purify(string $html): string
     {
-        $clean = $this->purifier()->purify(TagScanner::prepareLinks($html));
+        $alias = TagScanner::aliasFor($html);
+        $purifier = $this->purifier();
+        // MakeWellFormed skips its injectors entirely when there are no tokens.
+        $this->budget->count = 0;
+        $clean = $purifier->purify(TagScanner::prepareLinks($html, $alias));
 
-        // Where TagScanner renamed an `a` that libxml then read as text (inside a <textarea>, say),
-        // the alias would show escaped in the output; spell it as the author wrote it.
-        return str_contains($clean, TagScanner::LINK_ALIAS)
-            ? str_ireplace(['&lt;'.TagScanner::LINK_ALIAS, '&lt;/'.TagScanner::LINK_ALIAS], ['&lt;a', '&lt;/a'], $clean)
+        // Where TagScanner renamed an `a` that libxml then read as text (a CDATA section, say), the
+        // alias would show escaped in the output; spell it as the author wrote it. The alias is one
+        // the input does not contain, so text the author wrote is never touched.
+        return stripos($clean, $alias) !== false
+            ? str_ireplace(['&lt;'.$alias, '&lt;/'.$alias], ['&lt;a', '&lt;/a'], $clean)
             : $clean;
+    }
+
+    /**
+     * Depth, element count and projected element count (see MeasuringLexer) of what clean()
+     * would hand HTMLPurifier.
+     *
+     * @internal
+     *
+     * @return array{depth: int, elements: int, projected: int}
+     */
+    public function treeStats(string $html): array
+    {
+        $html = self::scrub($html);
+        $config = $this->purifier()->config;
+
+        return $this->lexer->stats(TagScanner::prepareLinks($html, TagScanner::aliasFor($html)), $config, new HTMLPurifier_Context);
+    }
+
+    /**
+     * Elements HTMLPurifier's MakeWellFormed stage emitted in the last clean (see ElementBudgetInjector).
+     *
+     * @internal
+     */
+    public function lastTokenCount(): int
+    {
+        return $this->budget?->count ?? 0;
     }
 
     /**
@@ -257,7 +294,9 @@ final class HtmlSanitizer
         }
         $config = $this->purifier()->config;
 
-        return $this->lexer->violation(TagScanner::prepareLinks(self::scrub($html)), $config, new HTMLPurifier_Context);
+        $html = self::scrub($html);
+
+        return $this->lexer->violation(TagScanner::prepareLinks($html, TagScanner::aliasFor($html)), $config, new HTMLPurifier_Context);
     }
 
     /** @param 'bytes'|'depth'|'elements' $reason */
@@ -469,8 +508,10 @@ final class HtmlSanitizer
             // lists, tables, divs. HTML 4's inline-only model would split them apart. `Flow`
             // alone omits text, hence #PCDATA. A link nested in a link stays nested here (no
             // `excludes`, which would delete the inner subtree); TagScanner::prepareLinks() unwraps
-            // it beforehand. libxml sees links as TagScanner::LINK_ALIAS; this maps them back.
-            $def->getAnonymousModule()->info_tag_transform[TagScanner::LINK_ALIAS] = new HTMLPurifier_TagTransform_Simple('a');
+            // it beforehand. libxml sees links as one of TagScanner::LINK_ALIASES; this maps them back.
+            foreach (TagScanner::LINK_ALIASES as $alias) {
+                $def->getAnonymousModule()->info_tag_transform[$alias] = new HTMLPurifier_TagTransform_Simple('a');
+            }
             foreach (['a', 'span'] as $name) {
                 $flow = $def->addBlankElement($name);
                 $flow->content_model = '#PCDATA | Flow';
@@ -481,8 +522,13 @@ final class HtmlSanitizer
             }
         }
         // Set last, after the hook, so the limits always apply.
-        $this->lexer = new MeasuringLexer($this->maxDepth, $this->maxElements);
+        $this->lexer = new MeasuringLexer($this->maxDepth, $this->maxElements, $this->projection);
         $config->set('Core.LexerImpl', $this->lexer);
+        $this->budget = new ElementBudgetInjector($this->maxElements ?? PHP_INT_MAX);
+        $config->set('AutoFormat.Custom', [...$config->get('AutoFormat.Custom'), $this->budget, new StrayColumnInjector]);
+        // With autoFinalize off, batch reads (getBatch, used by MakeWellFormed for the injectors)
+        // come from a cache that only a get() refreshes; without this the sets above are invisible.
+        $config->get('Core.Encoding');
         $config->finalize();
 
         $html = $config->getHTMLDefinition();

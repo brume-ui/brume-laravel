@@ -86,10 +86,32 @@ function throwingErrorHandler(): void
     });
 }
 
+/**
+ * Cleans the HTML built by $expression (PHP code using bypass-shapes.php) in a child process
+ * with its own memory_limit, so a fatal error or crash cannot take the suite down. Returns
+ * [exit code, 'accepted'|'rejected:<reason>', milliseconds, extra MB, output elements].
+ *
+ * @return array{int, string, float, float, int}
+ */
+function cleanInChild(string $expression, array $options = [], string $memoryLimit = '128M'): array
+{
+    $code = 'require '.var_export(dirname(__DIR__, 3).'/vendor/autoload.php', true).';'
+        .'require '.var_export(__DIR__.'/bypass-shapes.php', true).';'
+        .'$s = new Brume\Html\HtmlSanitizer('.var_export(['cache_path' => false, ...$options], true).');'
+        .'$s->clean("<p><b>warm</b></p>"); $h = '.$expression.'; gc_collect_cycles(); memory_reset_peak_usage();'
+        .'$m = memory_get_usage(); $t = hrtime(true); $n = 0;'
+        .'try { $n = outputElements($s->clean($h)); $r = "accepted"; } catch (Brume\Html\HtmlRejected $e) { $r = "rejected:".$e->reason; }'
+        .'printf("%s %.1f %.1f %d", $r, (hrtime(true) - $t) / 1e6, (memory_get_peak_usage() - $m) / 1048576, $n);';
+    exec(escapeshellarg(PHP_BINARY).' -d memory_limit='.$memoryLimit.' -r '.escapeshellarg($code).' 2>&1', $lines, $exit);
+    $parts = explode(' ', $lines[0] ?? '');
+
+    return [$exit, $parts[0] ?? implode("\n", $lines), (float) ($parts[1] ?? 0), (float) ($parts[2] ?? 0), (int) ($parts[3] ?? 0)];
+}
+
 dataset('legacy fixtures', fn () => legacyHtmlFixtures());
 
-it('ships the hand-written fixtures (twelve from brume-ui, links around blocks) and the hostile one', function () {
-    expect(legacyHtmlFixtures())->toHaveCount(13)
+it('ships the hand-written fixtures (twelve from brume-ui, links around blocks, table caption and footer) and the hostile one', function () {
+    expect(legacyHtmlFixtures())->toHaveCount(14)
         ->and(file_exists(HTML_FIXTURES.'/hostile.html'))->toBeTrue();
 });
 
@@ -132,6 +154,13 @@ it('reaches a fixed point in one pass', function (string $html, ?string $expecte
     'row with stray text and a cell' => ['<table><tr>z <td>c</td></tr></table>', '<table><tr><td>c</td></tr></table>'],
     'body left with whitespace only' => ['<table><tbody>z </tbody></table>', null],
     'stray text in a list' => ['<ul>>x </ul>', '<ul><li>&gt;x </li></ul>'],
+]);
+
+it('leaves the alias name alone when the author wrote it as text', function (string $html) {
+    expect(sanitizer()->clean($html))->toBe($html);
+})->with([
+    '<p>&lt;brumelink href="/x"&gt; and BrumeLink are words</p>',
+    '<p>&lt;/BRUMELINK&gt;</p><p><a href="/y">link</a></p>',
 ]);
 
 it('never lets the link alias show, even as text', function (string $html, string $expected) {
@@ -634,6 +663,123 @@ it('re-parses with the HTML5 parser without creating elements or attributes', fu
     }
 })->with([...legacyHtmlFixtures(), 'hostile.html']);
 
+describe('element amplification', function () {
+    it('rejects formatting-reopening floods before HTMLPurifier builds them', function (int $k, int $m) {
+        [$exit, $result, $ms, $mb] = cleanInChild("amp($k, $m)");
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('rejected:elements')
+            ->and($ms)->toBeLessThan(300.0)
+            ->and($mb)->toBeLessThan(20.0);
+    })->with([[128, 400], [255, 1000], [255, 3000], [64, 2000], [8, 20_000]]);
+
+    it('stops the flood at runtime even with the projection switched off', function (int $k, int $m) {
+        [$exit, $result, , $mb] = cleanInChild("amp($k, $m)", ['projection' => false]);
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('rejected:elements')
+            ->and($mb)->toBeLessThan(80.0);
+    })->with([[255, 3000], [64, 2000]]);
+
+    it('cleans the largest amplifying input the limits accept within the memory budget', function () {
+        // 8 open (6 formatting) elements: the projection charges each block about 61 elements,
+        // so 327 blocks is the most the default limit lets through (and 328 is rejected).
+        [$exit, $result, , $mb, $elements] = cleanInChild('amp(8, 327)');
+        [, $over] = cleanInChild('amp(8, 328)');
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('accepted')
+            ->and($over)->toBe('rejected:elements')
+            ->and($elements)->toBeLessThanOrEqual(20_000)
+            ->and($mb)->toBeLessThan(60.0);
+    });
+
+    it('keeps the strongest amplifier a search found within the budget', function () {
+        // Found by maximising output ÷ input elements over accepted inputs (fix round 3): about 250
+        // parsed elements become about 9 800. The projection still bounds it below max_elements.
+        [$exit, $result, $ms, $mb, $elements] = cleanInChild('file_get_contents('.var_export(HTML_FIXTURES.'/amplifier-search-worst.txt', true).')');
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('accepted')
+            ->and($elements)->toBeLessThanOrEqual(20_000)
+            ->and($ms)->toBeLessThan(1000.0)
+            ->and($mb)->toBeLessThan(60.0);
+    });
+
+    it('never projects fewer elements than HTMLPurifier produces', function () {
+        $parts = ['<b>', '<i>', '<u>', '<s>', '<em>', '<strong>', '<a href="/x">', '</b>', '</i>', '</strong>', '</a>', '<sup>', '<span>', '</span>',
+            '<div>', '</div>', '<p>', '</p>', '<h2>', '</h2>', '<ul>', '<ol>', '<li>', '</li>', '</ul>', '<table>', '<tr>', '<td>', '</td>', '<tbody>',
+            '<col>', '<blockquote>', '<hr>', '<br>', '<label>', '<div>x</div>', '<li>y</li>', 'text', ' '];
+        $sanitizer = sanitizer(['max_elements' => null, 'max_bytes' => null, 'max_depth' => null]);
+        $worst = 0.0;
+        $seen = [];
+        mt_srand(31337);
+        try {
+            foreach (range(1, 1500) as $i) {
+                $html = $i % 10 === 0 ? amp(mt_rand(1, 24), mt_rand(1, 40), ['<div>x</div>', '<p>p</p>', '<li>l</li>', '<h2>h</h2>'][mt_rand(0, 3)]) : '';
+                foreach (range(1, mt_rand(1, 60)) as $__) {
+                    $html .= $parts[mt_rand(0, count($parts) - 1)];
+                }
+                // clean() is memoised: a repeated input would report the previous run's token count.
+                if (isset($seen[$html])) {
+                    continue;
+                }
+                $seen[$html] = true;
+                $stats = $sanitizer->treeStats($html);
+                $actual = outputElements($sanitizer->clean($html));
+
+                expect($actual)->toBeLessThanOrEqual($stats['projected'])
+                    ->and($sanitizer->lastTokenCount())->toBeLessThanOrEqual($stats['projected']);
+                $worst = max($worst, $actual / max(1, $stats['projected']));
+            }
+        } finally {
+            mt_srand();
+        }
+
+        expect($worst)->toBeLessThanOrEqual(1.0);
+    });
+
+    it('keeps formatting around blocks, reopened inside each block', function (string $html, string $expected) {
+        expect(sanitizer()->clean($html))->toBe($expected)
+            ->and(sanitizer()->clean($expected))->toBe($expected);
+    })->with([
+        // Empty shells are what HTMLPurifier's carry-over leaves around each block; they render nothing.
+        ['<strong><p>a</p><p>b</p></strong>', '<strong></strong><p><strong>a</strong></p><strong></strong><p><strong>b</strong></p><strong></strong>'],
+        ['<b>a<div>x</div>y</b>', '<b>a</b><div><b>x</b></div><b>y</b>'],
+        [str_repeat('<b><div>block</div></b>', 20), str_repeat('<b></b><div><b>block</b></div><b></b>', 20)],
+    ]);
+});
+
+describe('table parts', function () {
+    it('removes a col outside a table on the first pass', function (string $html, ?string $expected) {
+        $once = sanitizer()->clean($html);
+
+        expect($once)->toBe($expected)
+            ->and(sanitizer()->clean((string) $once))->toBe($once);
+    })->with([
+        ['<ul><col>x</ul>', '<ul><li>x</li></ul>'],
+        // libxml's HTML 4 parser closes the <p> at the <col> itself.
+        ['<p>a<col>b</p>', '<p>a</p>b'],
+        ['<div><col><col span="2"></div><p>x</p>', '<div></div><p>x</p>'],
+        ['<table><col span="2"><tr><td>c</td></tr></table>', '<table><col span="2"><tr><td>c</td></tr></table>'],
+        ['<table><colgroup><col></colgroup><tr><td>c</td></tr></table>', '<table><colgroup><col></colgroup><tr><td>c</td></tr></table>'],
+    ]);
+
+    it('keeps caption and tfoot with their content', function (string $html, string $expected) {
+        expect(sanitizer()->clean($html))->toBe($expected)
+            ->and(sanitizer()->clean($expected))->toBe($expected);
+    })->with([
+        ['<table><caption class="c" style="text-align:left;">規格</caption><tbody><tr><td>x</td></tr></tbody></table>',
+            '<table><caption class="c" style="text-align:left;">規格</caption><tbody><tr><td>x</td></tr></tbody></table>'],
+        ['<table><thead><tr><th>h</th></tr></thead><tfoot class="f"><tr><td>總計</td></tr></tfoot><tbody><tr><td>x</td></tr></tbody></table>',
+            '<table><thead><tr><th>h</th></tr></thead><tfoot class="f"><tr><td>總計</td></tr></tfoot><tbody><tr><td>x</td></tr></tbody></table>'],
+        // HTML 4 order: a tfoot written after the tbody (as TinyMCE does) moves before it; browsers
+        // draw the footer at the bottom either way.
+        ['<table><tbody><tr><td>x</td></tr></tbody><tfoot><tr><td>f</td></tr></tfoot></table>',
+            '<table><tfoot><tr><td>f</td></tr></tfoot><tbody><tr><td>x</td></tr></tbody></table>'],
+    ]);
+});
+
 describe('links and spans around blocks', function () {
     it('lets a link or span wrap any flow content, in any context', function (string $html) {
         expect(sanitizer()->clean($html))->toBe($html);
@@ -742,27 +888,21 @@ describe('titles and reserved names', function () {
 });
 
 describe('input limits', function () {
-    it('rejects parser floods before purify, quickly and without crashing', function (string $kind, ?int $maxBytes, string $reason) {
-        $html = match ($kind) {
-            'divs' => str_repeat('<div>', 50_000).'x'.str_repeat('</div>', 50_000),
-            'spans' => str_repeat('<span>', 100_000).'x'.str_repeat('</span>', 100_000),
-            'unclosed b' => str_repeat('<b>', 100_000).'x',
-            'flat elements' => str_repeat('<b>x</b>', 100_000),
-        };
-        $start = microtime(true);
+    it('rejects parser floods before purify, quickly and without crashing', function (string $expression, ?int $maxBytes, string $reason) {
+        // In a child process: these inputs used to crash PHP or exhaust its memory.
+        [$exit, $result, $ms, $mb] = cleanInChild($expression, ['max_bytes' => $maxBytes]);
 
-        expect(fn () => sanitizer(['max_bytes' => $maxBytes])->clean($html))
-            ->toThrow(function (HtmlRejected $e) use ($reason) {
-                expect($e->reason)->toBe($reason)
-                    ->and($e->getMessage())->toContain('brume.html.max_'.$reason);
-            })
-            ->and(microtime(true) - $start)->toBeLessThan(1.0);
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('rejected:'.$reason)
+            ->and($ms)->toBeLessThan(1000.0)
+            ->and($mb)->toBeLessThan(40.0)
+            ->and((new HtmlRejected($reason, 1))->getMessage())->toContain('brume.html.max_'.$reason);
     })->with([
-        ['divs', 1_000_000, 'depth'],
-        ['flat elements', 1_000_000, 'elements'],
-        ['spans', 1_000_000, 'bytes'],
-        ['spans', null, 'depth'],
-        ['unclosed b', 1_000_000, 'depth'],
+        'nested divs' => ["str_repeat('<div>', 50000).'x'.str_repeat('</div>', 50000)", 1_000_000, 'depth'],
+        'flat elements' => ["str_repeat('<b>x</b>', 100000)", 1_000_000, 'elements'],
+        'nested spans over the byte limit' => ["str_repeat('<span>', 100000).'x'.str_repeat('</span>', 100000)", 1_000_000, 'bytes'],
+        'nested spans, no byte limit' => ["str_repeat('<span>', 100000).'x'.str_repeat('</span>', 100000)", null, 'depth'],
+        'unclosed b' => ["str_repeat('<b>', 100000).'x'", 1_000_000, 'depth'],
     ]);
 
     it('measures what libxml builds, so scanner-confusing input cannot hide depth', function (string $kind) {
@@ -808,14 +948,20 @@ describe('input limits', function () {
     });
 
     it('never returns a result that would be rejected when cleaned again', function () {
-        // 3 elements in; HTMLPurifier reopens <b> around the block, so 5 come out.
+        // 3 elements in; HTMLPurifier reopens <b> around the block, so 5 come out. The projection
+        // (7 here) refuses it below that, before purifying.
         $html = '<p><b>a<div>x</div>y</b></p>';
         $clean = '<p><b>a</b></p><div><b>x</b></div><b>y</b>';
+        // Bytes can grow too: attribute values get quoted. 15 bytes in, 18 out.
+        $quoted = '<p class=x>y</p>';
 
-        expect(sanitizer(['max_elements' => 5])->clean($html))->toBe($clean)
-            ->and(sanitizer(['max_elements' => 5])->clean($clean))->toBe($clean)
-            ->and(sanitizer(['max_elements' => 4])->limitViolation($html))->toBe('elements')
-            ->and(fn () => sanitizer(['max_elements' => 4])->clean($html))->toThrow(HtmlRejected::class);
+        expect(sanitizer()->treeStats($html))->toBe(['depth' => 3, 'elements' => 3, 'projected' => 7])
+            ->and(sanitizer(['max_elements' => 7])->clean($html))->toBe($clean)
+            ->and(sanitizer(['max_elements' => 7])->clean($clean))->toBe($clean)
+            ->and(sanitizer(['max_elements' => 6])->limitViolation($html))->toBe('elements')
+            ->and(sanitizer(['max_bytes' => 18])->clean($quoted))->toBe('<p class="x">y</p>')
+            ->and(sanitizer(['max_bytes' => 17])->limitViolation($quoted))->toBe('bytes')
+            ->and(fn () => sanitizer(['max_bytes' => 17])->clean($quoted))->toThrow(HtmlRejected::class);
     });
 
     it('accepts legacy lists and paragraphs that never close their tags', function () {
@@ -909,13 +1055,14 @@ describe('input limits', function () {
             ->and(fn () => sanitizer(['max_bytes' => 99])->clean($html))->toThrow(function (HtmlRejected $e) {
                 expect($e->reason)->toBe('bytes')->and($e->limit)->toBe(99);
             })
-            ->and(sanitizer(['max_bytes' => null])->limitViolation(str_repeat('a', 2_000_000)))->toBeNull()
+            // limitViolation() cleans: keep this small, the suite's process is near 128 MB by now.
+            ->and(sanitizer(['max_bytes' => null])->limitViolation(str_repeat('a', 400_000)))->toBeNull()
             ->and(sanitizer()->limitViolation(null))->toBeNull()
             ->and(sanitizer()->limitViolation('<p>x</p>'))->toBeNull();
     });
 
-    it('prepares links in linear time on 2 MB of garbage', function (string $kind) {
-        $size = 2_000_000;
+    it('prepares links in linear time on 1 MB of garbage', function (string $kind) {
+        $size = 1_000_000;
         $html = match ($kind) {
             'random bytes' => random_bytes($size),
             'open brackets' => str_repeat('<', $size),
@@ -930,7 +1077,7 @@ describe('input limits', function () {
 
         TagScanner::prepareLinks($html);
 
-        expect(microtime(true) - $start)->toBeLessThan(1.0);
+        expect(microtime(true) - $start)->toBeLessThan(0.5);
     })->with(['random bytes', 'open brackets', 'unterminated quotes', 'unterminated single quotes', 'comment openers', 'bogus comments', 'tags', 'links']);
 
     it('cleans a 900 KB realistic document when the limits allow it', function () {
