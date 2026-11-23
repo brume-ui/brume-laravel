@@ -1,0 +1,9 @@
+# Development-only folders: left out of Composer dist archives (GitHub zipballs). Nothing under
+# src/, config/, routes/, stubs/, lang/, resources/, frontend/ or dist/ reads them, and a path or
+# git-source install (as bin/smoke-install.sh uses) is not affected.
+/.ci export-ignore
+/.github export-ignore
+/bin export-ignore
+/e2e export-ignore
+/tests export-ignore
+/workbench export-ignore
