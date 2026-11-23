@@ -35,7 +35,7 @@ class Form implements Renderable, Responsable
 
     public function formId(): string
     {
-        return $this->id ?? throw new LogicException('Configure Form::id() with a stable identity before using uploads.');
+        return $this->id ?? throw new LogicException('Configure Form::id() with a stable identity before using uploads or editor images (or call withoutImages() on the editor).');
     }
 
     protected ?string $optionsUrl = null;
