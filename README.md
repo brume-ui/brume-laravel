@@ -487,7 +487,7 @@ to the login page; paths outside the prefix are left to Laravel.
 
 These are planned for later sub-plans and phases:
 
-- **Rich text, color picker and Show pages**: phase 3; use `textarea` until then.
+- **Color picker and Show pages**: phase 3. (Rich text is available: see [Rich text](#rich-text).)
 - **Custom calendars**: native `date` / `datetime-local` inputs are retained; revisit after user trials.
 - **DialogTree**: phase 3. (Drag ordering and tree lists are available: see 拖曳排序.)
 
@@ -549,6 +549,14 @@ What's in it:
     bundle of `DEMO-001` ×2 and `DEMO-002` ×1. The form has sections for the cover and a
     sortable gallery with links, preorder fields shown on demand, a remote category select declared with
     `depth('tree_depth')`, and purchase limits with the computed remaining quantity.
+    商品介紹 holds the rich text fields: 商品說明 is an `editor()` styled by a made-up storefront
+    stylesheet (`workbench/public/storefront/content.css`, served at `/storefront/...` because
+    `testbench.yaml` links that folder into the skeleton's `public/` while `testbench serve` runs),
+    with pasted images stored on `brume_demo`; `DEMO-001`, `DEMO-002` and `DEMO-005` carry a
+    hand-written layout sample (nested layout blocks, lists, a table, local placeholder images, a
+    YouTube embed, a link wrapping a card). 常見問題 is a JSON repeater whose required 回答 is an
+    editor `withoutImages()` (seeded on `DEMO-001` and `DEMO-002`), and ERP 備註 is a read-only
+    editor (filled on the ERP rows).
   - **商品分類** (`/admin/product-categories`, `ProductCategoryController`): 服飾 › 外套 and
     家居, listed depth-first (a stored `tree_path` gives the order) in the grid as a
     `tree('tree_depth')` column and in both category selects. The parent select is `clearable()` with a
@@ -574,7 +582,9 @@ What's in it:
   `treeView` over the product categories whose `orderSaved` refreshes the stored paths, so
   `/admin/product-categories` shows every move).
 - Not in the menu, used by the e2e suite: `/admin/_demo/toast` (flashes the same toast every
-  time) and `/admin/_demo/missing-component` (the guidance shown for an unregistered component).
+  time), `/admin/_demo/missing-component` (the guidance shown for an unregistered component) and
+  `/admin/_demo/rich-text/{reset,legacy/{id},raw/{id}}` (restore the seeded 商品 rich text, write
+  HTML straight into a description as a legacy import would, read what is stored).
 
 The demo menu, routes and dashboard live in `workbench/` and are only active on the dev server,
 not under Pest (`tests/Feature/WorkbenchGridsTest.php` registers the two grids itself). Laravel
@@ -584,7 +594,9 @@ empty state. The workbench uses SQLite and the session cookie `brume_workbench_s
 does not clash with other local Laravel apps.
 
 Precompiled mode (`dist/`) is what `brume:install` without `--frontend` uses; it is covered by
-`check-dist` and the install smoke tests below, not by the workbench.
+`check-dist`, `tests/Feature/AssetsTest.php` (every file the manifest references, lazy chunks and
+their CSS included, exists) and the install smoke tests below (the precompiled smoke fetches every
+one of those files over HTTP), not by the workbench.
 
 ## End-to-end and install smoke tests
 
@@ -601,7 +613,11 @@ it runs as its own Playwright project after the other specs. `form.spec.ts` then
 counts. It covers real persistence, keyboard/dirty guards, uploads/extras/sort, action inputs,
 quick create, inline editors, axe and 1440×900 / 390×844 light/dark geometry and screenshots.
 `ordering.spec.ts` (the `ordering` project, last) drives the drag-sort pages with real pointer drags and the keyboard,
-and puts every row it moves back.
+and puts every row it moves back. `rich-text.spec.ts` (the `rich-text` project, after `ordering`) drives the
+product editors against the real backend: the seeded sample and its stylesheet, untouched and
+edited round trips, image paste/upload and refusals, hostile legacy HTML, the required FAQ answer,
+the read-only view, the save shortcut, axe and screenshots. It restores the seeded rich text before
+every test.
 
 CI and `composer e2e` install the published UI packages from `frontend/pnpm-lock.yaml` with a
 frozen lockfile before building the workbench. The frontend dist check and install smoke jobs use
@@ -706,7 +722,8 @@ names. `create` and `edit` render the generic `brume/page` Inertia component.
 
 Fields: `text`, `textarea`, `email`, `url`, `mobile`, `password`, `hidden`, `display`, `number`,
 `decimal`, `currency`, `date`, `datetime`, `dateRange`, `datetimeRange`, `select`, `multipleSelect`,
-`radio`, `checkbox`, `switch`, `tags`, `image`, `multipleImage`, `file`, `multipleFile`.
+`radio`, `checkbox`, `switch`, `tags`, `image`, `multipleImage`, `file`, `multipleFile`, `editor`
+(rich text, see below).
 Use `section`, `row`, `columns`/`column`, `block`, `divider`, `embeds` and `tabs` to arrange them.
 `layout('stacked'|'horizontal')`, `presentation('auto'|'modal'|'page')` and `size('auto'|'sm'|'md'|'lg')`
 control presentation; auto uses page mode with three sections or more than sixteen fields.
@@ -738,6 +755,123 @@ Uploads accept `field` and `file` at the schema's `uploadUrl`. Use `accept`, `ma
 `sortable` and `extra` to configure them. Configure `brume.uploads.disk`, `temp_disk`, TTL,
 connection allowlist and cleanup scheduling as described below; run Laravel's scheduler so the
 hourly `brume:uploads:clean` can execute. Resource forms set their stable identity automatically.
+
+### Rich text
+
+`editor()` is a WYSIWYG HTML field (Jodit, MIT) for long content such as product descriptions,
+including legacy HTML migrated from another system. It stores one HTML string, or `null` for an
+empty document (`<p><br></p>`, `<p>&nbsp;</p>` or whitespace only).
+
+```php
+$form->editor('description', '商品說明')
+    ->height(520)                                  // 120–2000 px (the editor defaults to 500)
+    ->contentCss('/storefront/content.css')        // the site's own stylesheet(s), applied inside the editor
+    ->disk('public')->directory('products/editor') // where pasted images go (defaults below)
+    ->accept(['image/jpeg', 'image/png'])          // jpeg, png, gif, webp only; never SVG
+    ->maxSize(2048)                                 // KB, default brume.uploads.max_size
+    ->required();
+
+$form->editor('summary')->withoutImages();          // paste/drop of image files is refused
+$form->editor('content.body');                      // a JSON path, like any other field
+$form->repeater('faqs', '常見問題', fn (Form $row) => $row->editor('answer', '回答')->required()->withoutImages());
+$form->editor('erp_note')->readOnly();              // shown in a sandboxed, script-less view
+```
+
+- `contentCss()` takes one URL or a list (http, https or relative only); the editing area and the
+  read-only view load them, so classes in legacy content look as they do on the site.
+- `required()` and every other `required*` rule treat an empty document as missing, on the
+  client and the server. `minLength`/`maxLength` measure the raw HTML.
+- Not available in Action forms, quick create or upload `extra()` forms (they throw).
+- `attributes()` throws: one field stores one HTML string.
+
+**Sanitising.** Every value is cleaned by `Brume\Html\HtmlSanitizer` (HTMLPurifier, LGPL-2.1,
+a Composer dependency of this package) both when it is saved and before it is sent to the browser.
+A legacy row that contains `<script>`, event handlers or `javascript:` links is cleaned before
+it reaches the editor, so nothing in it runs in the admin's session; opening and saving such a
+record stores the cleaned version. `saving` hooks see the raw submitted value; what is written
+is always the cleaned one. A read-only editor never writes, so its stored value stays as it was.
+
+Printing the stored HTML on a storefront (`{!! $product->description !!}`) is safe only because of
+this sanitiser. Do not bypass it: raw DB writes, imports or seeders that write the column
+directly store whatever they are given (Brume cleans it again on its next read, but your site
+does not). Likewise, **do not combine a Grid inline `text`/`textarea` editor with a column that a
+form edits with `editor()`**: inline edits store their text unsanitised. Escape such columns on
+output if you do.
+
+What is kept (the whitelist, in summary):
+
+- Elements: `h1`–`h6`, `p`, `ul`, `ol`, `li`, tables (`table`, `thead`, `tbody`, `tr`, `th`, `td`,
+  `colgroup`, `col`), `img`, `a`, `br`, `hr`, `strong`, `b`, `em`, `i`, `u`, `s`, `sup`, `sub`,
+  `span`, `div`, `article`, `blockquote`, `iframe`, and checkbox/radio `input` + `label` (CSS-only
+  accordions). Links may wrap block content; a link nested in a link is unwrapped.
+- Attributes: `class`, `style`, `id` everywhere; `href`/`target`/`rel`/`title` on links;
+  `src`/`alt`/`title`/`width`/`height`/`loading` on images; table spans, `border`,
+  `cellpadding`/`cellspacing`, `td[data-th]`; `ol[start|type]`; iframe `src`/`width`/`height`/
+  `allowfullscreen`/`frameborder`/`title`/`loading`.
+- Inline CSS for layout: sizes, margins, padding, borders and radius, colours, fonts and text,
+  backgrounds (including `url()`), lists, float, flex (`display`, `justify-content`, `gap`, …),
+  `position` with `top`/`right`/`bottom`/`left`, `z-index` up to 9999, `overflow`, `opacity`,
+  `box-shadow`, `object-fit`.
+- URLs (`href`, `src`, CSS `url()`): http, https, protocol-relative and relative; links also
+  `mailto:` and `tel:`. Never `javascript:`, `data:` (images must be uploaded) or other schemes.
+- Embeds: YouTube only (`youtube.com` / `youtube-nocookie.com` `/embed/<11-character id>`); every
+  other iframe is removed. The toolbar's video button accepts YouTube URLs only.
+- Removed: scripts, styles, forms and other inputs, `object`/`embed`, event handlers,
+  `position:fixed` (unless `allow_fixed`), reserved `id`/`name` values (DOM clobbering, see
+  `reserved_names`), duplicate ids, HTML comments and `!important`.
+
+The output is HTMLPurifier's serialisation, so it renders the same but is not byte-identical:
+`&nbsp;` and other entities become UTF-8 characters (U+00A0), `style` text is compacted and
+`url('x')` becomes `url("x")`, named colours become hex (`red` → `#FF0000`), punctuation is
+stripped from `tel:` numbers, boolean attributes are minimised, and invalid UTF-8 becomes U+FFFD.
+Cleaning is idempotent: saving a cleaned value again changes nothing.
+
+**Limits.** Values over `max_bytes`, deeper than `max_depth` or with more than `max_elements`
+(measured on the tree the parser builds) are refused before HTMLPurifier runs: a save returns 422
+with a field error. A *stored* value over a limit loads as an empty editor with a logged warning
+(the page still opens), and saving the form without new content does not overwrite it; only new,
+non-empty content replaces it. Memory grows with the limits (dense markup near 1 MB needs about
+260 MB), so lower them on small workers rather than raising them.
+
+`config('brume.html')` (defaults):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `allow_fixed` | `false` | keep `position:fixed` |
+| `allowed_classes` | `null` | `null` keeps any class; a list keeps only those |
+| `iframe_regexp` | YouTube `/embed/<id>` | iframe `src` must match; `null` allows no iframe |
+| `reserved_names` | `[]` | extra values refused for `id`, `input[name]`, `label[for]` (`'prefix*'` matches a prefix) |
+| `max_bytes` | `300_000` | input size limit; `null` disables |
+| `max_depth` | `256` | element nesting limit; `null` disables (tens of thousands of levels can crash PHP) |
+| `max_elements` | `20_000` | element count limit (about 45 MB of sanitiser memory at the limit) |
+| `cache_path` | `null` | `storage/framework/cache/brume-htmlpurifier`, created on demand; `false` disables |
+| `configure` | `null` | `callable(HTMLPurifier_Config)`, runs after Brume's settings, before the definition is built |
+| `configure_version` | `null` | part of the cache key; change it when the hook's behaviour changes |
+
+Changing an option or the hook's source invalidates the cached definition automatically. Use an
+invokable class or `[Class::class, 'method']` for `configure` (a closure breaks `config:cache`);
+if the hook depends on anything but its own source (env, database), bump `configure_version` or
+delete the cache directory. In the hook, call `set()` before `maybeGetRawHTMLDefinition()`, add
+tags through `HTML.AllowedElements` plus the raw definition, and remove CSS with
+`CSS.ForbiddenProperties`.
+
+**Images.** Pasting or dropping an image file uploads it immediately to the resource's upload
+route and inserts `<img src>` with the file's public URL; saving is blocked while an upload is
+running. Images are stored **permanently** at upload time (`<uuid>.<ext>` under
+`directory()`, default `brume/<form id>/editor`, on `disk()`, default `brume.uploads.disk`):
+there is no temporary token, and images later removed from the text, or never saved, are not
+cleaned up. The disk must be publicly readable with stable URLs (no signed or temporary URLs: they
+would expire inside saved content; a disk without a URL is a 422) and must never execute the files
+it serves. Only raster images are accepted: the sniffed type must be JPEG, PNG, GIF or WebP, the
+image header must decode, and neither side may exceed `brume.uploads.max_image_dimension` (12000 px;
+`null` disables). An editor with images needs a stable `Form::id()` (resource forms have one);
+`withoutImages()` does not.
+
+**Frontend.** The editor is a lazy chunk loaded the first time a form shows an editor. The
+precompiled `dist/` ships it (`assets/jodit-editor-*.js` and its CSS) with Jodit's licence in
+`dist/licenses/jodit.txt`; in `--frontend` (Vite) mode your bundler splits it the same way. The
+editing area and the read-only view stay white in dark mode, because legacy content carries its
+own dark text colours.
 
 ## Temporary form uploads
 
@@ -788,7 +922,7 @@ Quick create uses the regular form validation, hooks and cancellation response.
 input before execution. Its handler receives `(Collection $models, Request $request,
 array $input)`; the third argument contains only validated editable declarations,
 or `[]` when no form was declared. Validation happens before the action transaction.
-Quick-create and action fields must be flat and cannot contain uploads or layout
+Quick-create and action fields must be flat and cannot contain uploads, editors or layout
 containers. All writes retain the list route's middleware and CSRF protection.
 
 Inline editing also supports `Editor::date(withTime: true)`,
