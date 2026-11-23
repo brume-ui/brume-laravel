@@ -64,12 +64,15 @@ Route::get('_demo/swatch/{color}.svg', function (Request $request, string $color
 })->where('color', '[a-z]+')->name('brume.demo.swatch');
 
 // Workbench only (e2e, not in the menu): the 商品 rich text columns. `reset` puts the seeded values
-// back on every DEMO product that has one, `legacy` writes HTML straight into the database (as a
+// back on every DEMO product, `legacy` writes HTML straight into the database (as a
 // migration from an older system would, skipping the sanitiser), and `raw` returns what is stored.
 Route::post('_demo/rich-text/reset', function () {
-    foreach (array_unique([...CatalogSeeder::RICH_TEXT_SAMPLE, ...CatalogSeeder::RICH_TEXT_FAQS, ...CatalogSeeder::RICH_TEXT_ERP_NOTE]) as $i) {
-        CatalogProduct::query()->where('identifier', sprintf('DEMO-%03d', $i))->firstOrFail()->forceFill(CatalogSeeder::richText($i))->save();
-    }
+    // Every DEMO product (legacy HTML may have been written to any of them), without touching updated_at.
+    CatalogProduct::withoutTimestamps(function () {
+        for ($i = 1; $i <= CatalogSeeder::PRODUCTS; $i++) {
+            CatalogProduct::query()->where('identifier', sprintf('DEMO-%03d', $i))->firstOrFail()->forceFill(CatalogSeeder::richText($i))->save();
+        }
+    });
 
     return response()->json(['ok' => true]);
 })->name('brume.demo.rich-text.reset');

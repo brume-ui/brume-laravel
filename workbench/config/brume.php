@@ -19,8 +19,10 @@ return [
 
     // Runs like a project installed with `brume:install --frontend`: workbench/resources/js/brume is
     // built by `composer build` (pnpm --dir frontend build:workbench) into public/build-brume.
+    // WORKBENCH_FRONTEND=precompiled serves the committed dist/ instead (published to
+    // public/vendor/brume); e2e/serve-precompiled.sh uses it for the precompiled browser check.
     'frontend' => [
-        'mode' => 'vite',
+        'mode' => getenv('WORKBENCH_FRONTEND') === 'precompiled' ? 'precompiled' : 'vite',
     ],
 
     'menu' => [

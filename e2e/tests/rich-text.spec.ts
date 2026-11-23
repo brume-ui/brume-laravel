@@ -425,7 +425,8 @@ test('the product edit page with the editors has no axe violations', async ({ pa
   await openProduct(page, 1);
   expect(await axeViolations(page)).toEqual([]);
   // The ERP view is a sandboxed iframe without scripts: axe cannot run inside it, the element is still
-  // checked. Scoped to that field: the ERP-locked text fields above it carry an unrelated finding.
+  // checked. Scoped to that field: pre-existing `aria-allowed-attr` on read-only fields; tracked in
+  // docs/superpowers/phase-3-status.md.
   await page.goto('/admin/products/5/edit');
   await editorReady(description(page));
   const view = page.locator('[data-field-layout]').filter({ has: page.getByTitle('ERP 備註') });

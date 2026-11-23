@@ -141,8 +141,13 @@ if [[ "$MODE" == precompiled ]]; then
   step "GET every file in public/vendor/brume/.vite/manifest.json"
   count=0
   while IFS= read -r file; do
-    code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/vendor/brume/$file")
+    read -r code type < <(curl -s -o /dev/null -w '%{http_code} %{content_type}\n' "$BASE/vendor/brume/$file")
     [[ "$code" == 200 ]] || fail "/vendor/brume/${file} returned ${code}"
+    # Browsers refuse module scripts and stylesheets served with another type.
+    case "$file" in
+      *.js) [[ "$type" =~ ^(text|application)/javascript ]] || fail "/vendor/brume/${file} served as '${type}'" ;;
+      *.css) [[ "$type" =~ ^text/css ]] || fail "/vendor/brume/${file} served as '${type}'" ;;
+    esac
     count=$((count + 1))
   done < <(php -r '
     $m = json_decode(file_get_contents($argv[1]), true, flags: JSON_THROW_ON_ERROR);
@@ -151,7 +156,7 @@ if [[ "$MODE" == precompiled ]]; then
     echo implode("\n", array_unique($files)), "\n";
   ' public/vendor/brume/.vite/manifest.json)
   grep -q '"isDynamicEntry": true' public/vendor/brume/.vite/manifest.json || fail "the manifest has no lazy chunk"
-  echo "${count} precompiled files 200 (lazy chunks included)"
+  echo "${count} precompiled files 200, JS and CSS with their types (lazy chunks included)"
 fi
 
 step "POST /admin/login"

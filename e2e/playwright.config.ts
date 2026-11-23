@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 // E2E_PORT lets the suite run next to a `composer serve` already listening on 8100.
 const PORT = Number(process.env.E2E_PORT ?? 8100);
+// The precompiled check's own server (same database, committed dist/ frontend).
+const PRECOMPILED_PORT = Number(process.env.E2E_PRECOMPILED_PORT ?? PORT + 2);
 
 export default defineConfig({
   testDir: "./tests",
@@ -22,7 +24,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: ["grid.spec.ts", "form.spec.ts", "composition.spec.ts", "polish.spec.ts", "catalog.spec.ts", "promotions.spec.ts", "ordering.spec.ts", "rich-text.spec.ts"],
+      testIgnore: ["grid.spec.ts", "form.spec.ts", "composition.spec.ts", "polish.spec.ts", "catalog.spec.ts", "promotions.spec.ts", "ordering.spec.ts", "rich-text.spec.ts", "precompiled.spec.ts"],
     },
     // grid.spec.ts ships and deletes seeded orders, which the dashboard and 訂單 checks above
     // count on, so it runs once they are done.
@@ -56,16 +58,30 @@ export default defineConfig({
     { name: 'ordering', use: { ...devices['Desktop Chrome'] }, testMatch: 'ordering.spec.ts', dependencies: ['promotions'], retries: 0, fullyParallel: false },
     // Rich text editors on 商品 (DEMO-001/002/003/005/006); every test resets those columns to the seed first.
     { name: 'rich-text', use: { ...devices['Desktop Chrome'] }, testMatch: 'rich-text.spec.ts', dependencies: ['ordering'], retries: 0, fullyParallel: false },
+    // The committed dist/ (precompiled mode) in a real browser: the lazy editor chunk and its CSS.
+    { name: 'precompiled', use: { ...devices['Desktop Chrome'], baseURL: `http://127.0.0.1:${PRECOMPILED_PORT}` }, testMatch: 'precompiled.spec.ts', dependencies: ['rich-text'], retries: 0 },
   ],
-  webServer: {
-    // Builds the workbench frontend, migrates and seeds a fresh database, then serves the workbench.
-    command: "./serve.sh",
-    url: `http://127.0.0.1:${PORT}/admin/login`,
-    // Never reuse: a server left running from `composer serve` has a different database and
-    // php.ini, and the suite depends on the fresh seed and on display_errors being on.
-    reuseExistingServer: false,
-    timeout: 120_000,
-    stdout: "ignore",
-    stderr: "pipe",
-  },
+  webServer: [
+    {
+      // Builds the workbench frontend, migrates and seeds a fresh database, then serves the workbench.
+      command: "./serve.sh",
+      url: `http://127.0.0.1:${PORT}/admin/login`,
+      // Never reuse: a server left running from `composer serve` has a different database and
+      // php.ini, and the suite depends on the fresh seed and on display_errors being on.
+      reuseExistingServer: false,
+      timeout: 120_000,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      // Same workbench and database, frontend from the committed dist/ (WORKBENCH_FRONTEND=precompiled).
+      command: "./serve-precompiled.sh",
+      url: `http://127.0.0.1:${PRECOMPILED_PORT}/admin/login`,
+      env: { E2E_PRECOMPILED_PORT: String(PRECOMPILED_PORT) },
+      reuseExistingServer: false,
+      timeout: 120_000,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+  ],
 });

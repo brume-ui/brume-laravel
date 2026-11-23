@@ -28,6 +28,7 @@ class WorkbenchServiceProvider extends ServiceProvider
 
         // `serve` only hands an allow-list of env vars to the PHP server it starts.
         ServeCommand::$passthroughVariables[] = 'WORKBENCH_EMPTY_LIST';
+        ServeCommand::$passthroughVariables[] = 'WORKBENCH_FRONTEND';
     }
 
     public function boot(): void

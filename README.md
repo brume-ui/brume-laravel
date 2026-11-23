@@ -595,8 +595,10 @@ does not clash with other local Laravel apps.
 
 Precompiled mode (`dist/`) is what `brume:install` without `--frontend` uses; it is covered by
 `check-dist`, `tests/Feature/AssetsTest.php` (every file the manifest references, lazy chunks and
-their CSS included, exists) and the install smoke tests below (the precompiled smoke fetches every
-one of those files over HTTP), not by the workbench.
+their CSS included, exists), the install smoke tests below (the precompiled smoke fetches every one
+of those files over HTTP and checks the JS and CSS content types) and one browser check:
+`WORKBENCH_FRONTEND=precompiled` makes the workbench serve the committed `dist/` (published to
+`public/vendor/brume`), which `e2e/serve-precompiled.sh` does for `e2e/tests/precompiled.spec.ts`.
 
 ## End-to-end and install smoke tests
 
@@ -617,7 +619,9 @@ and puts every row it moves back. `rich-text.spec.ts` (the `rich-text` project, 
 product editors against the real backend: the seeded sample and its stylesheet, untouched and
 edited round trips, image paste/upload and refusals, hostile legacy HTML, the required FAQ answer,
 the read-only view, the save shortcut, axe and screenshots. It restores the seeded rich text before
-every test.
+every test. The `precompiled` project (last) runs against a second server on `E2E_PORT + 2`
+(`E2E_PRECOMPILED_PORT`; same database, committed `dist/` frontend) and checks in the browser that
+the lazy editor chunk and its CSS load and the editor is themed.
 
 CI and `composer e2e` install the published UI packages from `frontend/pnpm-lock.yaml` with a
 frozen lockfile before building the workbench. The frontend dist check and install smoke jobs use
