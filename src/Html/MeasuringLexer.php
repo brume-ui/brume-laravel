@@ -532,6 +532,8 @@ final class MeasuringLexer extends HTMLPurifier_Lexer_DOMLex
         /** @var list<int> $openBytes bytes of each open formatting ancestor, innermost last */
         $openBytes = [];
         $openTotal = 0;
+        /** @var list<string> $known names of the open ancestors the definition knows (and the wrapper div), innermost last */
+        $known = [];
         $stats = function () use (&$maxDepth, &$count, &$projected, &$bytes): array {
             return ['depth' => $maxDepth, 'elements' => $count, 'projected' => $projected, 'bytes' => $bytes];
         };
@@ -570,7 +572,7 @@ final class MeasuringLexer extends HTMLPurifier_Lexer_DOMLex
                 $bytes += $own;
                 $projected++;
                 if ($project && isset($definition->info[$name])) {
-                    [$extra, $extraBytes] = $this->cost($name, $node, $open, $openTotal, $definition, $config);
+                    [$extra, $extraBytes] = $this->cost($name, $node, $open, $openTotal, $known, $definition, $config);
                     $projected += $extra;
                     $bytes += $extraBytes;
                 }
@@ -589,8 +591,13 @@ final class MeasuringLexer extends HTMLPurifier_Lexer_DOMLex
                 return $reject('bytes', $this->maxBytes);
             }
             if ($node->firstChild !== null) {
-                if ($node !== $wrapper) {
+                if ($node === $wrapper) {
+                    $known[] = 'div';
+                } else {
                     $depth++;
+                    if ($isElement && isset($definition->info[$name])) {
+                        $known[] = $name;
+                    }
                     if ($isElement && ($definition->info[$name]->formatting ?? false)) {
                         $open[$name] = [($open[$name][0] ?? 0) + 1, ($open[$name][1] ?? 0) + $own];
                         $openBytes[] = $own;
@@ -606,9 +613,14 @@ final class MeasuringLexer extends HTMLPurifier_Lexer_DOMLex
                 if ($node === $body) {
                     return ['violation' => null, 'stats' => $stats()];
                 }
-                if ($node !== $wrapper) {
+                if ($node === $wrapper) {
+                    array_pop($known);
+                } else {
                     $depth--;
                     $parentName = $this->name($node);
+                    if (isset($definition->info[$parentName])) {
+                        array_pop($known);
+                    }
                     if (($definition->info[$parentName]->formatting ?? false) && ($open[$parentName][0] ?? 0) > 0) {
                         $closed = array_pop($openBytes);
                         $openTotal -= $closed;
@@ -627,9 +639,10 @@ final class MeasuringLexer extends HTMLPurifier_Lexer_DOMLex
      *
      * @param  array<string, array{int, int}>  $open
      * @param  int  $openTotal  bytes of all open formatting ancestors
+     * @param  list<string>  $known  open ancestors the definition knows, innermost last
      * @return array{int, int}
      */
-    private function cost(string $name, DOMNode $node, array $open, int $openTotal, \HTMLPurifier_HTMLDefinition $definition, HTMLPurifier_Config $config): array
+    private function cost(string $name, DOMNode $node, array $open, int $openTotal, array $known, \HTMLPurifier_HTMLDefinition $definition, HTMLPurifier_Config $config): array
     {
         $cost = 0;
         $bytes = 0;
@@ -649,16 +662,10 @@ final class MeasuringLexer extends HTMLPurifier_Lexer_DOMLex
         // of which there are at most as many as formatting ancestors.
         if ($formattingAncestors > 0) {
             $closed = 0;
-            for ($ancestor = $node->parentNode; $ancestor instanceof DOMElement; $ancestor = $ancestor->parentNode) {
-                $ancestorName = $this->name($ancestor);
-                if ($ancestorName === 'body' || ! isset($definition->info[$ancestorName])) {
-                    if ($ancestorName === 'body') {
-                        break;
-                    }
-
-                    continue;
-                }
-                if (isset($this->allowed($ancestorName, $definition, $config)[$name])) {
+            // Only known ancestors are visited, so the loop runs closed + 1 times and every
+            // round but the last is charged below: the walk stays linear in what it charges.
+            for ($i = count($known) - 1; $i >= 0; $i--) {
+                if (isset($this->allowed($known[$i], $definition, $config)[$name])) {
                     break;
                 }
                 $closed++;
