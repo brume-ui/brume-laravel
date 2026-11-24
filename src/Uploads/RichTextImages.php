@@ -43,7 +43,6 @@ class RichTextImages
         [$mime, $extension] = TempUploads::sniff($file);
         $accepted = $field->acceptedMimes();
         // SVG is never an editor image, whatever the host put in safe_extensions.
-        // SVG is never an editor image, whatever the host put in safe_extensions.
         if ($mime === null || $extension === null || $extension === 'svg' || str_contains($mime, 'svg') || ! in_array($mime, $accepted, true)) {
             $this->fail(__('brume::form.upload_type', ['types' => $this->types($accepted)]));
         }

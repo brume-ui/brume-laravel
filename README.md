@@ -825,13 +825,16 @@ every write went through this sanitiser.
 - **External resources.** An `img` or `background-image` URL on another host makes every visitor's
   browser fetch it (tracking pixels, hotlinking). Upload images instead if that matters.
 - **Embeds** are limited to YouTube; nothing else is checked about the video itself.
+- **Image URLs** are the disk's public URL and are written into the stored HTML as they are. With
+  the default `public` disk that URL starts with `APP_URL`, so a wrong `APP_URL`, or moving data
+  between hosts, leaves stored images pointing at the old address.
 
 What is kept (from the constants in `src/Html/HtmlSanitizer.php`):
 
 - Elements: `h1`, `h2`, `h3`, `h4`, `h5`, `h6`, `p`, `ul`, `ol`, `li`, `table`, `caption`,
   `thead`, `tbody`, `tfoot`, `tr`, `th`, `td`, `colgroup`, `col`, `img`, `a`, `br`, `strong`, `b`,
-  `em`, `i`, `u`, `s`, `sup`, `sub`, `span`, `div`, `article`, `blockquote`, `hr`, `iframe`,
-  `input`, `label`. Links may wrap block content.
+  `em`, `i`, `u`, `s`, `sup`, `sub`, `span`, `div`, `article`, `blockquote`, `pre`, `code`, `hr`,
+  `iframe`, `input`, `label`. Links may wrap block content.
 - Attributes:
   - everywhere: `class`, `style`, `id`;
   - `a[href|target|rel|title]`, `img[src|alt|title|width|height|loading]`;
@@ -865,8 +868,8 @@ The output renders the same as the input but is not byte-identical:
 - a `<tfoot>` written after `<tbody>` moves before it; a stray `<col>` outside a table is dropped;
 - a link nested inside a link is unwrapped, keeping its text.
 
-One structure does not survive: a list or table written *inside* `b`, `i`, `u`, `s`, `em` or
-`strong` is flattened to its text (`<b><ul><li>x</li></ul></b>` becomes `<b></b><b>x</b>`), because
+One structure does not survive: a list or table written *inside* `b`, `i`, `u`, `s`, `em`,
+`strong` or `code` is flattened to its text (`<b><ul><li>x</li></ul></b>` becomes `<b></b><b>x</b>`), because
 HTMLPurifier cannot repeat the formatting inside list items and cells the way it does inside
 paragraphs. Put the formatting inside the items or cells. Inside `a`, `span`, table cells and
 `caption`, block content of any kind is kept as written.

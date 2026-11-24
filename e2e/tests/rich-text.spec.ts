@@ -143,7 +143,7 @@ async function continueEditing(page: Page) {
 async function save(page: Page, id: number, how: 'click' | 'shortcut' = 'click') {
   const response = page.waitForResponse((r) => new URL(r.url()).pathname === `/admin/products/${id}` && r.request().method() === 'PUT');
   if (how === 'click') await page.getByRole('button', { name: '儲存', exact: true }).click();
-  else await page.keyboard.press('Meta+Enter');
+  else await page.keyboard.press('ControlOrMeta+Enter');
   expect((await response).status()).toBe(200);
   await expect(page.getByText('已儲存變更', { exact: true })).toBeVisible();
 }

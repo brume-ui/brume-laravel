@@ -32,13 +32,13 @@ use Throwable;
 final class HtmlSanitizer
 {
     /** Bump when the definition built below changes, so cached definitions are rebuilt. */
-    private const SCHEMA = 5;
+    private const SCHEMA = 6;
 
     private const ELEMENTS = [
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li',
         'table', 'caption', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'colgroup', 'col',
         'img', 'a', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'sup', 'sub',
-        'span', 'div', 'article', 'blockquote', 'hr', 'iframe', 'input', 'label',
+        'span', 'div', 'article', 'blockquote', 'pre', 'code', 'hr', 'iframe', 'input', 'label',
     ];
 
     private const ATTRIBUTES = [
@@ -410,7 +410,7 @@ final class HtmlSanitizer
         }
         $html = preg_replace('/<[a-zA-Z\/!?][^>]*>/', '', $html);
 
-        return preg_replace('/[ \t\n\r\f\v]|\xC2\xA0|&nbsp;|&#160;|&#[xX][aA]0;/', '', $html) === '';
+        return preg_replace('/[ \t\n\r\f\x0B]|\xC2\xA0|&nbsp;|&#160;|&#[xX][aA]0;/', '', $html) === '';
     }
 
     /**
