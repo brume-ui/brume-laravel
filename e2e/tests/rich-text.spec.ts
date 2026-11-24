@@ -139,6 +139,10 @@ async function paste(root: Locator, files: { name: string; type: string; bytes?:
 async function continueEditing(page: Page) {
   await page.getByRole('combobox', { name: '儲存後', exact: true }).click();
   await page.getByRole('option', { name: '繼續編輯', exact: true }).click();
+  // The select hands focus back to its trigger after it closes; wait for that, or the hand-back can
+  // land after the test has put the caret in the editor and take the keyboard away from it.
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: '儲存後', exact: true })).toBeFocused();
 }
 async function save(page: Page, id: number, how: 'click' | 'shortcut' = 'click') {
   const response = page.waitForResponse((r) => new URL(r.url()).pathname === `/admin/products/${id}` && r.request().method() === 'PUT');

@@ -11,8 +11,8 @@ return new class extends Migration
         Schema::create('rich_posts', function ($t) {
             $t->id();
             $t->string('title')->nullable();
-            $t->text('body')->nullable();
-            $t->text('notes')->nullable();
+            $t->longText('body')->nullable();
+            $t->longText('notes')->nullable();
             $t->json('blocks')->nullable();
         });
         Schema::create('rich_sections', function ($t) {

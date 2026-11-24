@@ -574,9 +574,9 @@ it('reads and writes a dotted name on a json attribute', function () {
     $page = richPage($build());
     expectRichSafe($page['values']['blocks']['content']);
     richSave($build(), $post, ['blocks' => ['content' => RICH_HOSTILE]]);
-    expect($post->fresh()->blocks)->toBe(['content' => richClean(RICH_HOSTILE), 'other' => 'keep']);
+    expect($post->fresh()->blocks)->toEqual(['content' => richClean(RICH_HOSTILE), 'other' => 'keep']); // MySQL reorders JSON object keys
     richSave($build(), $post, ['blocks' => ['content' => '<p><br></p>']]);
-    expect($post->fresh()->blocks)->toBe(['content' => null, 'other' => 'keep']);
+    expect($post->fresh()->blocks)->toEqual(['content' => null, 'other' => 'keep']);
 });
 
 it('reads and writes a dotted name inside a json repeater row', function () {
@@ -589,7 +589,7 @@ it('reads and writes a dotted name inside a json repeater row', function () {
     };
     expectRichSafe(richPage($build())['values']['blocks'][0]['meta']['body']);
     richSave($build(), $post, ['blocks' => [['_brume' => ['key' => 'a'], 'meta' => ['body' => RICH_HOSTILE]]]]);
-    expect($post->fresh()->blocks[0]['meta'])->toBe(['body' => richClean(RICH_HOSTILE), 'x' => 1]);
+    expect($post->fresh()->blocks[0]['meta'])->toEqual(['body' => richClean(RICH_HOSTILE), 'x' => 1]);
 });
 
 // Fix round 1: build-time checks

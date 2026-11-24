@@ -876,6 +876,9 @@ describe('attribute cost', function () {
     });
 
     it('leaves the fixtures far below the attribute limits', function () {
+        if (! class_exists(HTMLDocument::class)) {
+            $this->markTestSkipped('Dom\\HTMLDocument needs PHP 8.4+.');
+        }
         $longest = $classes = 0;
         foreach (legacyHtmlFixtures() as $name) {
             foreach (HTMLDocument::createFromString('<!DOCTYPE html><body>'.htmlFixture($name), LIBXML_NOERROR)->getElementsByTagName('*') as $element) {

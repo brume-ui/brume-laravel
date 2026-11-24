@@ -825,6 +825,8 @@ every write went through this sanitiser.
 - **External resources.** An `img` or `background-image` URL on another host makes every visitor's
   browser fetch it (tracking pixels, hotlinking). Upload images instead if that matters.
 - **Embeds** are limited to YouTube; nothing else is checked about the video itself.
+- **Column type.** The default `max_bytes` is 300,000, more than a MySQL `TEXT` column holds
+  (65,535 bytes). Store editor content in `longText` (or `mediumText`), or lower `max_bytes`.
 - **Image URLs** are the disk's public URL and are written into the stored HTML as they are. With
   the default `public` disk that URL starts with `APP_URL`, so a wrong `APP_URL`, or moving data
   between hosts, leaves stored images pointing at the old address.
