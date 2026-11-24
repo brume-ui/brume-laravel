@@ -52,13 +52,21 @@ return [
         // iframe src must match; null allows no iframe at all. The default accepts YouTube /embed/<11-char id> only.
         'iframe_regexp' => '%^(?:https?:)?//(?:www\.)?youtube(?:-nocookie)?\.com/embed/(?!(?i:videoseries))[A-Za-z0-9_-]{11}(?:[?#][^\s"<>]*)?\z%',
         // Input refused before HTMLPurifier processes it (HtmlRejected; validate with HtmlSanitizer::limitViolation()).
-        // null disables any of the three. Depth and elements are measured on the tree libxml parses.
-        // Bytes: dense markup needs roughly 260 MB of memory to purify at 1 MB, so keep this well below that.
+        // null disables any of them. All but the first are measured on the tree libxml parses.
+        // Bytes of the input; cleaning may also not produce more than 4 times this (formatting tags are
+        // repeated, with their attributes, inside every block they wrap). Memory grows with it.
         'max_bytes' => 300_000,
         // Element nesting depth, as parsed (tags the parser closes itself, like <li> and <p>, do not add up).
-        'max_depth' => 256,
-        // Element count, as parsed. Memory grows with it (see the README).
+        // Up to 253 a too-deep document is refused within milliseconds; above that (or null) the parser
+        // has to read all of it first, which can take seconds on hostile input.
+        'max_depth' => 250,
+        // Elements HTMLPurifier would produce (at least the count as parsed). Memory grows with it (see the README).
         'max_elements' => 20_000,
+        // Longest single attribute value, in bytes as parsed. A tag may also not hold more than
+        // max_attribute_bytes / 8 words (attribute names and the words in their values).
+        'max_attribute_bytes' => 8_192,
+        // Most classes on one element.
+        'max_classes' => 200,
         // Extra values refused for id, input[name] and label[for], added to HtmlSanitizer::RESERVED_NAMES. 'prefix*' matches a prefix.
         'reserved_names' => [],
         // null = storage_path('framework/cache/brume-htmlpurifier'), created on demand; false = no cache.

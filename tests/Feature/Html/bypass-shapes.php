@@ -32,6 +32,15 @@ function amp(int $k, int $m, string $block = '<div>x</div>'): string
     return $html.str_repeat($block, $m);
 }
 
+/**
+ * Fix round 4: one formatting element carrying a large attribute, then $blocks blocks.
+ * HTMLPurifier reopens the element, attribute included, inside and after every block.
+ */
+function attributeFlood(string $attribute, string $value, int $blocks, string $formatting = 'b'): string
+{
+    return '<'.$formatting.' '.$attribute.'="'.$value.'">'.str_repeat('<div>x</div>', $blocks);
+}
+
 /** Number of elements in sanitiser output (well-formed, lowercase tags). */
 function outputElements(?string $html): int
 {

@@ -2,6 +2,7 @@
 
 use Brume\Html\HtmlRejected;
 use Brume\Html\HtmlSanitizer;
+use Brume\Html\MeasuringLexer;
 use Brume\Html\TagScanner;
 use Brume\Tests\Support\HtmlNormalizer;
 use Dom\HTMLDocument;
@@ -156,12 +157,32 @@ it('reaches a fixed point in one pass', function (string $html, ?string $expecte
     'stray text in a list' => ['<ul>>x </ul>', '<ul><li>&gt;x </li></ul>'],
 ]);
 
-it('leaves the alias name alone when the author wrote it as text', function (string $html) {
+it('never rewrites text the author wrote, whatever names it contains', function (string $html) {
     expect(sanitizer()->clean($html))->toBe($html);
 })->with([
     '<p>&lt;brumelink href="/x"&gt; and BrumeLink are words</p>',
     '<p>&lt;/BRUMELINK&gt;</p><p><a href="/y">link</a></p>',
+    // Fix round 4: with all three former alias names present, `&lt;brumelink x&gt;` became `&lt;a x&gt;`.
+    '<p>&lt;brumelink x&gt; brumeanchor brumehref <a href="/y">l</a></p>',
+    '<p>brumea &lt;brumea0123456789abcdef01234567 x&gt; <a href="/y">l</a></p>',
 ]);
+
+it('derives the link alias from the input, so the input can never contain it', function () {
+    $inputs = ['', '<a href="/x">y</a>', 'brumelink brumeanchor brumehref', str_repeat('<a>brumea', 500)];
+    foreach ($inputs as $html) {
+        $alias = TagScanner::aliasFor($html);
+
+        expect($alias)->toMatch('/^brumea[0-9a-f]{24}\z/')
+            ->and(stripos($html, $alias))->toBeFalse()
+            ->and(TagScanner::aliasFor($html))->toBe($alias);
+    }
+    // An input that spells out the alias of another input simply gets a different one.
+    $first = TagScanner::aliasFor('<a>x</a>');
+    $spelt = '<a>x</a><'.$first.' href="/x">y</'.$first.'>';
+
+    expect(TagScanner::aliasFor($spelt))->not->toBe($first)
+        ->and(sanitizer()->clean($spelt))->toBe('<a>x</a>y');
+});
 
 it('never lets the link alias show, even as text', function (string $html, string $expected) {
     expect(sanitizer()->clean($html))->toBe($expected);
@@ -426,6 +447,52 @@ describe('options', function () {
             ->and(sanitizer(['configure' => $hook])->clean($html))->toBe($html);
     });
 
+    it('keeps the limits when the configure hook reads the config or replaces Brume\'s parts', function (Closure $hook) {
+        $sanitizer = sanitizer(['configure' => $hook, 'max_depth' => 5, 'max_elements' => 50]);
+
+        expect($sanitizer->clean('<p class="a">x</p>'))->toBe('<p class="a">x</p>')
+            ->and($sanitizer->limitViolation(str_repeat('<div>', 6).'x'))->toBe('depth')
+            ->and($sanitizer->limitViolation(str_repeat('<i>x</i>', 51)))->toBe('elements')
+            ->and($sanitizer->limitViolation('<b>'.str_repeat('<div>x</div>', 20)))->toBe('elements')
+            ->and($sanitizer->limitViolation('<p title="'.str_repeat('a', 9000).'">x</p>'))->toBe('attributes');
+    })->with([
+        'get()' => [fn (HTMLPurifier_Config $config) => $config->get('HTML.Doctype')],
+        'getBatch()' => [fn (HTMLPurifier_Config $config) => $config->getBatch('Core')],
+        'getCSSDefinition()' => [fn (HTMLPurifier_Config $config) => $config->getCSSDefinition()],
+        'its own lexer' => [fn (HTMLPurifier_Config $config) => $config->set('Core.LexerImpl', 'DirectLex')],
+        'its own injectors' => [fn (HTMLPurifier_Config $config) => $config->set('AutoFormat.Custom', [])],
+    ]);
+
+    it('refuses to run without limits when the configure hook finalises the config or builds the definition', function (Closure $hook, string $loud, bool $quiet) {
+        // A host error handler that swallows everything: HTMLPurifier reports a set() on a finalised
+        // config with trigger_error only, so nothing else would tell that the limits are off.
+        if ($quiet) {
+            set_error_handler(fn () => true);
+        }
+        // Building the definition in the hook already fails loudly under Laravel's error handler
+        // (HTMLPurifier does not know `article` without Brume's additions); silenced, Brume refuses.
+        $expected = $quiet ? LogicException::class : $loud;
+        try {
+            expect(fn () => sanitizer(['configure' => $hook])->clean('<p>x</p>'))->toThrow($expected)
+                ->and(fn () => sanitizer(['configure' => $hook])->limitViolation(str_repeat('<div>', 300).'x'))->toThrow($expected);
+            if ($expected === LogicException::class) {
+                expect(fn () => sanitizer(['configure' => $hook])->clean('<p>x</p>'))->toThrow(LogicException::class, 'brume.html.configure');
+            }
+        } finally {
+            if ($quiet) {
+                restore_error_handler();
+            }
+        }
+    })->with([
+        'finalize()' => [fn (HTMLPurifier_Config $config) => $config->finalize(), LogicException::class],
+        'autoFinalize and get()' => [function (HTMLPurifier_Config $config) {
+            $config->autoFinalize = true;
+            $config->get('HTML.Doctype');
+        }, LogicException::class],
+        'getHTMLDefinition()' => [fn (HTMLPurifier_Config $config) => $config->getHTMLDefinition(), ErrorException::class],
+        'getDefinition(HTML)' => [fn (HTMLPurifier_Config $config) => $config->getDefinition('HTML'), ErrorException::class],
+    ])->with(['throwing error handler' => false, 'silent error handler' => true]);
+
     it('lets the configure hook shrink the CSS whitelist, custom properties included', function () {
         $hook = fn (HTMLPurifier_Config $config) => $config->set('CSS.ForbiddenProperties', ['display' => true, 'color' => true]);
 
@@ -549,7 +616,9 @@ it('is bound as a singleton configured from brume.html', function () {
         ->and(app(HtmlSanitizer::class)->clean('<p class="only other">x</p>'))->toBe('<p class="only">x</p>')
         ->and(config('brume.html.allow_fixed'))->toBeFalse()
         ->and(config('brume.html.max_bytes'))->toBe(300_000)
-        ->and(config('brume.html.max_depth'))->toBe(256)
+        ->and(config('brume.html.max_depth'))->toBe(250)
+        ->and(config('brume.html.max_attribute_bytes'))->toBe(8192)
+        ->and(config('brume.html.max_classes'))->toBe(200)
         ->and(config('brume.html.max_elements'))->toBe(20_000)
         ->and(config('brume.html.reserved_names'))->toBe([])
         ->and(config('brume.html.configure_version'))->toBeNull()
@@ -671,7 +740,7 @@ describe('element amplification', function () {
             ->and($result)->toBe('rejected:elements')
             ->and($ms)->toBeLessThan(300.0)
             ->and($mb)->toBeLessThan(20.0);
-    })->with([[128, 400], [255, 1000], [255, 3000], [64, 2000], [8, 20_000]]);
+    })->with([[128, 400], [249, 1000], [249, 3000], [64, 2000], [8, 20_000]]);
 
     it('stops the flood at runtime even with the projection switched off', function (int $k, int $m) {
         [$exit, $result, , $mb] = cleanInChild("amp($k, $m)", ['projection' => false]);
@@ -679,7 +748,7 @@ describe('element amplification', function () {
         expect($exit)->toBe(0)
             ->and($result)->toBe('rejected:elements')
             ->and($mb)->toBeLessThan(80.0);
-    })->with([[255, 3000], [64, 2000]]);
+    })->with([[249, 3000], [64, 2000]]);
 
     it('cleans the largest amplifying input the limits accept within the memory budget', function () {
         // 8 open (6 formatting) elements: the projection charges each block about 61 elements,
@@ -750,6 +819,233 @@ describe('element amplification', function () {
     ]);
 });
 
+describe('attribute cost', function () {
+    it('allows an attribute value of max_attribute_bytes and rejects one byte more', function () {
+        $html = fn (int $bytes) => '<p title="'.str_repeat('a', $bytes).'">x</p>';
+
+        expect(sanitizer()->limitViolation($html(8192)))->toBeNull()
+            ->and(sanitizer()->limitViolation($html(8193)))->toBe('attributes')
+            ->and(fn () => sanitizer()->clean($html(8193)))->toThrow(function (HtmlRejected $e) {
+                expect($e->reason)->toBe('attributes')
+                    ->and($e->limit)->toBe(8192)
+                    ->and($e->getMessage())->toContain('brume.html.max_attribute_bytes')->toContain('brume.html.max_classes');
+            })
+            ->and(sanitizer(['max_attribute_bytes' => 100])->limitViolation($html(101)))->toBe('attributes')
+            // Measured as parsed: entities count as the character they stand for.
+            ->and(sanitizer(['max_attribute_bytes' => 100])->limitViolation('<p title="'.str_repeat('&amp;', 100).'">x</p>'))->toBeNull()
+            ->and(sanitizer(['max_attribute_bytes' => null])->limitViolation($html(20_000)))->toBeNull()
+            // An attribute the whitelist would drop is measured too: it is parsed and carried along first.
+            ->and(sanitizer()->limitViolation('<p onclick="'.str_repeat('a', 8193).'">x</p>'))->toBe('attributes');
+    });
+
+    it('allows max_classes classes on an element and rejects one more', function () {
+        $html = fn (int $classes) => '<p class="'.implode(' ', array_map(fn ($i) => 'c'.$i, range(1, $classes))).'">x</p>';
+
+        expect(sanitizer()->limitViolation($html(200)))->toBeNull()
+            ->and(sanitizer()->limitViolation($html(201)))->toBe('attributes')
+            ->and(sanitizer()->limitViolation('<p class="'.str_repeat("a \n", 201).'">x</p>'))->toBe('attributes')
+            ->and(sanitizer(['max_classes' => 3])->limitViolation('<p class=" a  b c ">x</p><p class="d e f">y</p>'))->toBeNull()
+            ->and(sanitizer(['max_classes' => 3])->limitViolation('<p class="a b c d">x</p>'))->toBe('attributes')
+            ->and(sanitizer(['max_classes' => null])->limitViolation($html(1000)))->toBeNull();
+    });
+
+    it('refuses a tag crowded with attributes before the parser compares them all', function () {
+        $html = fn (int $attributes) => '<p '.implode(' ', array_map(fn ($i) => 'a'.$i, range(1, $attributes))).'>x</p>';
+
+        // max_attribute_bytes ÷ 8 words in one tag: 1,024 by default.
+        expect(sanitizer()->clean($html(1000)))->toBe('<p>x</p>')
+            ->and(sanitizer()->limitViolation($html(1100)))->toBe('attributes')
+            // Counted before parsing, where a quoted value cannot be told from more attributes:
+            // the words inside values count too.
+            ->and(sanitizer()->limitViolation('<p title="'.str_repeat('word ', 1000).'">x</p>'))->toBeNull()
+            ->and(sanitizer()->limitViolation('<p title="'.str_repeat('word ', 1100).'">x</p>'))->toBe('attributes');
+    });
+
+    it('leaves the fixtures far below the attribute limits', function () {
+        $longest = $classes = 0;
+        foreach (legacyHtmlFixtures() as $name) {
+            foreach (HTMLDocument::createFromString('<!DOCTYPE html><body>'.htmlFixture($name), LIBXML_NOERROR)->getElementsByTagName('*') as $element) {
+                foreach ($element->attributes as $attribute) {
+                    $longest = max($longest, strlen($attribute->value));
+                }
+                $classes = max($classes, count(preg_split('/\s+/', (string) $element->getAttribute('class'), -1, PREG_SPLIT_NO_EMPTY)));
+            }
+        }
+
+        // Largest in the fixtures: a 212-byte style, 3 classes.
+        expect($longest)->toBeGreaterThan(100)->toBeLessThan(HtmlSanitizer::DEFAULT_MAX_ATTRIBUTE_BYTES / 20)
+            ->and($classes)->toBeGreaterThan(1)->toBeLessThan(HtmlSanitizer::DEFAULT_MAX_CLASSES / 20);
+    });
+
+    it('drops duplicate classes like HTMLPurifier does, keeping the first of each', function () {
+        expect(sanitizer()->clean('<p class="b a b 1 01 -0 0 a  b">x</p>'))->toBe('<p class="b a 1 01 -0 0">x</p>')
+            ->and(sanitizer(['allowed_classes' => ['a', '1']])->clean('<p class="b a b 1 01 a">x</p>'))->toBe('<p class="a 1">x</p>');
+    });
+
+    it('rejects the round-3 attribute floods at once', function (string $expression, string $reason) {
+        [$exit, $result, $ms, $mb] = cleanInChild($expression);
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('rejected:'.$reason)
+            ->and($ms)->toBeLessThan(300.0)
+            ->and($mb)->toBeLessThan(20.0);
+    })->with([
+        // Each of these exhausted memory or took seconds: every reopened copy of the formatting
+        // element carried the attribute, and was validated and serialised on its own.
+        'one 200 KB class, reopened in 1000 blocks' => ["attributeFlood('class', str_repeat('a', 200000), 1000)", 'attributes'],
+        'a 100 KB url() in a style, reopened in 1000 blocks' => ["'<strong>'.attributeFlood('style', 'background-image:url(https://e.x/'.str_repeat('a', 100000).')', 1000, 'em')", 'attributes'],
+        '10 KB of classes, reopened in 1000 blocks' => ['attributeFlood("class", substr(implode(" ", range(1000, 4000)), 0, 10000), 1000)', 'attributes'],
+        '50 KB of classes, reopened in 100 blocks' => ['attributeFlood("class", substr(implode(" ", range(10000, 22000)), 0, 50000), 100)', 'attributes'],
+        '45,000 distinct classes on one element' => ['"<p class=\"".implode(" ", range(0, 45000))."\">x</p>"', 'attributes'],
+        // Within the attribute limits, the copies still add up: the byte budget refuses them.
+        '200 classes, reopened in 1000 blocks' => ['attributeFlood("class", implode(" ", range(1000, 1199)), 1000)', 'bytes'],
+        'an 8 KB style, reopened in 100 blocks' => ["attributeFlood('style', substr(str_repeat('background:url(a);', 500), 0, 8000), 100)", 'bytes'],
+        'three formatting elements with 2 KB titles, reopened in 300 blocks' => ["str_repeat('<a title=\"'.str_repeat('t', 2000).'\">', 3).str_repeat('<li>x</li>', 300)", 'bytes'],
+    ]);
+
+    it('bounds the bytes with the attribute limits off, before purifying and again while purifying', function (string $expression, bool $projection) {
+        [$exit, $result, $ms, $mb] = cleanInChild($expression, ['max_attribute_bytes' => null, 'max_classes' => null, 'projection' => $projection]);
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('rejected:bytes')
+            ->and($ms)->toBeLessThan(300.0)
+            ->and($mb)->toBeLessThan(20.0);
+    })->with([
+        'one 200 KB class' => ["attributeFlood('class', str_repeat('a', 200000), 1000)"],
+        'a 100 KB url()' => ["'<strong>'.attributeFlood('style', 'background-image:url(https://e.x/'.str_repeat('a', 100000).')', 1000, 'em')"],
+        '10 KB of classes' => ['attributeFlood("class", substr(implode(" ", range(1000, 4000)), 0, 10000), 1000)'],
+        'nothing but ampersands' => ["str_repeat('&', 290000)"],
+    ])->with(['projection' => true, 'runtime budget alone' => false]);
+
+    it('cleans 45,000 distinct classes in linear time when the limits allow them', function () {
+        [$exit, $result, $ms, $mb] = cleanInChild('"<p class=\"".implode(" ", range(0, 45000))."\">x</p>"', ['max_attribute_bytes' => null, 'max_classes' => null]);
+
+        // HTMLPurifier's own class definition needed 6 s for 60,000 of them.
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('accepted')
+            ->and($ms)->toBeLessThan(300.0)
+            ->and($mb)->toBeLessThan(20.0);
+    });
+
+    it('cleans the largest attribute-carrying amplifier the budget accepts within the targets', function () {
+        // 140 blocks × 2 copies of a 1,000-byte class: about 287 KB of output from 2.7 KB of input.
+        [$exit, $result, $ms, $mb] = cleanInChild("attributeFlood('class', str_repeat('a', 1000), 140)");
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('accepted')
+            ->and($ms)->toBeLessThan(1500.0)
+            ->and($mb)->toBeLessThan(60.0);
+    });
+
+    it('cleans the worst accepted inputs the resource search found within the targets', function (string $expression) {
+        // tests/Feature/Html/resource-search.php, 10,000 evaluations per objective (fix round 4).
+        [$exit, $result, $ms, $mb] = cleanInChild($expression);
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('accepted')
+            ->and($ms)->toBeLessThan(1500.0)
+            ->and($mb)->toBeLessThan(60.0);
+    })->with([
+        // Slowest and hungriest of all (about 0.7 s, 53 MB): a full document that ends in a cut-off
+        // link tag inside an open link, so the nested-link backstop has to clean it a second time.
+        'links, then a link cut off inside a link' => ["str_repeat('<a href=\"/x\">y</a>', 16600).'<a title=\"t\">m<a href=\"m'"],
+        'as many links as fit' => ["str_repeat('<a href=\"/x\">y</a>', 16000)"],
+        'as many elements as fit' => ["str_repeat('<p>x</p>', 20000)"],
+        'unclosed blocks' => ["str_repeat('<div>x', 240).str_repeat('<p>x', 19000)"],
+        'table cells' => ["'<table>'.str_repeat('<tr><td>a</td><th>b</th></tr>', 6600).'</table>'"],
+        '36 styles of 8 KB' => ["str_repeat('<p style=\"'.substr(str_repeat('background:url(a);', 500), 0, 8190).'\">x</p>', 36)"],
+        '1,000 attributes in each of 61 tags' => ["str_repeat('<p '.implode(' ', array_map(fn (\$i) => 'a'.\$i, range(1, 1000))).'>x', 61)"],
+    ]);
+
+    it('rejects a value that only passes the attribute limit before it is rewritten', function () {
+        // 6 KB as written, 18 KB once percent-encoded: the result could not be cleaned again.
+        expect(sanitizer()->limitViolation('<a href="/'.str_repeat("\u{e9}", 3000).'">x</a>'))->toBe('attributes')
+            ->and(sanitizer()->limitViolation('<a href="/'.str_repeat("\u{e9}", 1300).'">x</a>'))->toBeNull();
+    });
+
+    it('never charges an attribute fewer bytes than HTMLPurifier writes for it', function (string $attribute, string $value) {
+        $element = match ($attribute) {
+            'src', 'alt', 'width' => 'img',
+            'data-th' => 'td',
+            default => 'a',
+        };
+        $attributes = $element === 'img' && $attribute !== 'src' ? ['src' => '/a.png', $attribute => $value] : [$attribute => $value];
+        $html = '<'.$element;
+        foreach ($attributes as $name => $text) {
+            $html .= ' '.$name.'="'.htmlspecialchars($text).'"';
+        }
+        $html = $element === 'td' ? '<table><tr>'.$html.'>x</td></tr></table>' : $html.'>'.($element === 'a' ? 'x</a>' : '');
+        $sanitizer = sanitizer(['max_attribute_bytes' => null, 'max_classes' => null]);
+        $clean = (string) $sanitizer->clean($html);
+        $overhead = $element === 'td' ? strlen('<table><tr></tr></table>x') : ($element === 'a' ? 1 : 0);
+
+        expect(strlen($clean) - $overhead)->toBeLessThanOrEqual(MeasuringLexer::elementBytes($element, $attributes))
+            ->and(strlen($clean))->toBeLessThanOrEqual($sanitizer->treeStats($html)['bytes'])
+            ->and(strlen($clean))->toBeLessThanOrEqual($sanitizer->lastByteCount());
+    })->with(function () {
+        $values = [
+            'style' => ['color:red', 'color:tan;color:red', 'background:url(a)', 'background:url(a b)', "background-image:url(\u{e9})", 'list-style:url(a)', 'font-family:a,b,c,d', 'font-family:1,2,3', "font-family:\u{e9},a b,'c'",
+                'font-family:"a",\\62 ', 'margin:0', 'border:0 solid red', 'top:0', 'color:#fff', 'color:rgb(1,2,3)', 'background:red url(a) no-repeat top', 'border-color:red red red red', 'width:1', 'font:1px a',
+                'text-decoration:underline', 'a:b;c:d;;;color:red', 'COLOR:RED', 'color:red !important', 'background-position:left', 'box-shadow:0 0 0 0 red,0 0 0 0 red', 'gap:1px', 'opacity:1', 'line-height:1', 'border-spacing:1px 1px'],
+            'href' => ['/a b', "/\u{e9}\u{e9}", '/<>"', '/a?b=c&d=e', 'tel:1-2-3', 'mailto:a@b.c', '//e.x', 'a', '%', '%zz', '/%41', "/\t", '?', '#', 'http://e.x', 'HTTP://E.X/A', 'http://[::1]/', "http://\u{4e2d}.x/", '/{}|\\^`', "/'()"],
+            'src' => ['/a b.png', "/\u{4e2d}.png", '/a.png?x=1&y=2', 'a', '/"'],
+            'title' => ['"', '&', '<>', "\u{e9}", "a\tb", "'"],
+            'alt' => ['"quoted"', ''],
+            'class' => ['a', 'a a b', '1', '"'],
+            'id' => ['a', 'a"b', "\u{e9}"],
+            'rel' => ['nofollow', 'nofollow noopener x'],
+            'target' => ['_blank', 'blank'],
+            'width' => ['1', '100%', '1px'],
+            'data-th' => ['"', '&<>'],
+        ];
+        foreach ($values as $attribute => $list) {
+            foreach ($list as $value) {
+                yield "$attribute=$value" => [$attribute, $value];
+                yield "$attribute=$value ×40" => [$attribute, substr(str_repeat($value.($attribute === 'style' ? ';' : ''), 40), 0, 400)];
+            }
+        }
+    });
+
+    it('never projects or charges fewer bytes than HTMLPurifier writes', function () {
+        $attributes = ['', '', '', ' class="a b c"', ' style="color:red;background:url(a) no-repeat"', ' title="&quot;&amp;"', ' id="x"', ' style="font-family:a,b;margin:0"', ' onclick="x()" data-x="y"', " class='c d'"];
+        $open = ['b', 'i', 'u', 's', 'em', 'strong', 'a href="/x y"', 'sup', 'span', 'div', 'p', 'h2', 'ul', 'ol', 'li', 'table', 'tr', 'td', 'tbody', 'caption', 'blockquote', 'label'];
+        $other = ['</b>', '</i>', '</strong>', '</a>', '</span>', '</div>', '</p>', '</li>', '</ul>', '</td>', '</table>', '<col>', '<hr>', '<br>', '<img src="/a b.png" alt="&quot;">',
+            '<div>x</div>', '<li>y</li>', 'text', ' ', '&amp;', '&lt;', '>', '"', "\u{4e2d}", '&nbsp;', '<!-- c -->'];
+        $sanitizer = sanitizer(['max_bytes' => null, 'max_depth' => null, 'max_elements' => null, 'max_attribute_bytes' => null, 'max_classes' => null]);
+        mt_srand(20261125);
+        try {
+            foreach (range(1, 1500) as $_) {
+                $html = '';
+                foreach (range(1, mt_rand(1, 40)) as $__) {
+                    $html .= mt_rand(0, 9) < 5
+                        ? '<'.$open[mt_rand(0, count($open) - 1)].$attributes[mt_rand(0, count($attributes) - 1)].'>'
+                        : $other[mt_rand(0, count($other) - 1)];
+                }
+                $clean = (string) $sanitizer->clean($html);
+                $charged = $sanitizer->lastByteCount();
+
+                expect(strlen($clean))->toBeLessThanOrEqual($sanitizer->treeStats($html)['bytes'], $html)
+                    ->and(strlen($clean))->toBeLessThanOrEqual($charged, $html);
+            }
+        } finally {
+            mt_srand();
+        }
+    });
+
+    it('charges every reopened copy its attributes', function () {
+        $sanitizer = sanitizer();
+        $html = attributeFlood('class', str_repeat('a', 500), 50);
+        $clean = $sanitizer->clean($html);
+        $stats = $sanitizer->treeStats($html);
+
+        // 1 + 2 × 50 copies of a 500-byte class: 51 are written with it (the rest are empty shells too).
+        expect(substr_count($clean, str_repeat('a', 500)))->toBe(101)
+            ->and($stats['bytes'])->toBeGreaterThanOrEqual(strlen($clean))
+            ->and($stats['bytes'])->toBeLessThan(2 * strlen($clean))
+            ->and($sanitizer->lastByteCount())->toBeGreaterThanOrEqual(strlen($clean));
+    });
+});
+
 describe('table parts', function () {
     it('removes a col outside a table on the first pass', function (string $html, ?string $expected) {
         $once = sanitizer()->clean($html);
@@ -778,6 +1074,76 @@ describe('table parts', function () {
         ['<table><tbody><tr><td>x</td></tr></tbody><tfoot><tr><td>f</td></tr></tfoot></table>',
             '<table><tfoot><tr><td>f</td></tr></tfoot><tbody><tr><td>x</td></tr></tbody></table>'],
     ]);
+
+    it('keeps a caption with block content inside its table', function (string $html, string $expected) {
+        expect(sanitizer()->clean($html))->toBe($expected)
+            ->and(sanitizer()->clean($expected))->toBe($expected);
+    })->with([
+        // Fix round 4: with HTML 4's inline-only caption this came back as `<p>y</p>a`.
+        ['<table><caption><b><p>y</p></b></caption><tr><td>a</td></tr></table>',
+            '<table><caption><b></b><p>y</p></caption><tr><td>a</td></tr></table>'],
+        ['<table><caption><p>y</p></caption><tr><td>a</td></tr></table>', '<table><caption><p>y</p></caption><tr><td>a</td></tr></table>'],
+        ['<table><caption><a href="/x"><div>link</div></a> t <h2>h</h2><ul><li>i</li></ul></caption><tbody><tr><td>a</td></tr></tbody></table>',
+            '<table><caption><a href="/x"><div>link</div></a> t <h2>h</h2><ul><li>i</li></ul></caption><tbody><tr><td>a</td></tr></tbody></table>'],
+        ['<table><caption><strong><em><div>x</div></em></strong> z</caption><tr><td>a</td></tr></table>',
+            '<table><caption><strong><em></em></strong><div><strong><em>x</em></strong></div><strong><em></em></strong> z</caption><tr><td>a</td></tr></table>'],
+        ['<table><caption><table><tr><td>in</td></tr></table></caption><tr><td>a</td></tr></table>',
+            '<table><caption><table><tr><td>in</td></tr></table></caption><tr><td>a</td></tr></table>'],
+        // Rows written inside a caption: the parser closes the caption first.
+        ['<table><caption>c<tr><td>q</td></tr></caption><tr><td>a</td></tr></table>', '<table><caption>c</caption><tr><td>q</td></tr><tr><td>a</td></tr></table>'],
+    ]);
+
+    it('never loses the table, the text or the links to well-formed content in its caption', function () {
+        // Lists and tables are only generated outside b/i/u/s/em/strong: HTMLPurifier unwraps those
+        // inside formatting elements anywhere, caption or not.
+        $flow = function (int $depth, bool $formatting = false) use (&$flow): string {
+            $inline = ['b', 'i', 'strong', 'em', 'u', 's', 'span', 'sup', 'sub', 'label'];
+            $block = ['p', 'div', 'h2', 'h4', 'blockquote', 'article'];
+            $out = '';
+            for ($k = mt_rand(1, 3); $k > 0; $k--) {
+                $pick = mt_rand(0, 11);
+                if ($depth <= 0 || $pick < 3) {
+                    $out .= ['T'.mt_rand(10, 99), ' ', '<br>', '<img src="/a.png" alt="">', '<hr>'][mt_rand(0, 4)];
+                } elseif ($pick < 6) {
+                    $tag = $inline[mt_rand(0, 9)];
+                    $out .= "<$tag>".$flow($depth - 1, $formatting || array_search($tag, $inline, true) < 6)."</$tag>";
+                } elseif ($pick < 9) {
+                    $tag = $block[mt_rand(0, 5)];
+                    $out .= "<$tag>".$flow($depth - 1, $formatting)."</$tag>";
+                } elseif ($pick === 9) {
+                    $out .= '<a href="/L'.mt_rand(10, 99).'">'.$flow($depth - 1, $formatting).'</a>';
+                } elseif ($formatting) {
+                    $out .= 'T'.mt_rand(10, 99);
+                } elseif ($pick === 10) {
+                    $out .= '<ul><li>'.$flow($depth - 1).'</li><li>T'.mt_rand(10, 99).'</li></ul>';
+                } else {
+                    $out .= '<table><tr><td>'.$flow($depth - 1).'</td></tr></table>';
+                }
+            }
+
+            return $out;
+        };
+        $wraps = ['%s', '<div>%s</div>', '<ul><li>%s</li></ul>', '<table><tr><td>%s</td></tr></table>', '<a href="/o">%s</a>', '<span>%s</span>', '<blockquote>%s</blockquote>'];
+        $words = fn (string $html) => preg_match_all('~T\d\d|ROWCELL~', $html, $found) ? $found[0] : [];
+        $links = fn (string $html) => preg_match_all('~href="(/L\d\d)"~', $html, $found) ? $found[1] : [];
+        $sanitizer = sanitizer();
+        mt_srand(20261124);
+        try {
+            foreach (range(1, 400) as $_) {
+                $html = sprintf($wraps[mt_rand(0, 6)], '<table><caption>'.$flow(mt_rand(1, 4)).'</caption><tr><td>ROWCELL</td></tr></table>');
+                $clean = (string) $sanitizer->clean($html);
+
+                expect($clean)->toMatch('~<table><caption>.*</caption><tr><td>ROWCELL</td></tr></table>~s', $html)
+                    ->and($words($clean))->toBe($words($html), $html)
+                    // Links nested in links are unwrapped; none may appear from nowhere, and the first stays.
+                    ->and(array_diff($links($clean), $links($html)))->toBe([], $html)
+                    ->and(array_slice($links($clean), 0, 1))->toBe(str_contains($html, '<a href="/o">') ? [] : array_slice($links($html), 0, 1), $html)
+                    ->and($sanitizer->clean($clean))->toBe($clean, $html);
+            }
+        } finally {
+            mt_srand();
+        }
+    });
 });
 
 describe('links and spans around blocks', function () {
@@ -808,7 +1174,8 @@ describe('links and spans around blocks', function () {
         ['<script>var s = "<a href=x>";</script><p>ok</p>', '<p>ok</p>'],
         ['<!-- <a href="/x"> --><p>ok</p>', '<p>ok</p>'],
         ['<p>1 < 2, <abbr>a</abbr> <article-x>b</article-x></p>', '<p>1 &lt; 2, a b</p>'],
-        ['<brumelink href="/x">alias spelt out</brumelink>', '<a href="/x">alias spelt out</a>'],
+        // Not a link: the alias is private to each clean, and an unknown element like any other.
+        ['<brumelink href="/x">alias spelt out</brumelink>', 'alias spelt out'],
     ]);
 
     it('unwraps a link nested in a link, keeping its content', function (string $html, string $expected) {
@@ -955,7 +1322,7 @@ describe('input limits', function () {
         // Bytes can grow too: attribute values get quoted. 15 bytes in, 18 out.
         $quoted = '<p class=x>y</p>';
 
-        expect(sanitizer()->treeStats($html))->toBe(['depth' => 3, 'elements' => 3, 'projected' => 7])
+        expect(sanitizer()->treeStats($html))->toBe(['depth' => 3, 'elements' => 3, 'projected' => 7, 'bytes' => 56])
             ->and(sanitizer(['max_elements' => 7])->clean($html))->toBe($clean)
             ->and(sanitizer(['max_elements' => 7])->clean($clean))->toBe($clean)
             ->and(sanitizer(['max_elements' => 6])->limitViolation($html))->toBe('elements')
@@ -1011,16 +1378,59 @@ describe('input limits', function () {
             ->and($seen['none'])->toBeGreaterThan(0);
     });
 
-    it('allows depth 256 and rejects 257', function () {
-        $ok = str_repeat('<div>', 256).'x'.str_repeat('</div>', 256);
-        $deep = str_repeat('<div>', 257).'x'.str_repeat('</div>', 257);
+    it('allows depth 250 and rejects 251', function () {
+        $ok = str_repeat('<div>', 250).'x'.str_repeat('</div>', 250);
+        $deep = str_repeat('<div>', 251).'x'.str_repeat('</div>', 251);
 
         expect(sanitizer()->clean($ok))->toBe($ok)
             ->and(sanitizer()->limitViolation($deep))->toBe('depth')
             ->and(fn () => sanitizer()->clean($deep))->toThrow(function (HtmlRejected $e) {
-                expect($e->reason)->toBe('depth')->and($e->limit)->toBe(256);
+                expect($e->reason)->toBe('depth')->and($e->limit)->toBe(250);
             });
     });
+
+    it('is exact at any max_depth, below, at and above the depth where libxml stops by itself', function (int $limit) {
+        // libxml's bounded parse ends at 254 levels; from there on the deep parse must take over,
+        // and nothing may ever be cut off silently.
+        $nested = fn (int $levels) => str_repeat('<div>', $levels).'x'.str_repeat('</div>', $levels).'<p>after</p>';
+        $sanitizer = sanitizer(['max_depth' => $limit]);
+
+        expect($sanitizer->clean($nested($limit)))->toBe($nested($limit))
+            ->and($sanitizer->limitViolation($nested($limit + 1)))->toBe('depth')
+            ->and($sanitizer->limitViolation($nested($limit + 300)))->toBe('depth')
+            // A stray </div> closes Brume's wrapper: the content then sits one level higher for libxml.
+            ->and($sanitizer->clean('</div>'.$nested($limit)))->toBe($nested($limit))
+            ->and($sanitizer->limitViolation('</div>'.$nested($limit + 1)))->toBe('depth');
+    })->with([5, 250, 252, 253, 254, 255, 256, 257, 300]);
+
+    it('knows where libxml stops without LIBXML_PARSEHUGE, and the default max_depth is below it', function () {
+        expect(MeasuringLexer::nativeDepth())->toBeGreaterThan(HtmlSanitizer::DEFAULT_MAX_DEPTH);
+    });
+
+    it('refuses a deep document instead of losing its tail when a hook turns the deep parse off', function () {
+        $hook = fn (HTMLPurifier_Config $config) => $config->set('Core.AllowParseManyTags', false);
+        $nested = fn (int $levels) => str_repeat('<div>', $levels).'x'.str_repeat('</div>', $levels).'<p>after</p>';
+        $sanitizer = sanitizer(['configure' => $hook, 'max_depth' => null]);
+
+        expect($sanitizer->clean($nested(200)))->toBe($nested(200))
+            ->and($sanitizer->limitViolation($nested(300)))->toBe('depth');
+    });
+
+    it('rejects end tags that close nothing under thousands of open elements without paying for them', function (string $expression) {
+        // libxml searches every open element for each such end tag: 1–2 s for these inputs when
+        // it is allowed to nest without limit. Its own depth limit ends the parse at once.
+        [$exit, $result, $ms, $mb] = cleanInChild($expression);
+
+        expect($exit)->toBe(0)
+            ->and($result)->toBe('rejected:depth')
+            ->and($ms)->toBeLessThan(300.0)
+            ->and($mb)->toBeLessThan(20.0);
+    })->with([
+        "str_repeat('<i></b>', 42857)",
+        "str_repeat('<span></p>', 30000)",
+        "'<table>'.str_repeat('</td><div>x', 23802)",
+        "str_repeat('<div>', 255).str_repeat('<b></i>', 42000)",
+    ]);
 
     it('lets max_depth null allow any depth', function () {
         $html = str_repeat('<div>', 1000).'x'.str_repeat('</div>', 1000);
@@ -1075,7 +1485,7 @@ describe('input limits', function () {
         };
         $start = microtime(true);
 
-        TagScanner::prepareLinks($html);
+        TagScanner::prepareLinks($html, TagScanner::aliasFor($html));
 
         expect(microtime(true) - $start)->toBeLessThan(0.5);
     })->with(['random bytes', 'open brackets', 'unterminated quotes', 'unterminated single quotes', 'comment openers', 'bogus comments', 'tags', 'links']);
@@ -1126,7 +1536,7 @@ it('is idempotent, safe and never nests links on random tag soup', function () {
 
             expect($sanitizer->clean((string) $once))->toBe($once);
             if ($once !== null) {
-                expect($once)->not->toMatch('/<(script|style|svg|noscript|textarea)|\son\w+=|brumelink/i')
+                expect($once)->not->toMatch('/<(script|style|svg|noscript|textarea)|\son\w+=|<brumelink|brumea[0-9a-f]{24}/i')
                     ->not->toMatch('/<a\b[^>]*>(?:(?!<\/a>).)*<a\b/s');
             }
         }

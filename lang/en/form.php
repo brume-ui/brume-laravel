@@ -18,4 +18,5 @@ return [
     'rich_text_bytes' => 'The :attribute content is too large to save.',
     'rich_text_depth' => 'The :attribute content is nested too deeply to save.',
     'rich_text_elements' => 'The :attribute content has too many elements to save.',
+    'rich_text_attributes' => 'The :attribute content has an attribute that is too long, or too many classes on one element, to save.',
 ];

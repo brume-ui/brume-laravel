@@ -3,6 +3,7 @@
 namespace Brume\Html;
 
 use Generator;
+use LogicException;
 
 /**
  * A forward-only, byte-level pass over raw HTML that finds tags without building a tree, used
@@ -21,22 +22,20 @@ use Generator;
 final class TagScanner
 {
     /**
-     * Names used for `a` while libxml parses, each mapped back to `a` by a tag transform. A clean
-     * uses the first one the input does not contain anywhere, so mapping an escaped alias in the
-     * output back to `a` can never touch text the author wrote.
+     * The name used for `a` while libxml parses this input (a tag transform maps it back): a hash
+     * of the input, re-picked until the input does not contain it, so it is the same on every
+     * clean of the same input and can never be something the author wrote.
      */
-    public const LINK_ALIASES = ['brumelink', 'brumeanchor', 'brumehref'];
-
-    /** The alias for this input (see LINK_ALIASES); the first one if the input contains all three. */
     public static function aliasFor(string $html): string
     {
-        foreach (self::LINK_ALIASES as $alias) {
+        for ($attempt = 0; $attempt < 64; $attempt++) {
+            $alias = 'brumea'.substr(hash('sha256', $attempt.':'.$html), 0, 24);
             if (stripos($html, $alias) === false) {
                 return $alias;
             }
         }
 
-        return self::LINK_ALIASES[0];
+        throw new LogicException('No link alias found for this input.');
     }
 
     /**
@@ -47,15 +46,14 @@ final class TagScanner
      *    closes an open `a` before a `<table>` or another `<a>`; an element it does not know keeps
      *    the nesting as written.
      */
-    public static function prepareLinks(string $html, string $alias = self::LINK_ALIASES[0]): string
+    public static function prepareLinks(string $html, string $alias): string
     {
         $out = '';
         $last = 0;
         /** @var list<bool> $open true = kept, false = removed */
         $open = [];
         foreach (self::tags($html) as [$lt, $gt, $nameStart, $name, $closing, $selfClosed]) {
-            // An alias spelt out in the input is a link too, or it would escape the nesting check.
-            if ($name !== 'a' && ! in_array($name, self::LINK_ALIASES, true)) {
+            if ($name !== 'a') {
                 continue;
             }
             $remove = $closing ? (array_pop($open) === false) : in_array(true, $open, true);

@@ -443,11 +443,14 @@ it('rejects over-limit submissions with a translated validation error and never 
     '300 nested divs' => [fn () => richDeep(300), 'depth'],
     '300 nested empty divs' => [fn () => richDeep(300, ''), 'depth'],
     '25,000 flat elements' => [fn () => str_repeat('<b>x</b>', 25_000), 'elements'],
+    'a 9 KB attribute value' => [fn () => '<p title="'.str_repeat('a', 9_000).'">x</p>', 'attributes'],
+    '300 classes on one element' => [fn () => '<p class="'.implode(' ', range(1000, 1299)).'">x</p>', 'attributes'],
+    'a formatting tag with a 1 KB class around 2,000 blocks' => [fn () => '<b class="'.str_repeat('a', 1_000).'">'.str_repeat('<div>x</div>', 2_000), 'bytes'],
 ])->with(['optional' => false, 'required' => true]);
 
 it('translates the limit messages', function (string $locale) {
     app()->setLocale($locale);
-    foreach (['bytes', 'depth', 'elements'] as $reason) {
+    foreach (['bytes', 'depth', 'elements', 'attributes'] as $reason) {
         expect(__('brume::form.rich_text_'.$reason, ['attribute' => 'X']))->not->toBe('brume::form.rich_text_'.$reason)->toContain('X');
     }
 })->with(['en', 'zh_TW', 'zh_CN']);

@@ -811,7 +811,13 @@ every write went through this sanitiser.
   `editor()` stores its text unsanitised. Do not combine them, and escape such columns on output.
 - **`allow_fixed => true`** lets content pin blocks over the whole viewport (full-screen overlays).
 - **The `configure` hook** can widen the whitelist; whatever it allows is the host's risk. It must
-  not rely on owning `AutoFormat.Custom`: Brume appends its own injectors after the hook runs.
+  not rely on owning `AutoFormat.Custom` or `Core.LexerImpl`: Brume appends its own injectors and
+  sets its lexer after the hook runs. A hook that finalises the config or builds the HTML
+  definition (`finalize()`, `getHTMLDefinition()`) makes every clean throw a `LogicException`,
+  because the limits could no longer be installed; reading directives with `get()` is fine.
+- **Raised limits.** The time and memory figures below hold for the defaults. `null` for
+  `max_attribute_bytes` or `max_classes` leaves only the byte budget; `null` for `max_bytes`
+  removes that budget too.
 - **Classes.** With `allowed_classes => null` (the default) content may use any class of your
   storefront stylesheet, including ones that hide or reposition things. Give a list to restrict.
 - **Layout inside the content.** Absolutely positioned overlays (within the content, `z-index` up
@@ -859,24 +865,68 @@ The output renders the same as the input but is not byte-identical:
 - a `<tfoot>` written after `<tbody>` moves before it; a stray `<col>` outside a table is dropped;
 - a link nested inside a link is unwrapped, keeping its text.
 
+One structure does not survive: a list or table written *inside* `b`, `i`, `u`, `s`, `em` or
+`strong` is flattened to its text (`<b><ul><li>x</li></ul></b>` becomes `<b></b><b>x</b>`), because
+HTMLPurifier cannot repeat the formatting inside list items and cells the way it does inside
+paragraphs. Put the formatting inside the items or cells. Inside `a`, `span`, table cells and
+`caption`, block content of any kind is kept as written.
+
 Cleaning is idempotent: saving a cleaned value again changes nothing.
 
-**Limits.** Three limits bound what one value may cost to clean; the defaults are about ten times
+**Limits.** Five limits bound what one value may cost to clean; the defaults are about ten times
 the largest real legacy document we measured (23 KB, shallow) while keeping a 128 MB PHP worker
-safe on the densest markup that fits under them:
+safe on the worst markup that fits under them:
 
-- `max_bytes` (300,000): the raw input size, checked first, before anything is parsed.
-- `max_depth` (256): element nesting, measured on the tree the parser builds (tags it closes
-  itself, like an unclosed `<li>` or `<p>`, do not add up).
+- `max_bytes` (300,000): the raw input size, checked first, before anything is parsed. It is also
+  the budget for the cleaning itself (see below), and the result has to fit in it again.
+- `max_depth` (250): element nesting, measured on the tree the parser builds (tags it closes
+  itself, like an unclosed `<li>` or `<p>`, do not add up). The default sits below the parser's own
+  limit of 254 levels, so a document that is too deep is refused within milliseconds. Above 253,
+  or with `null`, the parser has to read a hostile document to the end first, which can take
+  seconds.
 - `max_elements` (20,000): elements counted on HTMLPurifier's *projected output*, so heavily nested
   formatting around many blocks (which is split and repeated, see above) is rejected earlier than
   its raw tag count suggests. The result is checked again.
+- `max_attribute_bytes` (8,192): the longest single attribute value, measured as parsed; the
+  longest in our legacy samples is a 212-byte `style`. One tag may also not hold more than
+  `max_attribute_bytes ÷ 8` words (1,024: attribute names and the words inside their values).
+- `max_classes` (200): classes on one element (the samples have at most 3).
+
+**The byte budget.** Formatting wrapped around blocks is repeated inside and after every block
+*with its attributes*: `<b class="…1 KB…">` around 1,000 paragraphs would be 2 MB of output from
+13 KB of input. So before cleaning, and again while HTMLPurifier works, Brume adds up the bytes of
+everything that will be written (each tag with its attributes, each repeated copy, and the text)
+and refuses the value when that passes 4 × `max_bytes`. The sum is deliberately generous, so a
+document that simply fits `max_bytes` is never refused by it: a `style`, `href` or `src` counts
+three times its length (cleaning may lengthen it), and more copies are assumed than are usually
+made. Every attribute is validated in time proportional to its length, including the class list.
+
+`HtmlSanitizer::limitViolation()` names the limit: `'bytes'` (the input, the budget or the result),
+`'depth'`, `'elements'`, or `'attributes'` (`max_attribute_bytes`, `max_classes`, or the words in
+one tag). A value whose attribute only passes the limit before cleaning (a 6 KB URL of non-ASCII
+characters is 18 KB once percent-encoded) is refused too, since its result could not be read back.
+
+What the defaults accept in practice, measured with 34-byte paragraphs:
+
+| Paragraphs written… | Accepted | What stops the next one |
+|---|---|---|
+| plain, inside `div`, `span` or `a` | 8,823 (300 KB) | `max_bytes` on the input |
+| in table cells, one per row | 5,768 (300 KB) | `max_bytes` on the input |
+| inside `<strong>` | 4,411 (150 KB in, 300 KB out) | `max_bytes` on the result: every paragraph gets its own `<strong>` |
+| inside `<strong class="lead">` | 3,191 (109 KB in, 300 KB out) | the same, with the class repeated |
+| inside `<strong><em>` | 2,222 (76 KB in, 191 KB out) | `max_elements`: 20,000 projected, 11,112 really written |
+
+Cleaning the worst input we could find that the defaults accept (30,000 searched, in a 128 MB
+process) takes about 0.7 s and 53 MB on top of the framework; a full 300 KB document of plain
+paragraphs or links takes about 0.35 s and 45 MB. Refusing a value takes
+milliseconds when a limit is passed in the input itself; a value that is only found too large once
+it has been cleaned costs as much as an accepted one.
 
 A save over a limit returns 422 with a field error. Because the cleaned result is checked against
 the same limits, a value that saved can always be read back. A *stored* value over a limit (legacy
 data, a raw write) loads as an empty editor with a logged warning, so the page still opens; saving
 the form without new content does not overwrite it, only new non-empty content replaces it. Raise a
-limit only if real content needs it; memory grows with it.
+limit only if real content needs it; memory and time grow with it.
 
 `config('brume.html')` (defaults):
 
@@ -886,9 +936,11 @@ limit only if real content needs it; memory grows with it.
 | `allowed_classes` | `null` | `null` keeps any class; a list keeps only those |
 | `iframe_regexp` | YouTube `/embed/<11-char id>` | iframe `src` must match; `null` allows no iframe |
 | `reserved_names` | `[]` | extra values refused for `id`, `input[name]`, `label[for]` (`'prefix*'` matches a prefix) |
-| `max_bytes` | `300_000` | input size limit; `null` disables |
-| `max_depth` | `256` | nesting limit; `null` disables (tens of thousands of levels can crash PHP) |
+| `max_bytes` | `300_000` | input size limit, and a quarter of the byte budget for cleaning; `null` disables both |
+| `max_depth` | `250` | nesting limit; above 253 refusing a deep document gets slow; `null` disables (tens of thousands of levels can crash PHP) |
 | `max_elements` | `20_000` | projected element limit; `null` disables |
+| `max_attribute_bytes` | `8_192` | longest attribute value, and ÷ 8 the words in one tag; `null` disables |
+| `max_classes` | `200` | classes on one element; `null` disables |
 | `cache_path` | `null` | `storage/framework/cache/brume-htmlpurifier`, created on demand; `false` disables |
 | `configure` | `null` | `callable(HTMLPurifier_Config)`, runs after Brume's settings, before the definition is built |
 | `configure_version` | `null` | part of the definition cache key; change it when the hook's behaviour changes |

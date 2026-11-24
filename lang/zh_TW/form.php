@@ -18,4 +18,5 @@ return [
     'rich_text_bytes' => ':attribute 的內容過大，無法儲存。',
     'rich_text_depth' => ':attribute 的內容巢狀過深，無法儲存。',
     'rich_text_elements' => ':attribute 的內容元素過多，無法儲存。',
+    'rich_text_attributes' => ':attribute 的內容含有過長的屬性值，或單一元素的 class 過多，無法儲存。',
 ];

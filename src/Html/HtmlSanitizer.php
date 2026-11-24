@@ -9,12 +9,15 @@ use HTMLPurifier_AttrDef;
 use HTMLPurifier_AttrDef_CSS_AlphaValue;
 use HTMLPurifier_AttrDef_CSS_ImportantDecorator;
 use HTMLPurifier_AttrDef_Enum;
+use HTMLPurifier_AttrDef_HTML_Class;
 use HTMLPurifier_AttrDef_HTML_ID;
 use HTMLPurifier_AttrTransform_ImgRequired;
 use HTMLPurifier_ChildDef_Required;
 use HTMLPurifier_Config;
 use HTMLPurifier_Context;
+use HTMLPurifier_Exception;
 use HTMLPurifier_TagTransform_Simple;
+use LogicException;
 use ReflectionFunction;
 use Throwable;
 
@@ -29,7 +32,7 @@ use Throwable;
 final class HtmlSanitizer
 {
     /** Bump when the definition built below changes, so cached definitions are rebuilt. */
-    private const SCHEMA = 4;
+    private const SCHEMA = 5;
 
     private const ELEMENTS = [
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li',
@@ -87,9 +90,27 @@ final class HtmlSanitizer
 
     public const DEFAULT_MAX_BYTES = 300_000;
 
-    public const DEFAULT_MAX_DEPTH = 256;
+    /**
+     * Below libxml's own nesting limit (254 inside Brume's wrapper), so that libxml's bounded parse
+     * is enough to tell a document is too deep ({@see MeasuringLexer::measure()}).
+     */
+    public const DEFAULT_MAX_DEPTH = 250;
 
     public const DEFAULT_MAX_ELEMENTS = 20_000;
+
+    /** Longest single attribute value, in bytes as parsed (entities decoded). */
+    public const DEFAULT_MAX_ATTRIBUTE_BYTES = 8_192;
+
+    /** Most classes on one element. */
+    public const DEFAULT_MAX_CLASSES = 200;
+
+    /**
+     * HTMLPurifier may emit at most this many times max_bytes (elements with their attributes,
+     * and text), counted before and while it works. The result itself must fit max_bytes; the
+     * factor only leaves room for the projection being an upper bound (it charges a rewritten
+     * style or URL three times, and more reopened copies than are really made).
+     */
+    public const OUTPUT_BUDGET_FACTOR = 4;
 
     private bool $allowFixed;
 
@@ -105,6 +126,10 @@ final class HtmlSanitizer
     private ?int $maxDepth;
 
     private ?int $maxElements;
+
+    private ?int $maxAttributeBytes;
+
+    private ?int $maxClasses;
 
     private ?MeasuringLexer $lexer = null;
 
@@ -131,7 +156,7 @@ final class HtmlSanitizer
     private ?HTMLPurifier $purifier = null;
 
     /**
-     * @param  array{allow_fixed?: bool, allowed_classes?: list<string>|null, iframe_regexp?: string|null, cache_path?: string|false|null, max_bytes?: int|null, max_depth?: int|null, max_elements?: int|null, reserved_names?: list<string>, configure?: (callable(HTMLPurifier_Config): void)|null, configure_version?: string|int|null}  $options
+     * @param  array{allow_fixed?: bool, allowed_classes?: list<string>|null, iframe_regexp?: string|null, cache_path?: string|false|null, max_bytes?: int|null, max_depth?: int|null, max_elements?: int|null, max_attribute_bytes?: int|null, max_classes?: int|null, reserved_names?: list<string>, configure?: (callable(HTMLPurifier_Config): void)|null, configure_version?: string|int|null}  $options
      */
     public function __construct(array $options = [])
     {
@@ -144,6 +169,8 @@ final class HtmlSanitizer
         $this->maxBytes = array_key_exists('max_bytes', $options) ? self::limit($options['max_bytes']) : self::DEFAULT_MAX_BYTES;
         $this->maxDepth = array_key_exists('max_depth', $options) ? self::limit($options['max_depth']) : self::DEFAULT_MAX_DEPTH;
         $this->maxElements = array_key_exists('max_elements', $options) ? self::limit($options['max_elements']) : self::DEFAULT_MAX_ELEMENTS;
+        $this->maxAttributeBytes = array_key_exists('max_attribute_bytes', $options) ? self::limit($options['max_attribute_bytes']) : self::DEFAULT_MAX_ATTRIBUTE_BYTES;
+        $this->maxClasses = array_key_exists('max_classes', $options) ? self::limit($options['max_classes']) : self::DEFAULT_MAX_CLASSES;
         $this->projection = (bool) ($options['projection'] ?? true);
         $this->reservedNames = array_values(array_unique([...self::RESERVED_NAMES, ...array_map('strval', $options['reserved_names'] ?? [])]));
         $this->configure = $options['configure'] ?? null;
@@ -195,8 +222,9 @@ final class HtmlSanitizer
         if ($this->maxBytes !== null && strlen($html) > $this->maxBytes) {
             throw new HtmlRejected('bytes', $this->maxBytes);
         }
-        // Depth and element count are measured by the lexer on the tree it parses, before
-        // HTMLPurifier's later stages run (MeasuringLexer throws HtmlRejected).
+        // Depth, element count, attribute sizes and the bytes HTMLPurifier would emit are measured
+        // by the lexer on the tree it parses, before HTMLPurifier's later stages run
+        // (MeasuringLexer throws HtmlRejected).
         $clean = $this->purify(self::scrub($html));
         $unwrapped = self::unwrapNestedLinks($clean);
         if ($unwrapped !== $clean) {
@@ -211,7 +239,7 @@ final class HtmlSanitizer
         }
         $violation = $this->measuredViolation($clean);
         if ($violation !== null) {
-            throw new HtmlRejected($violation, $this->limitFor($violation));
+            throw $violation;
         }
 
         return $clean;
@@ -219,34 +247,45 @@ final class HtmlSanitizer
 
     private function purify(string $html): string
     {
-        $alias = TagScanner::aliasFor($html);
         $purifier = $this->purifier();
+        $alias = TagScanner::aliasFor($html);
+        // libxml sees links under a name this input does not contain; the definition maps it back.
+        $definition = $purifier->config->getHTMLDefinition();
+        $definition->info_tag_transform[$alias] = new HTMLPurifier_TagTransform_Simple('a');
+        $this->lexer->alias = $alias;
         // MakeWellFormed skips its injectors entirely when there are no tokens.
-        $this->budget->count = 0;
-        $clean = $purifier->purify(TagScanner::prepareLinks($html, $alias));
+        $this->budget->count = $this->budget->bytes = 0;
+        $runs = $this->lexer->runs;
+        try {
+            $clean = $purifier->purify(TagScanner::prepareLinks($html, $alias));
+        } finally {
+            unset($definition->info_tag_transform[$alias]);
+        }
+        if ($this->lexer->runs === $runs) {
+            throw new LogicException('HTMLPurifier did not use Brume\'s lexer, so the brume.html limits were not applied; the configure hook must not replace or finalise the config.');
+        }
 
         // Where TagScanner renamed an `a` that libxml then read as text (a CDATA section, say), the
-        // alias would show escaped in the output; spell it as the author wrote it. The alias is one
-        // the input does not contain, so text the author wrote is never touched.
-        return stripos($clean, $alias) !== false
-            ? str_ireplace(['&lt;'.$alias, '&lt;/'.$alias], ['&lt;a', '&lt;/a'], $clean)
-            : $clean;
+        // alias would show in the output; spell it as the author wrote it. The input does not
+        // contain the alias, so text the author wrote is never touched.
+        return stripos($clean, $alias) !== false ? str_ireplace($alias, 'a', $clean) : $clean;
     }
 
     /**
-     * Depth, element count and projected element count (see MeasuringLexer) of what clean()
-     * would hand HTMLPurifier.
+     * Depth, element count, projected element count and projected output bytes (see
+     * MeasuringLexer) of what clean() would hand HTMLPurifier.
      *
      * @internal
      *
-     * @return array{depth: int, elements: int, projected: int}
+     * @return array{depth: int, elements: int, projected: int, bytes: int}
      */
     public function treeStats(string $html): array
     {
         $html = self::scrub($html);
         $config = $this->purifier()->config;
+        $this->lexer->alias = $alias = TagScanner::aliasFor($html);
 
-        return $this->lexer->stats(TagScanner::prepareLinks($html, TagScanner::aliasFor($html)), $config, new HTMLPurifier_Context);
+        return $this->lexer->stats(TagScanner::prepareLinks($html, $alias), $config, new HTMLPurifier_Context);
     }
 
     /**
@@ -260,13 +299,29 @@ final class HtmlSanitizer
     }
 
     /**
-     * Which limit clean() refuses this input for: 'bytes' (over max_bytes; checked first, nothing
-     * parsed), 'depth' (deeper than max_depth) or 'elements' (more than max_elements), both
-     * measured on the tree libxml builds from exactly what HTMLPurifier would lex, and again on
-     * the result. null when clean() accepts it. It is clean() with the exception caught (and
-     * memoised), so validation and saving can never disagree.
+     * Bytes charged against the output budget in the last clean: the tags and attributes of every
+     * element MakeWellFormed emitted, and the text (see ElementBudgetInjector).
      *
-     * @return 'bytes'|'depth'|'elements'|null
+     * @internal
+     */
+    public function lastByteCount(): int
+    {
+        return $this->budget?->bytes ?? 0;
+    }
+
+    /**
+     * Which limit clean() refuses this input for, null when clean() accepts it:
+     *  - 'bytes': over max_bytes (checked first, nothing parsed), or HTMLPurifier would have to
+     *    emit more than OUTPUT_BUDGET_FACTOR × max_bytes to clean it;
+     *  - 'depth': deeper than max_depth;
+     *  - 'elements': more than max_elements, as parsed or as HTMLPurifier would emit;
+     *  - 'attributes': an attribute value over max_attribute_bytes, more than max_classes classes
+     *    on one element, or a tag crowded with more than max_attribute_bytes ÷ 8 words.
+     * All but the first are measured on the tree libxml builds from exactly what HTMLPurifier
+     * would lex, and again on the result. It is clean() with the exception caught (and memoised),
+     * so validation and saving can never disagree.
+     *
+     * @return 'bytes'|'depth'|'elements'|'attributes'|null
      */
     public function limitViolation(?string $html): ?string
     {
@@ -279,34 +334,17 @@ final class HtmlSanitizer
         return null;
     }
 
-    /**
-     * The limits clean() checks on its input, applied to a string without purifying it.
-     *
-     * @return 'bytes'|'depth'|'elements'|null
-     */
-    private function measuredViolation(string $html): ?string
+    /** The limits clean() checks on its input, applied to a string without purifying it. */
+    private function measuredViolation(string $html): ?HtmlRejected
     {
         if ($this->maxBytes !== null && strlen($html) > $this->maxBytes) {
-            return 'bytes';
-        }
-        if ($this->maxDepth === null && $this->maxElements === null) {
-            return null;
+            return new HtmlRejected('bytes', $this->maxBytes);
         }
         $config = $this->purifier()->config;
-
         $html = self::scrub($html);
+        $this->lexer->alias = $alias = TagScanner::aliasFor($html);
 
-        return $this->lexer->violation(TagScanner::prepareLinks($html, TagScanner::aliasFor($html)), $config, new HTMLPurifier_Context);
-    }
-
-    /** @param 'bytes'|'depth'|'elements' $reason */
-    private function limitFor(string $reason): int
-    {
-        return (int) match ($reason) {
-            'bytes' => $this->maxBytes,
-            'depth' => $this->maxDepth,
-            'elements' => $this->maxElements,
-        };
+        return $this->lexer->violation(TagScanner::prepareLinks($html, $alias), $config, new HTMLPurifier_Context);
     }
 
     /**
@@ -440,9 +478,11 @@ final class HtmlSanitizer
         // Every set() must happen before maybeGetRawHTMLDefinition().
         $config->set('Core.Encoding', 'UTF-8');
         // Lexing stays with libxml (DOMLex): HTMLPurifier's DirectLex ends a tag at the first `>`,
-        // even inside a quoted value, and would mangle `alt="A > B"`. libxml stops at depth 256
-        // counting its own wrapper elements and silently drops the rest; max_depth guards depth
-        // instead (with max_depth null, tens of thousands of levels can crash the process).
+        // even inside a quoted value, and would mangle `alt="A > B"`. Without this flag libxml stops
+        // at depth 256, counting its own wrapper elements, and silently drops the rest.
+        // MeasuringLexer uses that stop to refuse deep documents cheaply, and parses again with
+        // the flag only when max_depth allows more than libxml's limit (with max_depth null, tens
+        // of thousands of levels can crash the process).
         $config->set('Core.AllowParseManyTags', true);
         // HTML 4.01 serialises void elements as <br>, <img …> and boolean attributes minimised.
         // Transitional keeps u, s, target, table border/cellpadding, ol type.
@@ -485,9 +525,20 @@ final class HtmlSanitizer
 
         if ($this->configure !== null) {
             ($this->configure)($config);
+            // A finalised config ignores every later set(): the lexer and injector that enforce the
+            // limits could not be installed (and with a quiet error handler, nobody would notice).
+            if ($config->isFinalized()) {
+                throw new LogicException('The brume.html.configure hook finalised the HTMLPurifier config (finalize(), or autoFinalize = true before a get()). Only set() directives there: Brume still has to install its limits.');
+            }
+            $config->autoFinalize = false;
         }
 
-        if ($def = $config->maybeGetRawHTMLDefinition()) {
+        try {
+            $def = $config->maybeGetRawHTMLDefinition();
+        } catch (HTMLPurifier_Exception $e) {
+            throw new LogicException('The brume.html.configure hook built the HTML definition (getHTMLDefinition() or getDefinition()), so Brume can no longer shape it. Only set() directives there. ['.$e->getMessage().']', 0, $e);
+        }
+        if ($def) {
             $defined = $def->getAnonymousModule()->info;
             $def->addAttribute('iframe', 'allowfullscreen', 'Bool');
             $def->addAttribute('iframe', 'loading', 'Enum#lazy,eager');
@@ -508,11 +559,9 @@ final class HtmlSanitizer
             // lists, tables, divs. HTML 4's inline-only model would split them apart. `Flow`
             // alone omits text, hence #PCDATA. A link nested in a link stays nested here (no
             // `excludes`, which would delete the inner subtree); TagScanner::prepareLinks() unwraps
-            // it beforehand. libxml sees links as one of TagScanner::LINK_ALIASES; this maps them back.
-            foreach (TagScanner::LINK_ALIASES as $alias) {
-                $def->getAnonymousModule()->info_tag_transform[$alias] = new HTMLPurifier_TagTransform_Simple('a');
-            }
-            foreach (['a', 'span'] as $name) {
+            // it beforehand. A caption takes flow content too, as in HTML5: with HTML 4's
+            // inline-only model, a block inside it would close the caption and the whole table.
+            foreach (['a', 'span', 'caption'] as $name) {
                 $flow = $def->addBlankElement($name);
                 $flow->content_model = '#PCDATA | Flow';
                 $flow->content_model_type = 'optional';
@@ -522,14 +571,19 @@ final class HtmlSanitizer
             }
         }
         // Set last, after the hook, so the limits always apply.
-        $this->lexer = new MeasuringLexer($this->maxDepth, $this->maxElements, $this->projection);
+        $byteBudget = $this->maxBytes === null ? null : self::OUTPUT_BUDGET_FACTOR * $this->maxBytes;
+        $this->lexer = new MeasuringLexer($this->maxDepth, $this->maxElements, $this->projection, $this->maxAttributeBytes, $this->maxClasses, $byteBudget, $this->maxBytes);
         $config->set('Core.LexerImpl', $this->lexer);
-        $this->budget = new ElementBudgetInjector($this->maxElements ?? PHP_INT_MAX);
+        $this->budget = new ElementBudgetInjector($this->maxElements ?? PHP_INT_MAX, $byteBudget ?? PHP_INT_MAX, $this->maxBytes ?? 0);
         $config->set('AutoFormat.Custom', [...$config->get('AutoFormat.Custom'), $this->budget, new StrayColumnInjector]);
         // With autoFinalize off, batch reads (getBatch, used by MakeWellFormed for the injectors)
         // come from a cache that only a get() refreshes; without this the sets above are invisible.
         $config->get('Core.Encoding');
         $config->finalize();
+        // Checked, not assumed: a set() that did not take must never leave the limits off.
+        if ($config->get('Core.LexerImpl') !== $this->lexer || ! in_array($this->budget, $config->get('AutoFormat.Custom'), true)) {
+            throw new LogicException('Brume could not install its limits in the HTMLPurifier config; the brume.html.configure hook must only set() directives.');
+        }
 
         $html = $config->getHTMLDefinition();
         // Not cached by HTMLPurifier, so applied on every build:
@@ -546,6 +600,13 @@ final class HtmlSanitizer
             if (is_object($element->child) && get_class($element->child) === HTMLPurifier_ChildDef_Required::class) {
                 $element->child = new StrictRequiredChildDef($element->child->elements);
             }
+        }
+        // The stock class definition drops duplicates with a quadratic search.
+        $classes = new ClassList;
+        $linear = fn (mixed $def) => is_object($def) && get_class($def) === HTMLPurifier_AttrDef_HTML_Class::class ? $classes : $def;
+        $html->info_global_attr = array_map($linear, $html->info_global_attr);
+        foreach ($html->info as $element) {
+            $element->attr = array_map($linear, $element->attr);
         }
         // An iframe whose src was rejected would otherwise stay as an empty shell.
         if (isset($html->info['iframe'])) {
