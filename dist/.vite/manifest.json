@@ -175,25 +175,25 @@
     "file": "assets/jf-openhuninn-41-82g8MxRC.woff2",
     "src": "frontend/node_modules/@brume-ui/brume-react/dist/fonts/jf-openhuninn-41.woff2"
   },
-  "frontend/node_modules/@brume-ui/brume-react/dist/jodit-editor-5CCBKT5C.js": {
-    "file": "assets/jodit-editor-5CCBKT5C-BErJ3jF9.js",
-    "name": "jodit-editor-5CCBKT5C",
-    "src": "frontend/node_modules/@brume-ui/brume-react/dist/jodit-editor-5CCBKT5C.js",
+  "frontend/node_modules/@brume-ui/brume-react/dist/jodit-editor-IFXWPJGI.js": {
+    "file": "assets/jodit-editor-IFXWPJGI-CsvsA42Y.js",
+    "name": "jodit-editor-IFXWPJGI",
+    "src": "frontend/node_modules/@brume-ui/brume-react/dist/jodit-editor-IFXWPJGI.js",
     "isDynamicEntry": true,
     "imports": [
       "stubs/frontend/app.tsx"
     ],
     "css": [
-      "assets/jodit-editor-5CCBKT5C-DKTewm5W.css"
+      "assets/jodit-editor-IFXWPJGI-DKTewm5W.css"
     ]
   },
   "stubs/frontend/app.tsx": {
-    "file": "assets/app-BxvHmJ9w.js",
+    "file": "assets/app-B9C6XeMu.js",
     "name": "app",
     "src": "stubs/frontend/app.tsx",
     "isEntry": true,
     "dynamicImports": [
-      "frontend/node_modules/@brume-ui/brume-react/dist/jodit-editor-5CCBKT5C.js"
+      "frontend/node_modules/@brume-ui/brume-react/dist/jodit-editor-IFXWPJGI.js"
     ],
     "css": [
       "assets/app-CHUXn0Zp.css"
