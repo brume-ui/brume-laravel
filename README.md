@@ -487,7 +487,7 @@ to the login page; paths outside the prefix are left to Laravel.
 
 These are planned for later sub-plans and phases:
 
-- **Color picker and Show pages**: phase 3. (Rich text is available: see [Rich text](#rich-text).)
+- **Show pages**: phase 3. (Rich text and the colour picker are available: see [Rich text](#rich-text) and [Color, telephone and HTML blocks](#color-telephone-and-html-blocks).)
 - **Custom calendars**: native `date` / `datetime-local` inputs are retained; revisit after user trials.
 - **DialogTree**: phase 3. (Drag ordering and tree lists are available: see 拖曳排序.)
 
@@ -727,8 +727,8 @@ names. `create` and `edit` render the generic `brume/page` Inertia component.
 Fields: `text`, `textarea`, `email`, `url`, `mobile`, `password`, `hidden`, `display`, `number`,
 `decimal`, `currency`, `date`, `datetime`, `dateRange`, `datetimeRange`, `select`, `multipleSelect`,
 `radio`, `checkbox`, `switch`, `tags`, `image`, `multipleImage`, `file`, `multipleFile`, `editor`
-(rich text, see below).
-Use `section`, `row`, `columns`/`column`, `block`, `divider`, `embeds` and `tabs` to arrange them.
+(rich text, see below), `color`, `tel` (see [Color, telephone and HTML blocks](#color-telephone-and-html-blocks)).
+Use `section`, `row`, `columns`/`column`, `block`, `divider`, `html`, `embeds` and `tabs` to arrange them.
 `layout('stacked'|'horizontal')`, `presentation('auto'|'modal'|'page')` and `size('auto'|'sm'|'md'|'lg')`
 control presentation; auto uses page mode with three sections or more than sixteen fields.
 
@@ -759,6 +759,42 @@ Uploads accept `field` and `file` at the schema's `uploadUrl`. Use `accept`, `ma
 `sortable` and `extra` to configure them. Configure `brume.uploads.disk`, `temp_disk`, TTL,
 connection allowlist and cleanup scheduling as described below; run Laravel's scheduler so the
 hourly `brume:uploads:clean` can execute. Resource forms set their stable identity automatically.
+
+### Color, telephone and HTML blocks
+
+| Declaration | Stores | Notes |
+| --- | --- | --- |
+| `$form->color('label_color', '標籤顏色')` | `#rrggbb` or `null` | Lowercase long form. `->alpha()` also allows `#rrggbbaa`; `->swatches(['#e53935', ...])` adds a row of presets in the picker popover. `#ABC` is expanded to `#aabbcc` on blur (client) and on save (server); anything else is a 422. Swatches may be 3, 4, 6 or 8 digits; an 8-digit swatch needs `alpha()`. |
+| `$form->tel('contact_tel', '聯絡電話')` | the text as typed, or `null` | Surrounding spaces are rejected on both sides. `->pattern()` replaces the default pattern entirely. |
+| `$form->html('<p>...</p>')` | nothing | A read-only note between fields. Takes a string, an `Htmlable`, or a closure `fn (?Model $record)` (the record is `null` on the create page). |
+
+`color` and `tel` are plain fields, so they also work inside Action forms, quick create, upload
+extras, JSON repeater rows and relation rows. `html` is a layout node like `divider`: it is ignored
+by validation and by tabbed sections, and is not allowed in Action forms, quick create or upload extras.
+
+**The tel default is Taiwan-shaped.** It accepts `02-2345-6789`, `02-2345-6789#123`, `(04)2345678`,
+`0912-345-678` and `+886 2 2345 6789`, with an optional extension (`#`, `ext`, `分機` or `轉`), and
+rejects `abc`. For other countries, `->pattern('^\\+?[0-9 ()-]{6,20}$')` replaces it (a bare pattern without delimiters,
+written to work in both PCRE and JavaScript with the `u` flag; every pattern rule is anchored, so
+a trailing newline never passes). Addresses are not a field: use the `TaiwanAddress` custom field
+shown under "Register fields and displays in a custom frontend".
+
+**`html()` content is developer-trusted on the server and whitelisted in the browser.** The server
+sends your string as it is; the browser parses it into an inert document and rebuilds only these
+elements as React elements (no `dangerouslySetInnerHTML`): `p br strong b em i u s code small span a ul ol li`.
+The only attribute kept is `href` on `a`, and only for `http:`, `https:`, `mailto:`, `tel:` or a
+path starting with a single `/`; every kept link gets `rel="noopener noreferrer"` (and
+`target="_blank"` when the source had it). `script style iframe object embed template noscript svg
+math title textarea select` are dropped with their content, and any other element is unwrapped
+(its children stay). Escape interpolated data with `e()`:
+
+```php
+$form->html(fn (?Order $order) => '<p>目前狀態：<strong>'.e($order?->status ?? '尚未建立').'</strong></p>');
+```
+
+**Coming from Dcat's `$form->html()`?** Tables, forms and anything built in PHP with classes or
+inline styles will not survive the whitelist. Put such markup in a registered component and use
+`$form->component(...)` (see "Register a custom component").
 
 ### Rich text
 
