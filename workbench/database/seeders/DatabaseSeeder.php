@@ -94,6 +94,11 @@ class DatabaseSeeder extends Seeder
                 ];
             }))
             ->create();
+
+        // Fixed demo numbers (no Faker draws): a landline with an extension, a bracketed area code and an international prefix.
+        foreach (['02-2345-6789#123', '(04)2345-6789', '+886 2 8765 4321'] as $index => $tel) {
+            ShowcaseItem::query()->whereKey($index + 1)->update(['contact_tel' => $tel]);
+        }
     }
 
     /**

@@ -54,6 +54,7 @@ class CatalogSeeder extends Seeder
 
             CatalogProduct::query()->updateOrCreate(['identifier' => sprintf('DEMO-%03d', $i)], [
                 'name' => sprintf('示範商品 %03d', $i),
+                'label_color' => [1 => '#e53935', 2 => '#1e88e5', 3 => '#43a047'][$i] ?? null,
                 'barcode' => sprintf('471000%07d', $i),
                 'is_published' => $i % 4 !== 0,
                 'price' => 50 + $i * 15,

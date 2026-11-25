@@ -72,12 +72,14 @@ class ProductController extends Resource
             $form->number('stock', '庫存')->min(0)->required()->default(0)->readOnly($erpLocked);
             $form->text('barcode', '條碼')->maxLength(50);
             $form->switch('is_published', '上架')->default(false);
+            $form->color('label_color', '標籤顏色')->swatches(['#e53935', '#fb8c00', '#fdd835', '#43a047', '#00897b', '#1e88e5', '#8e24aa', '#546e7a']);
             $form->display('erp_updated_at', 'ERP 同步時間')->value(fn (CatalogProduct $product) => $product->erp_updated_at?->format('Y-m-d H:i'));
             // Written by the ERP sync only: a read-only editor shows the stored HTML (sanitised).
             $form->editor('erp_note', 'ERP 備註')->readOnly()->withoutImages()->contentCss(self::STOREFRONT_CSS)
                 ->help('由 ERP 同步，後台唯讀。');
         });
         $form->section('商品介紹', function (Form $form) {
+            $form->html('<p>撰寫商品說明前，請先參考<a href="/admin/product-categories">商品分類</a>的命名規則；圖片與標題請維持與其他商品一致。</p>');
             $form->editor('description', '商品說明')->height(520)->contentCss(self::STOREFRONT_CSS)->maxSize(2048)
                 ->help('貼上或拖放的圖片會立即上傳（JPEG、PNG、GIF、WebP，2 MB 以內）。');
             // A JSON repeater whose answers are editors: required, and without image uploads.

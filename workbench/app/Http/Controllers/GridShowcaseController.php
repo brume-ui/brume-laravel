@@ -149,10 +149,12 @@ class GridShowcaseController extends Resource
         $form->section('其他', function (Form $form) {
             $form->email('contact_email', '聯絡信箱');
             $form->mobile('contact_mobile', '聯絡手機');
+            $form->tel('contact_tel', '聯絡電話')->help('市話可加分機，例如 02-2345-6789#123。');
             $form->url('website', '網站');
             $form->embeds('meta', '附加資訊', function (Form $form) {
                 $form->select('color', '顏色')->options(array_map(fn (array $color) => $color[0], ShowcaseItem::COLORS))->default('teal');
                 $form->textarea('note', '附註')->maxLength(500);
+                $form->color('accent', '強調色')->alpha();
             });
             $form->password('secret_note', '秘密備註')->maxLength(255);
             $form->divider();
