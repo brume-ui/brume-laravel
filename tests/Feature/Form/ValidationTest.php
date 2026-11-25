@@ -36,7 +36,7 @@ it('matches client and server messages', function ($locale, $method, $configure,
         $client = collect(ClientRules::for($field, 'value', null))->firstWhere('rule', $rule);
         expect($client['message'])->toBe($e->errors()['value'][0]);
     }
-})->with(['en', 'zh_TW'])->with([
+})->with(['en', 'zh_TW', 'zh_CN'])->with([
     ['text', fn ($f) => $f->required(), '', 'required'],
     ['text', fn ($f) => $f->minLength(3), 'a', 'minLength'],
     ['text', fn ($f) => $f->rules('max:2'), 'abc', 'maxLength'],
@@ -47,6 +47,9 @@ it('matches client and server messages', function ($locale, $method, $configure,
     ['number', fn ($f) => $f->max(3), 4, 'max'],
     ['text', fn ($f) => $f->rules('numeric'), 'abc', 'numeric'],
     ['mobile', fn ($f) => $f, '912345678', 'pattern'],
+    ['tel', fn ($f) => $f, 'abc', 'pattern'],
+    ['color', fn ($f) => $f, 'red', 'pattern'],
+    ['tel', fn ($f) => $f->pattern('^\\d{4}$', '請輸入四位數'), '12', 'pattern'],
     ['multipleFile', fn ($f) => $f->max(1), [['token' => 'a'], ['token' => 'b']], 'maxFiles'],
     ['text', fn ($f) => $f->required()->messages(['required' => '請填名稱']), '', 'required'],
 ]);

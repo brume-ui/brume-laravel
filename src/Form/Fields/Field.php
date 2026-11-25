@@ -152,7 +152,7 @@ class Field
             }
         }
         if ($this->validationPattern() !== null) {
-            $rules[] = 'regex:~'.str_replace('~', '\\~', $this->validationPattern()).'~u';
+            $rules[] = 'regex:~'.str_replace('~', '\\~', $this->validationPattern()).'~uD';
         }
 
         return $rules;
@@ -382,6 +382,12 @@ class Field
         $this->writer = $fn;
 
         return $this;
+    }
+
+    /** A validated submitted value in the form it is stored. Fields without a canonical form keep it. */
+    public function canonicalInput(mixed $value): mixed
+    {
+        return $value;
     }
 
     public function fill(Model $record, mixed $value): void

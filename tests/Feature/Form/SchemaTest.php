@@ -35,7 +35,7 @@ it('serializes every field variant exactly', function (string $method, array $ex
         'image', 'multipleImage', 'file', 'multipleFile' => 'upload', 'switch' => 'switch', 'editor' => 'richText', default => $method
     }, 'name' => 'value', 'label' => 'Value'] + $extra);
 })->with([
-    ['text', []], ['textarea', []], ['email', []], ['url', []], ['mobile', []], ['password', []], ['hidden', []], ['display', []], ['number', []], ['decimal', ['decimals' => 2]], ['currency', ['decimals' => 0, 'symbol' => 'NT$']], ['date', []], ['datetime', []], ['dateRange', []], ['datetimeRange', []], ['select', ['options' => []]], ['multipleSelect', ['options' => []]], ['radio', ['options' => []]], ['checkbox', ['options' => []]], ['switch', []], ['tags', []],
+    ['text', []], ['textarea', []], ['email', []], ['url', []], ['mobile', []], ['password', []], ['hidden', []], ['display', []], ['number', []], ['decimal', ['decimals' => 2]], ['currency', ['decimals' => 0, 'symbol' => 'NT$']], ['date', []], ['datetime', []], ['dateRange', []], ['datetimeRange', []], ['select', ['options' => []]], ['multipleSelect', ['options' => []]], ['radio', ['options' => []]], ['checkbox', ['options' => []]], ['switch', []], ['tags', []], ['color', []], ['tel', []],
     ['image', ['kind' => 'image', 'multiple' => false, 'accept' => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], 'maxSize' => 10485760]],
     ['multipleImage', ['kind' => 'image', 'multiple' => true, 'accept' => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], 'maxSize' => 10485760]],
     ['file', ['kind' => 'file', 'multiple' => false, 'accept' => [], 'maxSize' => 10485760]],

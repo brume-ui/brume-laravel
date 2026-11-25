@@ -78,7 +78,14 @@ class Action
             throw ValidationException::withMessages(['input' => 'Input must be an object.']);
         }
 
-        return FormValidator::validateFields($this->inputForm->fields(), $raw, null, $model);
+        $input = FormValidator::validateFields($this->inputForm->fields(), $raw, null, $model);
+        foreach ($this->inputForm->fields() as $name => $field) {
+            if (array_key_exists($name, $input)) {
+                $input[$name] = $field->canonicalInput($input[$name]);
+            }
+        }
+
+        return $input;
     }
 
     final public function __construct(protected string $key, protected string $label)

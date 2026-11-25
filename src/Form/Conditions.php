@@ -177,7 +177,7 @@ final readonly class Conditions implements JsonSerializable
         if (in_array($type, ['multipleSelect', 'checkbox', 'tags'], true)) {
             return [is_array($value) && array_is_list($value) && count(array_filter($value, 'is_string')) === count($value), $value];
         }
-        if (in_array($type, ['text', 'textarea', 'richText', 'email', 'url', 'mobile', 'password', 'select', 'radio', 'date', 'datetime'], true)) {
+        if (in_array($type, ['text', 'textarea', 'richText', 'email', 'url', 'mobile', 'tel', 'color', 'password', 'select', 'radio', 'date', 'datetime'], true)) {
             return [is_string($value), $value];
         }
 

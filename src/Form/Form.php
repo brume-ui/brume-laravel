@@ -10,6 +10,7 @@ use Brume\Form\Fields\Upload;
 use Brume\Options\OptionSource;
 use Brume\Support\Href;
 use Closure;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -509,6 +510,16 @@ class Form implements Renderable, Responsable
         return $this->add(new Fields\Mobile($name, $label));
     }
 
+    public function color(string $name, ?string $label = null): Fields\Color
+    {
+        return $this->add(new Fields\Color($name, $label));
+    }
+
+    public function tel(string $name, ?string $label = null): Fields\Tel
+    {
+        return $this->add(new Fields\Tel($name, $label));
+    }
+
     public function password(string $name, ?string $label = null): Fields\Password
     {
         return $this->add(new Fields\Password($name, $label));
@@ -682,6 +693,17 @@ class Form implements Renderable, Responsable
         return $this;
     }
 
+    /** A read-only block of rich copy. The frontend whitelist is authoritative; nothing is sanitised here. */
+    public function html(string|Htmlable|Closure $html, ?string $label = null): static
+    {
+        if (in_array($this->context, ['row', 'columns'], true)) {
+            throw new InvalidArgumentException('Html block cannot be used here.');
+        }
+        $this->nodes[] = new FormNode('html', ['html' => $html] + ($label !== null ? ['label' => $label] : []));
+
+        return $this;
+    }
+
     public function embeds(string $name, string $label, Closure $fields): static
     {
         Field::assertPath($name);
@@ -706,7 +728,7 @@ class Form implements Renderable, Responsable
     public function plainFields(): array
     {
         foreach ($this->nodes as $node) {
-            if (! $node instanceof Field || ! in_array($node->type(), ['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'dateRange', 'datetimeRange', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags'], true) || (method_exists($node, 'optionSource') && $node->optionSource() !== null) || isset($node->settings()['excludeSelectedIn']) || str_contains($node->name(), '.')) {
+            if (! $node instanceof Field || ! in_array($node->type(), ['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'dateRange', 'datetimeRange', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'color', 'tel'], true) || (method_exists($node, 'optionSource') && $node->optionSource() !== null) || isset($node->settings()['excludeSelectedIn']) || str_contains($node->name(), '.')) {
                 throw new InvalidArgumentException('Upload extras must be flat non-upload fields.');
             }
         }
