@@ -152,7 +152,7 @@ class Field
             }
         }
         if ($this->validationPattern() !== null) {
-            $rules[] = 'regex:~'.str_replace('~', '\\~', $this->validationPattern()).'~uD';
+            $rules[] = 'regex:~'.preg_replace('/(?<!\\\\)((?:\\\\\\\\)*)~/', '$1\\\\~', $this->validationPattern()).'~uD';
         }
 
         return $rules;

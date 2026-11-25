@@ -21,7 +21,11 @@ class Tel extends Field
 
     public function canonicalInput(mixed $value): mixed
     {
-        return is_string($value) ? trim($value) : $value;
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        return trim($value) === '' ? null : trim($value);
     }
 
     public function fill(Model $record, mixed $value): void

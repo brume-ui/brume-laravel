@@ -4,6 +4,7 @@ namespace Brume\Form\Fields;
 
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
+use LogicException;
 
 /** A colour stored as canonical lowercase `#rrggbb` (`#rrggbbaa` when alpha is allowed). */
 class Color extends Field
@@ -66,9 +67,19 @@ class Color extends Field
     }
 
     /** Same rule as the frontend normalizeHex, except that a missing `#` is not added. */
+    public function pattern(string $regex, ?string $message = null): static
+    {
+        throw new LogicException('A colour field has a fixed format; use alpha() to allow transparency.');
+    }
+
+    /** Blank and unrecognisable strings become null: validation rejects the latter before this runs. */
     public function canonicalInput(mixed $value): mixed
     {
-        return is_string($value) ? (self::canonical($value, $this->schema['alpha'] ?? false, false) ?? $value) : $value;
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        return trim($value) === '' ? null : self::canonical($value, $this->schema['alpha'] ?? false, false);
     }
 
     public function fill(Model $record, mixed $value): void

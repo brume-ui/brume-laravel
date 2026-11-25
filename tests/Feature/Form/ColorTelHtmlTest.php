@@ -2,6 +2,7 @@
 
 use Brume\BrumeManager;
 use Brume\Form\ClientRules;
+use Brume\Form\Fields\Color;
 use Brume\Form\Form;
 use Brume\Form\FormSaver;
 use Brume\Form\FormValidator;
@@ -381,3 +382,47 @@ it('keeps html out of validation, fields and saving', function () {
     $schema = $form->toSchema(Request::create('/'));
     expect($schema['values'])->not->toHaveKey('html')->and($schema['form']['nodes'][2]['field']['nodes'][0])->toBe(['type' => 'html', 'html' => '<p>row note</p>']);
 });
+
+it('stores null for blank colour and tel input', function (string $type, string $blank) {
+    $post = CtPost::create(['title' => 'old']);
+    $form = ctForm($post);
+    $form->$type('title');
+    ctSave($form, $post, ['title' => $blank]);
+    expect($post->fresh()->title)->toBeNull();
+})->with([['color', ''], ['color', '   '], ['color', "\t"], ['tel', ''], ['tel', '   '], ['tel', "\t"]]);
+
+it('passes null for blank colour and tel action input', function (string $blank) {
+    $this->actingAs(brumeUser(), 'brume');
+    $item = CellItem::create(['shop_id' => 1, 'customer' => 'Ada']);
+    $seen = (object) ['input' => null];
+    Route::middleware(['web', 'brume.auth', HandleBrumeRequests::class])->group(fn () => Route::brumeGrid('ct-blank', function () use ($seen) {
+        $grid = Grid::make(CellItem::class);
+        $grid->column('customer');
+        $grid->rowActions(Action::make('paint', 'Paint')->form(function (Form $form) {
+            $form->color('tint');
+            $form->tel('phone');
+        })->handle(function ($models, $request, array $input) use ($seen) {
+            $seen->input = $input;
+        }));
+
+        return $grid;
+    }));
+    $this->postJson('/ct-blank/_brume/actions/paint', ['target' => 'row', 'ids' => [$item->id], 'input' => ['tint' => $blank, 'phone' => $blank]])->assertOk();
+    expect($seen->input)->toBe(['tint' => null, 'phone' => null]);
+})->with(['', '   ']);
+
+it('does not support a custom pattern on a colour field', function () {
+    expect(fn () => Form::make(CtPost::class)->color('title')->pattern('^#fff$'))->toThrow(LogicException::class);
+});
+
+it('never returns a non-canonical colour from canonicalInput', function () {
+    expect((new Color('c'))->canonicalInput('red'))->toBeNull();
+});
+
+it('escapes only unescaped tildes in custom patterns', function (string $pattern, string $ok, string $bad) {
+    foreach (['text', 'tel'] as $type) {
+        $form = Form::make(CtPost::class);
+        $form->$type('v')->pattern($pattern);
+        expect(ctErrors($form, ['v' => $ok]))->toBe([])->and(ctErrors($form, ['v' => $bad]))->toHaveKey('v');
+    }
+})->with([['^a~b$', 'a~b', 'ab'], ['^a\~b$', 'a~b', 'ab'], ['^a\\\\~b$', 'a\~b', 'a~b']]);
