@@ -765,7 +765,7 @@ hourly `brume:uploads:clean` can execute. Resource forms set their stable identi
 | Declaration | Stores | Notes |
 | --- | --- | --- |
 | `$form->color('label_color', '標籤顏色')` | `#rrggbb` or `null` | Lowercase long form. `->alpha()` also allows `#rrggbbaa`; `->swatches(['#e53935', ...])` adds a row of presets in the picker popover. `#ABC` is expanded to `#aabbcc` on blur (client) and on save (server); anything else is a 422. Swatches may be 3, 4, 6 or 8 digits; an 8-digit swatch needs `alpha()`. |
-| `$form->tel('contact_tel', '聯絡電話')` | the text as typed, or `null` | The browser validates the text as typed, so surrounding spaces fail there; the server stores the value trimmed (and Laravel's `TrimStrings` middleware, when enabled, trims before validation). `->pattern()` replaces the default pattern entirely. |
+| `$form->tel('contact_tel', '聯絡電話')` | the text as typed, or `null` | The browser validates the text as typed, so surrounding spaces fail there. The server also validates the value as received (already trimmed when Laravel's `TrimStrings` middleware is enabled) and stores it trimmed. `->pattern()` replaces the default pattern entirely. |
 | `$form->html('<p>...</p>')` | nothing | A read-only note between fields. Takes a string, an `Htmlable`, or a closure `fn (?Model $record)` (the record is `null` on the create page). |
 
 `color()` does not accept `->pattern()` (its format is fixed; use `alpha()` for transparency).
