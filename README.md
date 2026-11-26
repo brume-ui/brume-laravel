@@ -765,8 +765,10 @@ hourly `brume:uploads:clean` can execute. Resource forms set their stable identi
 | Declaration | Stores | Notes |
 | --- | --- | --- |
 | `$form->color('label_color', '標籤顏色')` | `#rrggbb` or `null` | Lowercase long form. `->alpha()` also allows `#rrggbbaa`; `->swatches(['#e53935', ...])` adds a row of presets in the picker popover. `#ABC` is expanded to `#aabbcc` on blur (client) and on save (server); anything else is a 422. Swatches may be 3, 4, 6 or 8 digits; an 8-digit swatch needs `alpha()`. |
-| `$form->tel('contact_tel', '聯絡電話')` | the text as typed, or `null` | Surrounding spaces are rejected on both sides. `->pattern()` replaces the default pattern entirely. |
+| `$form->tel('contact_tel', '聯絡電話')` | the text as typed, or `null` | Validation runs on the text as typed, so surrounding spaces fail the default pattern (client and server alike). `->pattern()` replaces the default pattern entirely. |
 | `$form->html('<p>...</p>')` | nothing | A read-only note between fields. Takes a string, an `Htmlable`, or a closure `fn (?Model $record)` (the record is `null` on the create page). |
+
+`color()` does not accept `->pattern()` (its format is fixed; use `alpha()` for transparency).
 
 `color` and `tel` are plain fields, so they also work inside Action forms, quick create, upload
 extras, JSON repeater rows and relation rows. `html` is a layout node like `divider`: it is ignored
@@ -794,7 +796,7 @@ $form->html(fn (?Order $order) => '<p>目前狀態：<strong>'.e($order?->status
 
 **Coming from Dcat's `$form->html()`?** Tables, forms and anything built in PHP with classes or
 inline styles will not survive the whitelist. Put such markup in a registered component and use
-`$form->component(...)` (see "Register a custom component").
+`$form->component(...)` (see [Register a custom component](#4-register-a-custom-component---frontend-only)).
 
 ### Rich text
 
