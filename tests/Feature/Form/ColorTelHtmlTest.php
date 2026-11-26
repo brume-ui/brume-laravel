@@ -44,7 +44,7 @@ class CtSection extends Model
 
 const COLOR_PATTERN = '^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$';
 const COLOR_ALPHA_PATTERN = '^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$';
-const TEL_PATTERN = '^(?:\\+886[- ]?|\\(?0)\\d{1,3}\\)?[- ]?\\d{2,4}[- ]?\\d{3,4}(?:(?:#| ?ext\\.? ?| ?分機 ?| ?轉 ?)\\d{1,6})?$';
+const TEL_PATTERN = '^(?:\\+886[- ]?|\\(?0)[0-9]{1,3}\\)?[- ]?[0-9]{2,4}[- ]?[0-9]{3,4}(?:(?:#| ?ext\\.? ?| ?分機 ?| ?轉 ?)[0-9]{1,6})?$';
 
 function ctForm(?CtPost $record = null): Form
 {
@@ -211,7 +211,7 @@ it('accepts and rejects tel numbers as the pattern says', function (string $inpu
 })->with([
     ['02-2345-6789#123', true], ['(04)2345678', true], ['0912-345-678', true], ['+886 2 2345 6789', true],
     ['+886-2-2345-6789', true], ['0223456789', true], ['02-2345-6789 ext. 12', true], ['02-2345-6789 分機 12', true], ['02-2345-6789轉12', true],
-    ['abc', false], [str_repeat('1', 60), false], ['  02-2345-6789  ', false], ["02-2345-6789\n", false],
+    ['abc', false], ['0９12-345-678', false], ['02-2345-6789#１２', false], [str_repeat('1', 60), false], ['  02-2345-6789  ', false], ["02-2345-6789\n", false],
     ['02-2345-6789#', false], ['02-2345-6789#1234567', false], ['886223456789', false],
 ]);
 
@@ -419,10 +419,17 @@ it('never returns a non-canonical colour from canonicalInput', function () {
     expect((new Color('c'))->canonicalInput('red'))->toBeNull();
 });
 
-it('escapes only unescaped tildes in custom patterns', function (string $pattern, string $ok, string $bad) {
+it('escapes only unescaped tildes in custom patterns on the server', function (string $pattern, string $ok, string $bad) {
     foreach (['text', 'tel'] as $type) {
         $form = Form::make(CtPost::class);
         $form->$type('v')->pattern($pattern);
         expect(ctErrors($form, ['v' => $ok]))->toBe([])->and(ctErrors($form, ['v' => $bad]))->toHaveKey('v');
     }
 })->with([['^a~b$', 'a~b', 'ab'], ['^a\~b$', 'a~b', 'ab'], ['^a\\\\~b$', 'a\~b', 'a~b']]);
+
+it('rejects full-width digits in the mobile default', function () {
+    $form = Form::make(CtPost::class);
+    $form->mobile('notes');
+    expect(ctErrors($form, ['notes' => '0912345678']))->toBe([])->and(ctErrors($form, ['notes' => '０９１２３４５６７８']))->toHaveKey('notes')
+        ->and(ctErrors($form, ['notes' => '09123456７8']))->toHaveKey('notes');
+});

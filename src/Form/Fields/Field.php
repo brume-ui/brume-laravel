@@ -118,7 +118,7 @@ class Field
 
     public function validationPattern(): ?string
     {
-        return $this->patternSource ?? ($this->type() === 'mobile' ? '^09\\d{8}$' : null);
+        return $this->patternSource ?? ($this->type() === 'mobile' ? '^09[0-9]{8}$' : null);
     }
 
     public function isEditable(?Model $record): bool

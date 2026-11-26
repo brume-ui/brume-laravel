@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 /** A telephone number kept as typed (trimmed). An explicit pattern() replaces the default. */
 class Tel extends Field
 {
-    public const PATTERN = '^(?:\\+886[- ]?|\\(?0)\\d{1,3}\\)?[- ]?\\d{2,4}[- ]?\\d{3,4}(?:(?:#| ?ext\\.? ?| ?分機 ?| ?轉 ?)\\d{1,6})?$';
+    public const PATTERN = '^(?:\\+886[- ]?|\\(?0)[0-9]{1,3}\\)?[- ]?[0-9]{2,4}[- ]?[0-9]{3,4}(?:(?:#| ?ext\\.? ?| ?分機 ?| ?轉 ?)[0-9]{1,6})?$';
 
     public function type(): string
     {

@@ -58,7 +58,7 @@ it('accepts the mobile pattern and preserves its public source', function () {
     $form = Form::make(User::class);
     $field = $form->mobile('phone');
     expect(FormValidator::validate($form, ['phone' => '0912345678']))->toBe(['phone' => '0912345678'])
-        ->and(ClientRules::for($field, 'phone', null)[0]['pattern'])->toBe('^09\\d{8}$');
+        ->and(ClientRules::for($field, 'phone', null)[0]['pattern'])->toBe('^09[0-9]{8}$');
 });
 
 it('validates nested ranges and strict choice shapes', function ($method, $value, $path) {
