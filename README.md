@@ -765,10 +765,14 @@ hourly `brume:uploads:clean` can execute. Resource forms set their stable identi
 | Declaration | Stores | Notes |
 | --- | --- | --- |
 | `$form->color('label_color', '標籤顏色')` | `#rrggbb` or `null` | Lowercase long form. `->alpha()` also allows `#rrggbbaa`; `->swatches(['#e53935', ...])` adds a row of presets in the picker popover. `#ABC` is expanded to `#aabbcc` on blur (client) and on save (server); anything else is a 422. Swatches may be 3, 4, 6 or 8 digits; an 8-digit swatch needs `alpha()`. |
-| `$form->tel('contact_tel', '聯絡電話')` | the text as typed, or `null` | Validation runs on the text as typed, so surrounding spaces fail the default pattern (client and server alike). `->pattern()` replaces the default pattern entirely. |
+| `$form->tel('contact_tel', '聯絡電話')` | the text as typed, or `null` | The browser validates the text as typed, so surrounding spaces fail there; the server stores the value trimmed (and Laravel's `TrimStrings` middleware, when enabled, trims before validation). `->pattern()` replaces the default pattern entirely. |
 | `$form->html('<p>...</p>')` | nothing | A read-only note between fields. Takes a string, an `Htmlable`, or a closure `fn (?Model $record)` (the record is `null` on the create page). |
 
 `color()` does not accept `->pattern()` (its format is fixed; use `alpha()` for transparency).
+
+The `submitted` and `saving` hooks see the raw input (`#ABC`, an untrimmed tel); the canonical value is
+what gets written. Migrating: stored colour values that are not hex (`rgba(...)`, named colours) load as
+typed and block saving that record until they are corrected.
 
 `color` and `tel` are plain fields, so they also work inside Action forms, quick create, upload
 extras, JSON repeater rows and relation rows. `html` is a layout node like `divider`: it is ignored
@@ -777,8 +781,11 @@ by validation and by tabbed sections, and is not allowed in Action forms, quick 
 **The tel default is Taiwan-shaped.** It accepts `02-2345-6789`, `02-2345-6789#123`, `(04)2345678`,
 `0912-345-678` and `+886 2 2345 6789`, with an optional extension (`#`, `ext`, `分機` or `轉`), and
 rejects `abc`. For other countries, `->pattern('^\\+?[0-9 ()-]{6,20}$')` replaces it (a bare pattern without delimiters,
-written to work in both PCRE and JavaScript with the `u` flag; every pattern rule is anchored, so
-a trailing newline never passes). Addresses are not a field: use the `TaiwanAddress` custom field
+written to work in both PCRE and JavaScript with the `u` flag). Write the `^…$` anchors yourself; the
+server compiles the pattern with the `D` modifier, so `$` never accepts a trailing newline, but nothing
+is anchored for you. Write `~` unescaped: a `\~` is a syntax error in the browser's unicode regex and the
+field would reject everything. Use `[0-9]` rather than `\d` if full-width digits must be refused,
+since PHP's `\d` matches them under `u` (the built-in tel and mobile patterns already do). Addresses are not a field: use the `TaiwanAddress` custom field
 shown under "Register fields and displays in a custom frontend".
 
 **`html()` content is developer-trusted on the server and whitelisted in the browser.** The server
@@ -788,7 +795,11 @@ The only attribute kept is `href` on `a`, and only for `http:`, `https:`, `mailt
 path starting with a single `/`; every kept link gets `rel="noopener noreferrer"` (and
 `target="_blank"` when the source had it). `script style iframe object embed template noscript svg
 math title textarea select` are dropped with their content, and any other element is unwrapped
-(its children stay). Escape interpolated data with `e()`:
+(its children stay). The whitelist stops script, not link or text injection from unescaped record
+data, so escape interpolated data with `e()`. Links with a relative path without a leading `/`, a
+`#fragment` or a `?query` lose their `href`, and input beyond 100,000 characters is cut. Inside a JSON
+repeater row the closure receives the root record; inside a relation row it receives `null`, so do not
+rely on the root model there:
 
 ```php
 $form->html(fn (?Order $order) => '<p>目前狀態：<strong>'.e($order?->status ?? '尚未建立').'</strong></p>');
