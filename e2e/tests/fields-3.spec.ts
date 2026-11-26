@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { login, useScheme } from './support';
 
 // Colour, telephone and html block against the real backend. 商品 label colour: DEMO-008 / DEMO-009
@@ -26,6 +26,8 @@ async function save(page: Page, path: string) {
 }
 
 const colorBox = (page: Page) => page.getByRole('textbox', { name: '標籤顏色', exact: true });
+/** The field wrapper around a control, so alerts are asserted on that field only. */
+const fieldOf = (control: Locator) => control.locator('xpath=ancestor::*[@data-field-layout][1]');
 const chip = (page: Page) => page.getByRole('button', { name: '標籤顏色：開啟色盤' });
 
 test('a typed #ABC is canonicalised, saved and reloaded as #aabbcc', async ({ page }) => {
@@ -54,14 +56,26 @@ test('a swatch pick is saved and reloaded', async ({ page }) => {
 });
 
 test('an invalid colour is refused before anything is stored', async ({ page }) => {
+  const writes: string[] = [];
+  page.on('request', (r) => {
+    if (['PUT', 'POST'].includes(r.method())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`);
+  });
   await openProduct(page, 9);
+  await colorBox(page).fill('#0a0b0c');
+  await page.keyboard.press('Tab');
+  expect((await save(page, '/admin/products/9')).ok()).toBe(true);
+  await openProduct(page, 9);
+  await expect(colorBox(page)).toHaveValue('#0a0b0c');
+
+  writes.length = 0;
   await colorBox(page).fill('#12345');
   await page.keyboard.press('Tab');
   await expect(colorBox(page)).toHaveAttribute('aria-invalid', 'true');
   await page.getByRole('button', { name: '儲存', exact: true }).click();
-  await expect(page.getByRole('alert').filter({ hasText: /顏色/ }).first()).toBeVisible();
+  await expect(fieldOf(colorBox(page)).getByText('標籤顏色的格式不正確。', { exact: true })).toBeVisible();
+  expect(writes).toEqual([]);
   await openProduct(page, 9);
-  await expect(colorBox(page)).toHaveValue('#8e24aa');
+  await expect(colorBox(page)).toHaveValue('#0a0b0c');
 });
 
 test('the html note shows its link, with only whitelisted markup', async ({ page }) => {
@@ -84,10 +98,15 @@ test('a telephone with an extension is saved; abc is refused', async ({ page }) 
   await openItem(page, 20);
   await expect(tel).toHaveValue('02-2345-6789#123');
 
+  const writes: string[] = [];
+  page.on('request', (r) => {
+    if (['PUT', 'POST'].includes(r.method())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`);
+  });
   await tel.fill('abc');
   await page.getByRole('button', { name: '儲存', exact: true }).click();
   await expect(tel).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.getByRole('alert').filter({ hasText: /電話|格式|regex/i }).first()).toBeVisible();
+  await expect(fieldOf(tel).getByText('聯絡電話的格式不正確。', { exact: true })).toBeVisible();
+  expect(writes).toEqual([]);
   await openItem(page, 20);
   await expect(tel).toHaveValue('02-2345-6789#123');
 });
@@ -124,7 +143,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(colorBox(page)).toHaveValue('#1e88e5');
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await page.evaluate(() => document.fonts.ready);
-      const field = colorBox(page).locator('xpath=ancestor::*[@data-field-layout][1]');
+      const field = fieldOf(colorBox(page));
       await field.scrollIntoViewIfNeeded();
       await expect(field).toHaveScreenshot(`fields-3-label-color-${scheme}-${width}.png`, { animations: 'disabled' });
     });
