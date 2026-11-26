@@ -66,7 +66,6 @@ class Color extends Field
         return parent::toSchema($record);
     }
 
-    /** Same rule as the frontend normalizeHex, except that a missing `#` is not added. */
     public function pattern(string $regex, ?string $message = null): static
     {
         throw new LogicException('A colour field has a fixed format; use alpha() to allow transparency.');
@@ -87,6 +86,7 @@ class Color extends Field
         parent::fill($record, $this->canonicalInput($value));
     }
 
+    /** Same rule as the frontend normalizeHex, except that a missing `#` is not added. */
     private static function canonical(string $input, bool $alpha, bool $optionalHash = true): ?string
     {
         $body = trim($input);
