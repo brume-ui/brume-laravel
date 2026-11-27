@@ -24,7 +24,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: ["grid.spec.ts", "form.spec.ts", "composition.spec.ts", "polish.spec.ts", "catalog.spec.ts", "promotions.spec.ts", "ordering.spec.ts", "rich-text.spec.ts", "fields-3.spec.ts", "precompiled.spec.ts"],
+      testIgnore: ["grid.spec.ts", "form.spec.ts", "composition.spec.ts", "polish.spec.ts", "catalog.spec.ts", "promotions.spec.ts", "ordering.spec.ts", "rich-text.spec.ts", "fields-3.spec.ts", "fields-4.spec.ts", "precompiled.spec.ts"],
     },
     // grid.spec.ts ships and deletes seeded orders, which the dashboard and 訂單 checks above
     // count on, so it runs once they are done.
@@ -60,8 +60,10 @@ export default defineConfig({
     { name: 'rich-text', use: { ...devices['Desktop Chrome'] }, testMatch: 'rich-text.spec.ts', dependencies: ['ordering'], retries: 0, fullyParallel: false },
     // Colour, telephone and html block: 商品 label colour (DEMO-008/009 are written, DEMO-002 is read) and Grid 示範 items 20/21.
     { name: 'fields-3', use: { ...devices['Desktop Chrome'] }, testMatch: 'fields-3.spec.ts', dependencies: ['rich-text'], retries: 0, fullyParallel: false },
+    // Small input fields on Grid 示範 items 30/31 (seeded items 1-3 are read) and the 驗證碼示範 form.
+    { name: 'fields-4', use: { ...devices['Desktop Chrome'] }, testMatch: 'fields-4.spec.ts', dependencies: ['fields-3'], retries: 0, fullyParallel: false },
     // The committed dist/ (precompiled mode) in a real browser: the lazy editor chunk and its CSS.
-    { name: 'precompiled', use: { ...devices['Desktop Chrome'], baseURL: `http://127.0.0.1:${PRECOMPILED_PORT}` }, testMatch: 'precompiled.spec.ts', dependencies: ['fields-3'], retries: 0 },
+    { name: 'precompiled', use: { ...devices['Desktop Chrome'], baseURL: `http://127.0.0.1:${PRECOMPILED_PORT}` }, testMatch: 'precompiled.spec.ts', dependencies: ['fields-4'], retries: 0 },
   ],
   webServer: [
     {
