@@ -40,8 +40,11 @@ class WorkbenchServiceProvider extends ServiceProvider
         // 驗證碼示範: a one-character alphabet makes the answer fixed (7777), so the demo and the e2e
         // suite can solve the captcha. Workbench only; the package never touches this config.
         config(['captcha.characters' => ['7'], 'captcha.default.length' => 4]);
-        // mews/captcha keeps the answer in the cache between the image and the submit, and the
-        // Testbench skeleton's default store (array) forgets it after every request.
+        // mews/captcha keeps the expected answer in the default cache store (it calls the Cache facade,
+        // there is no store option) between the image and the submit, and the Testbench skeleton's
+        // default store (array) forgets it after every request. Side effects of a real store: the
+        // login throttle (5 failed attempts per minute) and the 60/min upload throttle become real
+        // and survive a restart; e2e/serve.sh clears the cache at startup so reruns begin clean.
         config(['cache.default' => 'file']);
 
         $this->loadTranslationsFrom(workbench_path('lang'), 'workbench');

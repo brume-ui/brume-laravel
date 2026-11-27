@@ -33,6 +33,19 @@ async function csrfHeaders(page: Page) {
   const token = decodeURIComponent(cookies.find((c) => c.name === 'XSRF-TOKEN')?.value ?? '');
   return { 'X-XSRF-TOKEN': token, Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
 }
+/** The record's form values as the edit page serves them: a complete, valid payload for a PUT. */
+async function formValues(page: Page, id: number): Promise<Record<string, unknown>> {
+  const response = await page.request.get(`/admin/grid-showcase/${id}/edit`, { headers: { 'X-Brume-Form': '1', Accept: 'application/json' } });
+  expect(response.status()).toBe(200);
+  return (await response.json()).page.values;
+}
+async function putValues(page: Page, id: number, overrides: Record<string, unknown>) {
+  const values = { ...(await formValues(page, id)), ...overrides };
+  return page.request.put(`/admin/grid-showcase/${id}`, { headers: await csrfHeaders(page), data: { values } });
+}
+/** The error text of one field, from its own error element (never its label). */
+const errorOf = (control: Locator) => fieldOf(control).locator('[id$="-error"]');
+
 function trackWrites(page: Page) {
   const writes: string[] = [];
   page.on('request', (r) => {
@@ -104,21 +117,63 @@ test('the 圖示 picker reaches an icon by keyboard and hands focus back', async
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
   await expect(box(page, '圖示')).toHaveValue('lamp-desk');
-  // A name lucide does not have is kept: it loads and saves with the fallback icon.
-  await box(page, '圖示').fill('no-such-icon');
-  expect((await save(page, '/admin/grid-showcase/30')).ok()).toBe(true);
-  await openItem(page, 30);
-  await expect(box(page, '圖示')).toHaveValue('no-such-icon');
+});
+
+// Item 32 carries an unknown icon name and a time with seconds; it is put back after each test.
+test.describe('stored values the form must not change', () => {
+  test.afterEach(async ({ page }) => {
+    expect((await putValues(page, 32, { icon: null, reminder_at: null })).status()).toBe(200);
+  });
+
+  test('an unknown stored icon name keeps its name and shows the fallback glyph', async ({ page }) => {
+    expect((await putValues(page, 32, { icon: 'no-such-icon' })).status()).toBe(200);
+    await openItem(page, 32);
+    const glyph = page.getByRole('button', { name: '圖示：選擇圖示' }).locator('svg');
+    await expect(box(page, '圖示')).toHaveValue('no-such-icon');
+    await expect(glyph).toHaveClass(/lucide-circle\b/);
+    // A known name draws its own glyph, so the circle really is the fallback.
+    await box(page, '圖示').fill('package');
+    await expect(glyph).toHaveClass(/lucide-package\b/);
+    await box(page, '圖示').fill('no-such-icon');
+    expect((await save(page, '/admin/grid-showcase/32')).ok()).toBe(true);
+    expect((await formValues(page, 32)).icon).toBe('no-such-icon');
+  });
+
+  test('a stored 09:05:30 on a field without seconds is sent and saved back unchanged', async ({ page }) => {
+    expect((await putValues(page, 32, { reminder_at: '09:05:30' })).status()).toBe(200);
+    expect((await formValues(page, 32)).reminder_at).toBe('09:05:30');
+    await openItem(page, 32);
+    let sent: unknown;
+    page.on('request', (r) => {
+      if (r.method() === 'PUT') sent = r.postDataJSON()?.values?.reminder_at;
+    });
+    expect((await save(page, '/admin/grid-showcase/32')).ok()).toBe(true);
+    expect(sent).toBe('09:05:30');
+    expect((await formValues(page, 32)).reminder_at).toBe('09:05:30');
+  });
+});
+
+test('an empty slider rests at min and an untouched save stores nothing for it', async ({ page }) => {
+  await openItem(page, 33);
+  expect((await formValues(page, 33)).volume ?? null).toBeNull();
+  await expect(page.getByRole('slider', { name: '音量', exact: true })).toHaveValue('0');
+  let sent: Record<string, unknown> | undefined;
+  page.on('request', (r) => {
+    if (r.method() === 'PUT') sent = r.postDataJSON()?.values;
+  });
+  expect((await save(page, '/admin/grid-showcase/33')).ok()).toBe(true);
+  expect(sent?.volume ?? null).toBeNull();
+  expect((await formValues(page, 33)).volume ?? null).toBeNull();
 });
 
 // The time inputs are native: a malformed time cannot be typed, so the server tests cover it.
 // A range whose start is above its end is reported on the end bound.
-const clientCases: { label: string; name: string; value: string; message: RegExp; flagged?: string }[] = [
-  { label: 'ip', name: '伺服器 IP', value: '256.1.1.1', message: /伺服器 IP/ },
-  { label: 'rate above max', name: '折扣率 %', value: '101', message: /折扣率/ },
-  { label: 'range order', name: '重量範圍（kg）（起）', value: '9', message: /重量範圍/, flagged: '重量範圍（kg）（迄）' },
-  { label: 'icon', name: '圖示', value: 'Not Valid', message: /圖示/ },
-  { label: 'year above max', name: '創立年份', value: '3000', message: /創立年份/ },
+const clientCases: { label: string; name: string; value: string; message: string; flagged?: string }[] = [
+  { label: 'ip', name: '伺服器 IP', value: '256.1.1.1', message: '請輸入有效的 IP 位址' },
+  { label: 'rate above max', name: '折扣率 %', value: '101', message: '折扣率不能大於 100。' },
+  { label: 'range order', name: '重量範圍（kg）（起）', value: '9', message: '結束值不可小於起始值', flagged: '重量範圍（kg）（迄）' },
+  { label: 'icon', name: '圖示', value: 'Not Valid', message: '圖示的格式不正確。' },
+  { label: 'year above max', name: '創立年份', value: '3000', message: '創立年份不能大於 2100。' },
 ];
 
 for (const c of clientCases) {
@@ -131,38 +186,42 @@ for (const c of clientCases) {
     await page.getByRole('button', { name: '儲存', exact: true }).click();
     const flagged = c.flagged ? box(page, c.flagged) : control;
     await expect(flagged).toHaveAttribute('aria-invalid', 'true');
-    await expect(fieldOf(flagged).getByText(c.message).first()).toBeVisible();
+    await expect(errorOf(flagged)).toHaveText(c.message);
     expect(writes).toEqual([]);
   });
 }
 
-test('the server refuses direct writes of every bad small value with 422', async ({ page }) => {
-  const headers = await csrfHeaders(page);
-  const put = (values: object) => page.request.put('/admin/grid-showcase/31', { headers, data: { values } });
-  const response = await put({
-    server_ip: '256.1.1.1',
-    discount_rate: '101',
-    volume: 7,
-    weight: { start: '5', end: '1' },
-    icon: 'Bad Name',
-    reminder_at: '24:00',
-    birth_month: 13,
-    founded_year: 3000,
-    timezone: 'Mars/Base',
-  });
-  expect(response.status()).toBe(422);
-  const { errors } = await response.json();
-  for (const key of ['server_ip', 'discount_rate', 'volume', 'icon', 'reminder_at', 'birth_month', 'founded_year', 'timezone']) {
-    expect(Object.keys(errors), key).toContain(key);
+// Each case sends a complete, valid payload with only the named values bad, and must fail on exactly
+// the expected keys. Volume 36 and 105 are off the step-5 grid or above max, -5 is below min, abc is text.
+const serverCases: { label: string; values: Record<string, unknown>; keys: string[] }[] = [
+  { label: 'ip', values: { server_ip: '256.1.1.1' }, keys: ['server_ip'] },
+  { label: 'ip with a port', values: { server_ip: '10.0.0.1:80' }, keys: ['server_ip'] },
+  { label: 'rate above max', values: { discount_rate: '101' }, keys: ['discount_rate'] },
+  { label: 'slider off the grid', values: { volume: 36 }, keys: ['volume'] },
+  { label: 'slider below min', values: { volume: -5 }, keys: ['volume'] },
+  { label: 'slider above max', values: { volume: 105 }, keys: ['volume'] },
+  { label: 'slider text', values: { volume: 'abc' }, keys: ['volume'] },
+  { label: 'range order', values: { weight: { start: '5', end: '1' } }, keys: ['weight.end'] },
+  { label: 'icon', values: { icon: 'Bad Name' }, keys: ['icon'] },
+  { label: 'time 24:00', values: { reminder_at: '24:00' }, keys: ['reminder_at'] },
+  { label: 'time 9:5', values: { reminder_at: '9:5' }, keys: ['reminder_at'] },
+  { label: 'time range bound', values: { business_hours: { start: '25:00', end: '06:00' } }, keys: ['business_hours.start'] },
+  { label: 'month 13', values: { birth_month: '13' }, keys: ['birth_month'] },
+  { label: 'month padded 07', values: { birth_month: '07' }, keys: ['birth_month'] },
+  { label: 'year above max', values: { founded_year: 3000 }, keys: ['founded_year'] },
+  { label: 'unknown time zone', values: { timezone: 'Mars/Base' }, keys: ['timezone'] },
+];
+
+test('a complete payload is accepted, and every bad small value is refused on its own key only', async ({ page }) => {
+  const before = await formValues(page, 31);
+  expect((await putValues(page, 31, {})).status()).toBe(200);
+  for (const c of serverCases) {
+    const response = await putValues(page, 31, c.values);
+    expect(response.status(), c.label).toBe(422);
+    expect(Object.keys((await response.json()).errors).sort(), c.label).toEqual(c.keys);
   }
-  expect(Object.keys(errors).some((key) => key.startsWith('weight'))).toBe(true);
-  // 35 is off the step-5 grid by a hair, 0.35-style values and text too.
-  for (const volume of [36, -5, 105, 'abc']) {
-    expect((await put({ volume })).status(), String(volume)).toBe(422);
-  }
-  // Nothing was written by the refusals.
-  await openItem(page, 31);
-  await expect(box(page, '伺服器 IP')).not.toHaveValue('256.1.1.1');
+  // Nothing was written by the refusals: the whole record reads back as it was.
+  expect(await formValues(page, 31)).toEqual(before);
 });
 
 test('the 查看商品列表 button is a link to the item list', async ({ page }) => {
@@ -217,7 +276,7 @@ test.describe('captcha', () => {
     const refused = await save(page, '/admin/captcha-demos', 'POST');
     expect(refused.status()).toBe(422);
     expect(Object.keys((await refused.json()).errors)).toEqual(['__captcha__']);
-    await expect(fieldOf(answer).getByRole('alert').or(fieldOf(answer).getByText(/驗證碼/).last()).first()).toBeVisible();
+    await expect(errorOf(answer)).toHaveText('驗證碼 不正確。');
     // The image reloaded (cache-buster on src) and the typed answer was cleared.
     await expect(image).not.toHaveAttribute('src', before ?? '');
     await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
