@@ -523,10 +523,11 @@ it('stores null for a blank time and reads a stored time back in display form', 
 
 it('passes an unparseable stored time through rather than hiding it', function () {
     $post = SmPost::create();
-    $post->forceFill(['opens' => 'noon'])->saveQuietly();
+    // A string column: MySQL refuses a non-time value in a TIME column, SQLite does not.
+    $post->forceFill(['address' => 'noon'])->saveQuietly();
     $form = smForm($post->fresh());
-    $form->time('opens');
-    expect($form->toSchema(Request::create('/'))['values']['opens'])->toBe('noon');
+    $form->time('address');
+    expect($form->toSchema(Request::create('/'))['values']['address'])->toBe('noon');
 });
 
 it('keeps timeRange bounds free of order and normalised', function () {

@@ -17,9 +17,10 @@ else
 fi
 pnpm --dir frontend build:workbench >/dev/null
 # create-sqlite-db + migrate:fresh with the workbench seeder (testbench.yaml workbench.build).
-"${testbench[@]}" workbench:build --no-interaction
+"${testbench[@]}" workbench:build --no-interaction >&2
 # The workbench uses the file cache (captcha answers, throttles): start every run from an empty one.
-"${testbench[@]}" cache:clear --no-interaction >/dev/null
+# (Not `cache:clear`: it exits 1 when the cache directory does not exist yet, as on a fresh checkout.)
+rm -rf vendor/orchestra/testbench-core/laravel/storage/framework/cache/data/*
 
 # `testbench serve` starts the PHP built-in server as a child process, which does not inherit
 # `php -d` flags; an extra ini scan dir does reach it. The leading ':' keeps the default dir.
