@@ -18,6 +18,9 @@ class Captcha extends Field
 {
     public const NAME = '__captcha__';
 
+    /** Session key where Brume's controller records the config and key of the image it served. */
+    public const SESSION_KEY = 'brume.captcha';
+
     /** Test seam for the "package missing" branch; null means ask class_exists(). */
     public static ?Closure $availability = null;
 
@@ -77,6 +80,13 @@ class Captcha extends Field
         if (is_string($answer)) {
             $answer = trim($answer);
             $answer = $answer === '' ? null : $answer;
+        }
+        // Single use, and only an image Brume served for this field's config counts: an image from
+        // another config (`mini` has 3 characters) or from mews's own public route is not accepted.
+        $issued = session()->pull(self::SESSION_KEY);
+        $key = session('captcha.key');
+        if (! is_array($issued) || ($issued['config'] ?? null) !== $this->config || ! is_string($key) || ($issued['key'] ?? null) !== $key) {
+            session()->forget('captcha');
         }
         FormValidator::translations();
         $messages = [];

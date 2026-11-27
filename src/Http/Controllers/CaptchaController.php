@@ -23,6 +23,9 @@ class CaptchaController
         $this->warnWhenCacheCannotPersist();
 
         $response = app('captcha')->create($config);
+        // mews only remembers the last generated key, not the config it came from: record both so a
+        // form can insist on the config it declared (see Captcha::assertAnswer()).
+        session()->put(Captcha::SESSION_KEY, ['config' => $config, 'key' => session('captcha.key')]);
         $response->headers->set('Cache-Control', 'no-store, private');
 
         return $response;

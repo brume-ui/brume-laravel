@@ -32,11 +32,12 @@ class CaptchaPost extends Model
 afterEach(fn () => Captcha::$availability = null);
 
 /** What mews/captcha leaves behind after it drew an image whose text is $text. */
-function captchaIssue(string $text = 'abc12'): void
+function captchaIssue(string $text = 'abc12', string $config = 'default'): void
 {
     $key = Crypt::encrypt(Hash::make($text));
     session()->put('captcha', ['sensitive' => false, 'key' => $key, 'encrypt' => true]);
     Cache::put('captcha_'.md5($key), $text, 60);
+    session()->put(Captcha::SESSION_KEY, ['config' => $config, 'key' => $key]);
 }
 
 function captchaForm(?Model $record = null): Form
@@ -285,4 +286,54 @@ it('enforces the captcha over HTTP on store and update', function () {
 
 it('keeps the image behind the admin login', function () {
     $this->get('/admin/_brume/captcha')->assertRedirect();
+});
+
+it('refuses an answer from another config, from mews own route, and a replay', function () {
+    $form = captchaForm();
+    $answerOf = function (): string {
+        // The cache entry for the current key holds the plain answer.
+        $key = session('captcha.key');
+        $value = Cache::get('captcha_'.md5($key));
+
+        return is_array($value) ? implode('', $value) : (string) $value;
+    };
+    $fails = function (string $answer) use ($form) {
+        try {
+            captchaSave($form, null, ['title' => 'X', '__captcha__' => $answer]);
+        } catch (ValidationException $e) {
+            return array_keys($e->errors()) === ['__captcha__'];
+        }
+
+        return false;
+    };
+
+    // The declared config passes.
+    $this->actingAs(brumeUser(), 'brume');
+    $this->get('/admin/_brume/captcha')->assertOk();
+    $good = $answerOf();
+    expect($fails($good))->toBeFalse()->and(CaptchaPost::count())->toBe(1);
+
+    // Replay of the same answer fails.
+    expect($fails($good))->toBeTrue();
+
+    // An image of another Brume config does not count for a `default` field.
+    $this->get('/admin/_brume/captcha/mini')->assertOk();
+    expect($fails($answerOf()))->toBeTrue();
+
+    // An image made through mews directly (its public route) does not count either.
+    $this->get('/admin/_brume/captcha')->assertOk();
+    app('captcha')->create('default');
+    expect($fails($answerOf()))->toBeTrue();
+
+    // The answer for the same config but a stale Brume record: still fails (key mismatch above), and a
+    // field that declared `flat` accepts only a `flat` image.
+    $flat = Form::make(CaptchaPost::class)->submitTo('put', '/c')->urls(fn ($r) => ['edit' => '/c/'.$r->id]);
+    $flat->text('title');
+    $flat->captcha()->config('flat');
+    $this->get('/admin/_brume/captcha')->assertOk();
+    $text = $answerOf();
+    expect(fn () => captchaSave($flat, null, ['title' => 'Y', '__captcha__' => $text]))->toThrow(ValidationException::class);
+    $this->get('/admin/_brume/captcha/flat')->assertOk();
+    captchaSave($flat, null, ['title' => 'Y', '__captcha__' => $answerOf()]);
+    expect(CaptchaPost::where('title', 'Y')->count())->toBe(1);
 });
