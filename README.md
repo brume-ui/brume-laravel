@@ -487,7 +487,7 @@ to the login page; paths outside the prefix are left to Laravel.
 
 These are planned for later sub-plans and phases:
 
-- **Show pages**: phase 3. (Rich text, the colour picker and the small input fields are available: see [Rich text](#rich-text), [Color, telephone and HTML blocks](#color-telephone-and-html-blocks) and [小型輸入欄位](#小型輸入欄位).)
+- **Show pages**: phase 3. (Rich text, the colour picker and the small input fields are available: see [Rich text](#rich-text), [Color, telephone and HTML blocks](#color-telephone-and-html-blocks) and [Small input fields](#small-input-fields).)
 - **Custom calendars**: native `date` / `datetime-local` inputs are retained; revisit after user trials.
 - **DialogTree**: phase 3. (Drag ordering and tree lists are available: see 拖曳排序.)
 
@@ -729,7 +729,7 @@ Fields: `text`, `textarea`, `email`, `url`, `mobile`, `password`, `hidden`, `dis
 `radio`, `checkbox`, `switch`, `tags`, `image`, `multipleImage`, `file`, `multipleFile`, `editor`
 (rich text, see below), `color`, `tel` (see [Color, telephone and HTML blocks](#color-telephone-and-html-blocks)),
 `ip`, `rate`, `slider`, `range`, `icon`, `time`, `timeRange`, `month`, `year`, `timezone`, `captcha`, `idField` and the `button` node
-(see [小型輸入欄位](#小型輸入欄位)).
+(see [Small input fields](#small-input-fields)).
 Use `section`, `row`, `columns`/`column`, `block`, `divider`, `html`, `embeds` and `tabs` to arrange them.
 `layout('stacked'|'horizontal')`, `presentation('auto'|'modal'|'page')` and `size('auto'|'sm'|'md'|'lg')`
 control presentation; auto uses page mode with three sections or more than sixteen fields.
@@ -811,94 +811,121 @@ $form->html(fn (?Order $order) => '<p>目前狀態：<strong>'.e($order?->status
 inline styles will not survive the whitelist. Put such markup in a registered component and use
 `$form->component(...)` (see [Register a custom component](#4-register-a-custom-component---frontend-only)).
 
-### 小型輸入欄位
+### Small input fields
 
-| 宣告 | 儲存 | 說明 |
+| Declaration | Stores | Notes |
 | --- | --- | --- |
-| `$form->ip('server_ip', '伺服器 IP')` | 去除前後空白的字串，或 `null` | IPv4（四段 `0`–`255`，不可有前導零）或 IPv6（可用 `::` 縮寫與結尾內嵌 IPv4）。不接受區域識別（`%eth0`）、方括號、連接埠或 CIDR。`->v4()` / `->v6()` 限定版本。 |
-| `$form->rate('discount_rate', '折扣率')` | 不含千分位的小數字串，或 `null` | 與 `decimal` 相同的格式，預設 `decimals(0)`，輸入框尾端顯示 `%`。沒有預設上下限，需要時用 `->min()` / `->max()`。 |
-| `$form->slider('volume', '音量')` | 數字，或 `null` | `min` 預設 0、`max` 預設 100、`step` 預設 1（須大於 0），且 `min < max`。**不在步進格點上的值會被拒絕**（例如 `min 0`、`step 5` 時的 `7`）；`0.1` 一類的小數步進不會有浮點誤差。 |
-| `$form->range('weight', '重量範圍', 'weight_min', 'weight_max')` | 兩個欄位各存一個小數，可各自為 `null` | 與 `dateRange` 相同的雙欄位對應。`->decimals()` 預設 0；兩端都有值時要求 `start <= end`（數值比較），錯誤顯示在「迄」那一格。 |
-| `$form->icon('icon', '圖示')` | lucide 圖示名稱（kebab-case，最長 64 字），或 `null` | 與選單 `icon` 相同的命名，例如 `package`。`->icons([...])`（最多 200 個）限制選擇器與驗證。 |
-| `$form->time('opens_at', '開門時間')` | `HH:mm:ss`，或 `null` | 24 小時制。`->seconds()` 讓輸入框顯示並接受秒。 |
-| `$form->timeRange('hours', '營業時間', 'opens_at', 'closes_at')` | 兩個欄位各存一個 `HH:mm:ss` | 同樣的雙欄位對應；**不要求 `start <= end`**，`22:00`–`06:00` 這種跨夜區間可以儲存。`->seconds()` 同 `time`。 |
-| `$form->month('birth_month', '生日月份')` | 整數 `1`–`12`，或 `null` | 下拉選單，月份名稱依語系顯示。 |
-| `$form->year('founded_year', '創立年份')` | 整數，或 `null` | 數字欄位，預設 `min(1900)`、`max(2100)`，可用 `->min()` / `->max()` 覆寫；不顯示千分位。 |
-| `$form->timezone('timezone', '時區')` | PHP 時區識別字，例如 `Asia/Taipei` | 可搜尋的下拉選單，選項來自 `DateTimeZone::listIdentifiers()`，伺服器端以 `timezone:all` 驗證。 |
-| `$form->idField()` | 無（唯讀） | 編輯頁顯示記錄 id；新增頁整個欄位不出現。預設名稱 `id`、標籤 `ID`，可傳 `idField('uuid', '編號')`。 |
-| `$form->button('標籤', $url)` | 無 | 看起來像按鈕的連結，見下方說明。 |
+| `$form->ip('server_ip', 'Server IP')` | the trimmed string, or `null` | IPv4 (four parts `0`-`255`, no leading zeros) or IPv6 (`::` compression and an embedded IPv4 tail allowed). No zone id (`%eth0`), brackets, port or CIDR. `->v4()` / `->v6()` restrict the version. |
+| `$form->rate('discount_rate', 'Discount')` | an ungrouped decimal string, or `null` | The same format as `decimal` with `decimals(0)` by default, shown with a `%` suffix. There are no implicit bounds: add `->min()` / `->max()`. |
+| `$form->slider('volume', 'Volume')` | a number, or `null` | `min` defaults to 0, `max` to 100, `step` to 1 (must be above 0), and `min < max`. A value that is not on the step grid is rejected (`7` with `min 0, step 5`); decimal steps such as `0.1` carry no floating-point error. |
+| `$form->range('weight', 'Weight', 'weight_min', 'weight_max')` | one decimal per column, each may be `null` | Two columns like `dateRange`. `->decimals()` defaults to 0. When both bounds are present `start <= end` (numeric comparison); the error is shown on the end bound. |
+| `$form->icon('icon', 'Icon')` | a lucide icon name in kebab-case (max 64 characters), or `null` | The same naming as the menu's `icon`, e.g. `package`. `->icons([...])` (at most 200) restricts the picker and the validation. |
+| `$form->time('opens_at', 'Opens at')` | `HH:mm:ss`, or `null` | 24-hour clock. `->seconds()` shows and accepts seconds. |
+| `$form->timeRange('hours', 'Hours', 'opens_at', 'closes_at')` | one `HH:mm:ss` per column | Two columns like `dateRange`. `start <= end` is **not** enforced: an overnight `22:00`-`06:00` saves. `->seconds()` as for `time`. |
+| `$form->month('birth_month', 'Birth month')` | an integer `1`-`12`, or `null` | A select; month names follow the locale. |
+| `$form->year('founded_year', 'Founded')` | an integer, or `null` | A number field with `min(1900)` and `max(2100)` unless you override them; digits are never grouped. |
+| `$form->timezone('timezone', 'Time zone')` | a PHP identifier such as `Asia/Taipei` | A searchable select over `DateTimeZone::listIdentifiers()`, validated on the server with `timezone:all`. |
+| `$form->idField()` | nothing (read-only) | Shows the record id on the edit page; on the create page the field is left out of the page entirely. Defaults to the name `id` and the label `ID`: `idField('uuid', 'Code')`. |
+| `$form->button('Label', $url)` | nothing | A link styled as a button, see below. |
 
-**`idField()` 為什麼不叫 `id()`。** `Form::id()` 已經是表單身份（Resource 與上傳用它辨識表單），
-所以這個唯讀欄位的語法糖取名 `idField()`。它回傳 `display` 欄位，可繼續鏈接 `->label()`、`->value()`。
+**`idField()`, not `id()`.** `Form::id()` is already the form identity (resources and uploads use it to
+recognise a form), so the read-only id sugar is called `idField()`. It returns a `display` field, so
+`->label()` and `->value()` still chain.
 
-`ip`、`rate`、`slider`、`icon`、`time` 與 `range`、`timeRange` 屬於一般欄位，也能用在 Action 表單、
-快速新增與上傳額外欄位（`range` 與 `timeRange` 的規則與 `dateRange` 相同），並可放進 JSON repeater 列。
-`button` 是版面節點，與 `html` 一樣不能放在 Action 表單、快速新增或上傳額外欄位，也不能放在 `row()` 或直接放在
-`columns()` 底下（請包在 `column()` 裡）。
+`ip`, `rate`, `slider`, `icon`, `time`, `range` and `timeRange` are plain fields: they also work in
+Action forms, quick create and upload extras (`range` and `timeRange` follow `dateRange`), and in JSON
+repeater rows. `button` is a layout node like `html`: it is not allowed in Action forms, quick create or
+upload extras, nor in `row()` or directly in `columns()` (wrap it in `column()`).
 
-**`month()` 與 Dcat 不同。** Dcat 的 `month()` 存兩位字串 `MM`（`'07'`），這裡存整數 `7`。
-欄位若是整數欄位就不必做任何事。想保留補零字串時，欄位要是字串型別，並改寫寫入方式：
-
-```php
-$form->month('birth_month')->saveUsing(fn ($record, $value) => $record->forceFill([
-    'birth_month' => str_pad((string) $value, 2, '0', STR_PAD_LEFT),
-]));
-```
-
-寫入函式收到的是整數。**舊資料若在字串欄位裡存了 `'07'`，它不是 1–12 的選項：**
-下拉選單不會選中任何月份，原樣送出的 `'07'` 會得到 422。請先把資料轉成整數，或使用上面的 `saveUsing()` 寫法並自行處理讀取。
-
-**時間的儲存與顯示。** `time` 與 `timeRange` 一律存成 `HH:mm:ss`（輸入 `09:05` 會存成 `09:05:00`），伺服器同時接受
-`HH:mm` 與 `HH:mm:ss`。沒有 `->seconds()` 的欄位顯示 `HH:mm`，但只在秒數為 `:00` 時才縮短；
-若資料庫裡的值帶有非零秒數（例如 `09:05:30`），整個值原樣保留，載入再儲存不會被悄悄改掉。
-`24:00`、`9:5` 這類格式一律拒絕。
-
-**`slider` 的初始值。** 記錄沒有值時，拉桿停在 `min`，但在使用者拖動之前什麼都不會儲存；
-宣告成 `->required()` 時，拉桿從 `min` 開始，送出的就是 `min`。
-
-**`icon` 的命名。** 名稱與選單使用的 lucide 圖示名稱相同（kebab-case，例如 `shopping-bag`）。
-資料庫裡不在目前 lucide 清單內的名稱會被原樣保留，載入與儲存都不會失敗，畫面以選單同一個備用圖示顯示。
-`icon` 的格式固定，不接受 `->pattern()`；要縮小選擇請用 `->icons()`。選擇器一次最多顯示前 120 個結果，請用搜尋縮小範圍。
-
-**`button()` 只是連結。** 網址必須是絕對 `http(s)://` 網址，或以單一 `/` 開頭的站內路徑；`mailto:`、`tel:`、
-`//host`、`javascript:` 和含空白的字串都不行。字串網址不合規會在頁面渲染時丟出 `InvalidArgumentException`。
-也可以傳 `fn (?Model $record) => ...`：新增頁收到 `null`，編輯頁收到記錄；閉包回傳不合規的值（或 `null`、空字串）時，
-這顆按鈕會從頁面省略並以 `report()` 記錄，不會讓整頁 500。`->newTab()` 在新分頁開啟，`->secondary()` 改成次要樣式。
-需要點擊後執行行為（呼叫 API、開對話框）時，請用 `$form->component(...)`，不要期待 `button()` 做這些事。
+**`month()` stores an integer, unlike Dcat.** Dcat keeps a two-digit string (`'07'`); here `7` is stored,
+which is what you want for an integer column. To keep a padded string in a string column, read and write it
+yourself. The recipe below round-trips (blank stays `null`, `3` is stored as `'03'` and loads as March, a
+resave stays `'03'`); it is covered by a test:
 
 ```php
-$form->button('查看商品列表', fn (?ShowcaseItem $item) => route('brume.grid-showcase.index', $item ? ['q' => $item->sku] : [], false));
+$form->month('birth_month')
+    ->value(fn ($record) => $record->birth_month === null ? null : (int) $record->birth_month)
+    ->saveUsing(fn ($record, $value) => $record->forceFill([
+        'birth_month' => $value === null || $value === '' ? null : str_pad((string) $value, 2, '0', STR_PAD_LEFT),
+    ]));
 ```
 
-#### 驗證碼
+Without the `value()` reader, a string column holding `'07'` loads as `'07'`, which is not one of the
+options, so saving it unchanged is refused with a 422. Migrate such data to integers, or use the recipe.
 
-`$form->captcha()` 在表單頁顯示一張驗證圖片與答案輸入框，圖片由 [`mews/captcha`](https://github.com/mewebstudio/captcha) 產生。
+**Time storage and display.** `time` and `timeRange` always store `HH:mm:ss` (`09:05` is saved as
+`09:05:00`); the server accepts `HH:mm` and `HH:mm:ss` on either kind of field. A field without
+`->seconds()` shows `HH:mm`, but only shortens a value whose seconds are `:00`: a stored `09:05:30` is
+kept whole, so loading and saving it never changes it. `24:00` and `9:5` are rejected.
 
-1. `composer require mews/captcha`（需要 PHP 的 GD 或 Imagick 擴充）。套件自動探索會註冊它的 provider 與 `captcha` 驗證規則，
-   **不需要發佈設定檔**；想調整尺寸或字元時才執行 `php artisan vendor:publish --provider="Mews\Captcha\CaptchaServiceProvider"`。
-   `->config('flat')` 可選用 `config/captcha.php` 裡其他具名設定。
-2. 驗證碼要靠 session 與快取跨請求保存答案：後台路由群組需要 session（預設的 `web` 有），
-   快取必須是**跨請求保存**的 store（`file`、`redis`、`database`…；`array` 不行）。
-3. 沒有安裝（或 provider 沒有註冊）時，宣告 `captcha()` 會立刻丟出 `LogicException` 並附安裝提示。
+**`slider` with no value.** When the record has no value the thumb rests at `min`, but nothing is stored
+until the user moves it.
+
+**`icon` names.** Names are lucide icon names in kebab-case (e.g. `shopping-bag`), the same as the menu.
+A stored name that lucide does not know is kept (it loads and saves) and is drawn with the menu's fallback
+icon. The format is fixed, so `->pattern()` throws; use `->icons()` to narrow the choice. The picker
+renders at most the first 120 matches: type to narrow the search.
+
+**`button()` is a link, nothing more.** The URL is an absolute `http(s)://` URL or a site path starting
+with a single `/`; `mailto:`, `tel:`, `//host`, `javascript:` and anything containing whitespace are
+refused. A literal URL that fails the rule throws `InvalidArgumentException` when the page renders. You may
+also pass `fn (?Model $record) => ...`: it receives `null` on the create page and the record on edit, and
+when the closure returns something that fails the rule (or `null` or an empty string) the button is left
+out of the page and the problem is `report()`ed, so record data cannot 500 the form. `->newTab()` opens a
+new tab and `->secondary()` uses the secondary style. For behaviour on click (an API call, a dialog), use
+`$form->component(...)`, not `button()`.
 
 ```php
-$form->text('message', '留言')->required();
-$form->captcha();            // 標籤預設依語系（zh-TW 為「驗證碼」），可傳入自訂標籤
+$form->button('View list', fn (?ShowcaseItem $item) => route('brume.grid-showcase.index', $item ? ['q' => $item->sku] : [], false));
 ```
 
-行為與限制：
+#### Captcha
 
-- **只保護表單自己的新增／更新送出。** 列表的行內編輯、拖曳排序、列／批次動作與上傳端點**不受驗證碼保護**；
-  這些是列表與上傳的獨立介面，需要時請自行限制（例如 Gate、throttle）。
-- 驗證碼在所有其他欄位之前檢查：答案錯誤或空白時只回傳 `__captcha__` 的 422，其他欄位不驗證、不儲存、不觸發任何儲存 hook。
-  宣告期的 `creating()` / `editing()` 鉤子仍會先執行，再檢查驗證碼。
-- 答案只能用一次。送出失敗後（不論是答案錯，還是其他欄位有錯）都必須重新輸入：前端會自動換一張圖並清空答案欄。
-- 答案不屬於表單的值：不會出現在 `saving` 的值、模型或關聯規劃裡。答案不分大小寫（`mews/captcha` 預設）。
-- 欄位名稱固定為 `__captcha__`，一律必填；不能 `required(false)`、`readOnly()`、`disabled()`，也不能加 `showWhen()` / `enableWhen()`。
-- 一張表單只能有一個，且**不能用在** Action 表單、快速新增、上傳額外欄位、repeater 列、關聯選擇列與 `embeds`；
-  在這些地方宣告會丟出 `InvalidArgumentException`。
-- 設定 `CAPTCHA_DISABLE=true`（或 `config('captcha.disable')`）時，欄位會從表單省略，也不檢查答案；
-  圖片路由 `GET {prefix}/_brume/captcha` 此時回傳 404。圖片路由位於後台的登入與 session 之後，不對訪客開放。
+`$form->captcha()` shows an image and an answer box on the form page. The image comes from
+[`mews/captcha`](https://github.com/mewebstudio/captcha).
+
+1. `composer require mews/captcha`. It requires `ext-gd` (Imagick alone does not satisfy its Composer
+   requirement). Package discovery registers its
+   provider and the `captcha` validation rule; **no config publishing is needed**. Publish
+   (`php artisan vendor:publish --provider="Mews\Captcha\CaptchaServiceProvider"`) only to tune sizes,
+   characters or lifetime; `->config('flat')` picks another named config from `config/captcha.php`.
+2. The answer travels through the session and the **default cache store** between the image and the
+   submit. The admin route group needs the session (the default `web` group has it) and the cache must keep
+   data between requests: `file`, `database` or `redis` work; the `array` and `null` drivers forget it after
+   every request, so every answer is refused (the image route logs a warning when it sees one of them).
+3. Without the package (or without its provider registered), declaring `captcha()` throws a `LogicException`
+   with the install hint.
+
+```php
+$form->text('message', 'Message')->required();
+$form->captcha();            // the label follows the locale ("驗證碼" in zh-TW); pass one to override
+```
+
+- **It guards only the form's own create/update submit.** Grid inline editing, drag sort, row and batch
+  actions and the upload endpoints are separate surfaces and are **not** gated; restrict them yourself
+  (policies, throttling) if you need to.
+- It is checked before every other field. A wrong or blank answer returns a 422 on `__captcha__` only: the
+  other fields are not validated, nothing is saved and no `submitted` or `saving` hook runs. The
+  declaration hooks (`creating()` / `editing()`) still run first, because the form is initialised before
+  the check.
+- An answer works once, and only for `expire` seconds. mews' `expire` defaults to 60 and is read from the
+  named config in use (`default` unless you call `->config()`); to raise it publish the config and set, for
+  example, `'default' => ['expire' => 180, ...]`, or set `config(['captcha.default.expire' => 180])`.
+  After any failed submit (a wrong answer, or a correct one with another field invalid) the answer is
+  spent and must be solved again: the browser reloads the image and clears the answer box.
+- Case: `default` is case-insensitive; a named config with `'sensitive' => true` (such as `inverse`) is
+  case-sensitive.
+- The answer is not a form value: it never reaches `saving` callbacks, the model or relation planning. The
+  field name is fixed to `__captcha__`; it is always required, so `required(false)`, `readOnly()`,
+  `disabled()`, `showWhen()` and `enableWhen()` throw `LogicException`. Only one per form.
+- Not available in Action forms, quick create, upload extras, repeater rows, relation-picker rows or
+  `embeds`: declaring it there throws `InvalidArgumentException`.
+- `CAPTCHA_DISABLE=true` (or `config('captcha.disable')`) removes the field from the form and skips the
+  check.
+- Two routes exist. Brume's own image route, `GET {prefix}/_brume/captcha/{config?}`, is behind the admin
+  login and session and answers 404 when captcha is disabled. mews/captcha also registers its public
+  `GET /captcha/{config?}` and `GET /captcha/api/{config?}` routes (with the `web` middleware, no login);
+  Brume does not use them, and they stay reachable unless captcha is disabled.
 
 ### Rich text
 

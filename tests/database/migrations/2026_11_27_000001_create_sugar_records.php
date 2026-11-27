@@ -13,6 +13,7 @@ return new class extends Migration
             $t->unsignedTinyInteger('birth_month')->nullable();
             $t->unsignedSmallInteger('founded_year')->nullable();
             $t->string('zone')->nullable();
+            $t->string('month_text', 2)->nullable();
         });
     }
 

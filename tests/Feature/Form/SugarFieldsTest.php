@@ -127,6 +127,32 @@ it('lets saveUsing() keep a padded month string', function () {
     expect(SugarPost::find($result['id'])->title)->toBe('03');
 });
 
+it('round-trips a padded month string with the README recipe', function () {
+    $declare = fn (Form $form) => $form->month('month_text')
+        ->value(fn ($record) => $record->month_text === null ? null : (int) $record->month_text)
+        ->saveUsing(fn ($record, $value) => $record->forceFill([
+            'month_text' => $value === null || $value === '' ? null : str_pad((string) $value, 2, '0', STR_PAD_LEFT),
+        ]));
+    $form = sugarForm();
+    $declare($form);
+
+    $blank = sugarSave($form, null, ['month_text' => '']);
+    expect(SugarPost::find($blank['id'])->month_text)->toBeNull();
+
+    $row = SugarPost::find(sugarSave($form, null, ['month_text' => '3'])['id']);
+    expect($row->getRawOriginal('month_text'))->toBe('03');
+
+    $edit = sugarForm($row);
+    $declare($edit);
+    $values = $edit->toSchema(Request::create('/'))['values'];
+    expect($values['month_text'])->toBe('3');
+
+    $resave = sugarForm($row);
+    $declare($resave);
+    sugarSave($resave, $row, ['month_text' => $values['month_text']]);
+    expect($row->fresh()->month_text)->toBe('03');
+});
+
 // ---- year -----------------------------------------------------------------------------------
 
 it('emits year as a plain integer number between 1900 and 2100 with no grouping', function () {
