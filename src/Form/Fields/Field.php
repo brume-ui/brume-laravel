@@ -391,6 +391,25 @@ class Field
         return $this;
     }
 
+    /** Trims what JavaScript's String.prototype.trim does, which is more than PHP's trim(). */
+    public static function jsTrim(string $value): string
+    {
+        $space = '[\\t\\n\\x0B\\f\\r \\x{A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]';
+
+        return preg_replace('/^'.$space.'+|'.$space.'+$/u', '', $value) ?? $value;
+    }
+
+    /** A submitted string the browser's trim() empties is no value at all: null, before validation. */
+    public function normalizeBlank(mixed $input): mixed
+    {
+        return $input;
+    }
+
+    protected static function blankToNull(mixed $input): mixed
+    {
+        return is_string($input) && self::jsTrim($input) === '' ? null : $input;
+    }
+
     /** A validated submitted value in the form it is stored. Fields without a canonical form keep it. */
     public function canonicalInput(mixed $value): mixed
     {

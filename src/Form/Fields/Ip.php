@@ -58,12 +58,14 @@ class Ip extends Field
         }];
     }
 
-    /** Trims what JavaScript's String.prototype.trim does, which is more than PHP's trim(). */
     public static function trim(string $value): string
     {
-        $space = '[\\t\\n\\x0B\\f\\r \\x{A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]';
+        return self::jsTrim($value);
+    }
 
-        return preg_replace('/^'.$space.'+|'.$space.'+$/u', '', $value) ?? $value;
+    public function normalizeBlank(mixed $input): mixed
+    {
+        return self::blankToNull($input);
     }
 
     public function canonicalInput(mixed $value): mixed

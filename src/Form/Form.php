@@ -480,9 +480,7 @@ class Form implements Renderable, Responsable
 
     public function nodesSchema(?Model $record = null, ?Model $root = null): array
     {
-        $nodes = array_filter($this->nodes, fn ($node) => ! ($node instanceof Field && $node->omittedFromSchema($record)));
-
-        return array_values(array_map(fn ($node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->schemaFor($record, $root)] : $node->toSchema($record, $root), $nodes));
+        return FormNode::schemas($this->nodes, $record, $root);
     }
 
     public function valuesFor(?Model $record): array
@@ -797,7 +795,11 @@ class Form implements Renderable, Responsable
         return $this;
     }
 
-    /** A link styled as a button; $url is a string or Closure(?Model $record): string, checked when the page renders. */
+    /**
+     * A link styled as a button; $url is a string or Closure(?Model $record): string, checked when the page renders.
+     * A literal URL that fails the rule throws InvalidArgumentException; a closure result that fails it (or is
+     * null, empty or not a string) leaves the button out of the page and is reported instead, so data cannot 500 the form.
+     */
     public function button(string $label, string|Closure $url): ButtonNode
     {
         if (in_array($this->context, ['row', 'columns'], true)) {

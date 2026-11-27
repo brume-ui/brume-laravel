@@ -19,7 +19,8 @@ class FormNode
         return new self($this->type, $this->attributes, array_map(fn ($node) => $node instanceof Field ? $map($node) : $node->mapFields($map), $this->children));
     }
 
-    public function toSchema(?Model $record = null, ?Model $root = null): array
+    /** Null when the node chooses to leave itself out of the page (a button whose closure URL is unusable). */
+    public function toSchema(?Model $record = null, ?Model $root = null): ?array
     {
         if ($this->type === 'row' && app()->environment('local')) {
             $width = array_sum(array_map(fn (Field $field) => $field->gridWidth(), $this->children));
@@ -33,11 +34,28 @@ class FormNode
 
             return ['type' => 'html', 'html' => $html instanceof Htmlable ? $html->toHtml() : (string) $html] + array_diff_key($this->attributes, ['html' => 1]);
         }
-        $children = array_map(fn (Field|self $node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->schemaFor($record, $root)] : $node->toSchema($record, $root), array_values(array_filter($this->children, fn ($node) => ! ($node instanceof Field && $node->omittedFromSchema($record)))));
+        $children = self::schemas($this->children, $record, $root);
         if ($this->type === 'column') {
             return $this->attributes + ['children' => $children];
         }
 
         return ['type' => $this->type] + $this->attributes + ($this->type === 'divider' ? [] : [$this->type === 'columns' ? 'columns' : 'children' => $children]);
+    }
+
+    /** @param list<Field|FormNode> $nodes */
+    public static function schemas(array $nodes, ?Model $record, ?Model $root): array
+    {
+        $schemas = [];
+        foreach ($nodes as $node) {
+            if ($node instanceof Field && $node->omittedFromSchema($record)) {
+                continue;
+            }
+            $schema = $node instanceof Field ? ['type' => 'field', 'field' => $node->schemaFor($record, $root)] : $node->toSchema($record, $root);
+            if ($schema !== null) {
+                $schemas[] = $schema;
+            }
+        }
+
+        return $schemas;
     }
 }

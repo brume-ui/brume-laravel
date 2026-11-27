@@ -16,6 +16,11 @@ class Icon extends Field
 
     public const MAX_ICONS = 200;
 
+    public function normalizeBlank(mixed $input): mixed
+    {
+        return self::blankToNull($input);
+    }
+
     public function type(): string
     {
         return 'icon';

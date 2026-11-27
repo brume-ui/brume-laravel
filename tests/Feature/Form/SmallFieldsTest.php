@@ -16,6 +16,7 @@ use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\Models\CellItem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 
@@ -759,7 +760,9 @@ it('accepts and refuses button urls as the renderer does', function (string $url
         expect(fn () => smNodes($form))->toThrow(InvalidArgumentException::class);
         $form = Form::make(SmPost::class)->submitTo('put', '/sm');
         $form->button('C', fn () => $url);
-        expect(fn () => smNodes($form))->toThrow(InvalidArgumentException::class);
+        // A closure result degrades instead (see the dedicated test).
+        Exceptions::fake();
+        expect(smNodes($form))->toBe([]);
     }
 })->with([
     ['/docs', true], ['/', true], ['/a/b?x=1#y', true], ['http://example.com', true], ['https://example.com/path', true], ['HTTPS://Example.com', true],
@@ -774,7 +777,8 @@ it('accepts and refuses button urls as the renderer does', function (string $url
 it('refuses a button closure that does not return a string', function () {
     $form = Form::make(SmPost::class)->submitTo('put', '/sm');
     $form->button('B', fn () => null);
-    expect(fn () => smNodes($form))->toThrow(InvalidArgumentException::class);
+    Exceptions::fake();
+    expect(smNodes($form))->toBe([]);
 });
 
 it('keeps buttons out of validation, fields and saving', function () {
@@ -802,4 +806,58 @@ it('shares the slider grid maths with the browser', function () {
     foreach ([[0.3, 0, 0.1, true], [0.35, 0, 0.1, false], [0.7, 0, 0.1, true], [1.0, 0, 0.1, true], [15.0, 5, 5, true], [12.0, 5, 5, false], [-0.25, -0.5, 0.25, true], [0.015, 0, 0.005, true], [0.0151, 0, 0.005, false], [1e7 + 0.3, 0, 0.1, true]] as [$value, $min, $step, $valid]) {
         expect(Slider::onGrid($value, $min, $step))->toBe($valid, "{$value} min {$min} step {$step}");
     }
+});
+
+it('leaves out a button whose closure url is unusable and reports it', function (mixed $url) {
+    Exceptions::fake();
+    $form = smForm();
+    $form->section('S', function (Form $f) use ($url) {
+        $f->button('Bad', fn () => $url);
+        $f->block(null, fn (Form $b) => $b->button('Only', fn () => $url));
+    });
+    $form->button('Top', fn () => $url);
+    $form->ip('address');
+    $page = $form->toSchema(Request::create('/'));
+    expect(JsonSchema::errors(['schemaVersion' => BrumeManager::SCHEMA_VERSION, 'page' => $page], 'PageEnvelope'))->toBe([])
+        ->and($page['form']['nodes'])->toHaveCount(2)
+        ->and($page['form']['nodes'][0]['children'])->toBe([['type' => 'block', 'children' => []]])
+        ->and($page['form']['nodes'][1]['field']['name'])->toBe('address');
+    Exceptions::assertReported(fn (InvalidArgumentException $e) => str_contains($e->getMessage(), '"Bad"'));
+})->with(['javascript:x', '', null, '//evil.example', 5]);
+
+it('still throws for a literal bad button url', function () {
+    $form = smForm();
+    $form->button('Bad', 'javascript:x');
+    expect(fn () => smNodes($form))->toThrow(InvalidArgumentException::class);
+});
+
+it('treats unicode whitespace as an empty value', function (string $blank) {
+    $post = SmPost::create(['address' => 'x', 'glyph' => 'x', 'opens' => '01:00:00', 'level' => 5, 'share' => '5']);
+    $form = smForm($post);
+    $form->ip('address');
+    $form->icon('glyph');
+    $form->time('opens');
+    $form->slider('level');
+    $form->rate('share');
+    $form->range('span', 'Span', 'low', 'high');
+    smSave($form, $post, ['address' => $blank, 'glyph' => $blank, 'opens' => $blank, 'level' => $blank, 'share' => $blank, 'span' => ['start' => $blank, 'end' => '3']]);
+    $fresh = $post->fresh();
+    expect($fresh->only(['address', 'glyph', 'opens', 'level', 'share', 'low', 'high']))->toEqual(['address' => null, 'glyph' => null, 'opens' => null, 'level' => null, 'share' => null, 'low' => null, 'high' => '3.000']);
+    $post = SmPost::create(['opens' => '01:00:00', 'closes' => '02:00:00']);
+    $form = smForm($post);
+    $form->timeRange('hours', 'Hours', 'opens', 'closes');
+    smSave($form, $post, ['hours' => ['start' => $blank, 'end' => '03:00']]);
+    expect($post->fresh()->only(['opens', 'closes']))->toBe(['opens' => null, 'closes' => '03:00:00']);
+})->with(["\u{00A0}", "\u{3000}", "\u{FEFF}", " \u{00A0}\t"]);
+
+it('fails a required field given only unicode whitespace with the required message', function (string $method) {
+    $form = Form::make(SmPost::class);
+    $form->$method('v', 'V')->required();
+    expect(smErrors($form, ['v' => "\u{00A0}\u{3000}"])['v'][0])->toBe(__('validation.required', ['attribute' => 'V']));
+})->with(['ip', 'icon', 'time', 'slider', 'rate']);
+
+it('fails a required range given only unicode whitespace bounds', function () {
+    $form = Form::make(SmPost::class);
+    $form->range('v', 'V', 'low', 'high')->required();
+    expect(smErrors($form, ['v' => ['start' => "\u{00A0}", 'end' => "\u{3000}"]]))->toHaveKey('v');
 });

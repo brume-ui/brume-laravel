@@ -40,6 +40,16 @@ class DateRange extends Date
         return $item;
     }
 
+    /** Whitespace-only bounds of the two-bound fields are absent, as in the browser. */
+    public function normalizeBlank(mixed $input): mixed
+    {
+        if (! in_array($this->type(), ['range', 'timeRange'], true) || ! is_array($input)) {
+            return $input;
+        }
+
+        return array_map(self::blankToNull(...), $input);
+    }
+
     /** Per-bound validation rules for the two-bound fields that declare any (`range`, `timeRange`). */
     public function boundRules(string $bound, array $values, string $path): array
     {

@@ -7,6 +7,11 @@ class Rate extends Decimal
 {
     protected array $schema = ['decimals' => 0];
 
+    public function normalizeBlank(mixed $input): mixed
+    {
+        return self::blankToNull($input);
+    }
+
     public function type(): string
     {
         return 'rate';

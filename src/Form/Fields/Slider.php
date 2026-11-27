@@ -15,6 +15,11 @@ class Slider extends Number
 
     private bool $maxSet = false;
 
+    public function normalizeBlank(mixed $input): mixed
+    {
+        return self::blankToNull($input);
+    }
+
     public function type(): string
     {
         return 'slider';

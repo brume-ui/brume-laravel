@@ -64,6 +64,11 @@ class FormValidator
                 }
             }
         }
+        foreach ($fields as $path => $field) {
+            if (Arr::has($values, $path) && $field->isEditable($record)) {
+                Arr::set($values, $path, $field->normalizeBlank(Arr::get($values, $path)));
+            }
+        }
         $authoritative = $values;
         $definitions = [];
         foreach ($fields as $path => $field) {

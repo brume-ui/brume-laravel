@@ -33,11 +33,19 @@ class ButtonNode extends FormNode
         return clone $this;
     }
 
-    public function toSchema(?Model $record = null, ?Model $root = null): array
+    public function toSchema(?Model $record = null, ?Model $root = null): ?array
     {
         $url = $this->url instanceof Closure ? ($this->url)($record) : $this->url;
         if (! is_string($url) || ! self::isHref($url)) {
-            throw new InvalidArgumentException('A form button needs an absolute http(s) URL or a path starting with a single "/".');
+            $error = new InvalidArgumentException('Form button "'.$this->label.'" needs an absolute http(s) URL or a path starting with a single "/".');
+            if ($this->url instanceof Closure) {
+                // Record-driven data must not 500 the page: the button is left out and the problem reported.
+                report($error);
+
+                return null;
+            }
+
+            throw $error;
         }
 
         return ['type' => 'button', 'label' => $this->label, 'href' => $url]

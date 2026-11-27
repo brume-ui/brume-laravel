@@ -14,6 +14,11 @@ class Time extends Field
 {
     public const PATTERN = '^(?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9])?$';
 
+    public function normalizeBlank(mixed $input): mixed
+    {
+        return self::blankToNull($input);
+    }
+
     public function type(): string
     {
         return 'time';
