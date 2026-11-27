@@ -7,6 +7,7 @@ use Brume\Form\Form;
 use Brume\Form\FormSaver;
 use Brume\Grid\Actions\Action;
 use Brume\Grid\Grid;
+use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Options\OptionSource;
 use Brume\Tests\Support\JsonSchema;
 use Brume\Tests\Support\Models\CellItem;
@@ -171,8 +172,83 @@ it('serves the image under the admin prefix with the session and tolerates the r
     $this->get('/admin/_brume/captcha?r=3')->assertOk()->assertHeader('Content-Type', 'image/jpeg');
     expect(session('captcha.key'))->not->toBe($key);
     $this->get('/admin/_brume/captcha/flat?r=1')->assertOk();
+    foreach (['nope', 'disable', 'characters', 'fontsDirectory', 'bgsDirectory'] as $name) {
+        $this->get('/admin/_brume/captcha/'.$name)->assertNotFound();
+    }
+});
+
+it('serves only image configs', function () {
+    $this->actingAs(brumeUser(), 'brume');
+    $this->get('/admin/_brume/captcha/default')->assertOk();
+    $this->get('/admin/_brume/captcha/flat')->assertOk();
+    $this->get('/admin/_brume/captcha/characters')->assertNotFound();
+    $this->get('/admin/_brume/captcha/fontsDirectory')->assertNotFound();
     $this->get('/admin/_brume/captcha/nope')->assertNotFound();
-    $this->get('/admin/_brume/captcha/disable')->assertNotFound();
+});
+
+it('answers 404 for the image when the host disabled captcha, and still emits the field', function () {
+    $this->actingAs(brumeUser(), 'brume');
+    config(['captcha.disable' => true]);
+    $this->get('/admin/_brume/captcha')->assertNotFound();
+    $form = captchaForm();
+    expect($form->toSchema(Request::create('/'))['form']['nodes'][1]['field'])->toMatchArray(['type' => 'captcha', 'required' => true]);
+    // mews' rule passes any answer, but an empty one is still refused here.
+    expect(fn () => captchaSave($form, null, ['title' => 'x', '__captcha__' => '']))->toThrow(ValidationException::class);
+    $result = captchaSave($form, null, ['title' => 'Off', '__captcha__' => 'anything']);
+    expect(CaptchaPost::find($result['id'])->title)->toBe('Off');
+});
+
+it('throws at declaration when the provider never registered the captcha rule', function () {
+    Captcha::$availability = null;
+    app()->forgetInstance('captcha');
+    $bindings = new ReflectionProperty(app(), 'bindings');
+    $all = $bindings->getValue(app());
+    unset($all['captcha']);
+    $bindings->setValue(app(), $all);
+    expect(fn () => Form::make(CaptchaPost::class)->captcha())->toThrow(LogicException::class, 'service provider registered');
+});
+
+class CaptchaResource extends Brume\Resource\Resource
+{
+    protected string $model = CaptchaPost::class;
+
+    protected string $name = 'Post';
+
+    protected function grid(Grid $grid): void
+    {
+        $grid->column('title')->primary();
+    }
+
+    protected function form(Form $form): void
+    {
+        $form->text('title');
+        $form->captcha();
+    }
+}
+
+it('enforces the captcha over HTTP on store and update', function () {
+    $this->actingAs(brumeUser(), 'brume');
+    Route::prefix('admin')->name('brume.')->middleware(['web', 'brume.auth', HandleBrumeRequests::class])->group(fn () => Route::brumeResource('captcha-posts', CaptchaResource::class));
+    Route::getRoutes()->refreshNameLookups();
+
+    captchaIssue('abc12');
+    $this->postJson('/admin/captcha-posts', ['values' => ['title' => 'Nope', '__captcha__' => 'wrong']])
+        ->assertUnprocessable()->assertJsonValidationErrors(['__captcha__'])->assertJsonCount(1, 'errors');
+    expect(CaptchaPost::count())->toBe(0);
+
+    captchaIssue('abc12');
+    $this->postJson('/admin/captcha-posts', ['values' => ['title' => 'Made', '__captcha__' => 'abc12']])->assertOk();
+    $row = CaptchaPost::first();
+    expect($row->title)->toBe('Made')->and($row->getAttributes())->not->toHaveKey('__captcha__');
+
+    captchaIssue('xyz99');
+    $this->putJson('/admin/captcha-posts/'.$row->id, ['values' => ['title' => 'Changed', '__captcha__' => 'wrong']])
+        ->assertUnprocessable()->assertJsonValidationErrors(['__captcha__'])->assertJsonCount(1, 'errors');
+    expect($row->fresh()->title)->toBe('Made');
+
+    captchaIssue('xyz99');
+    $this->putJson('/admin/captcha-posts/'.$row->id, ['values' => ['title' => 'Changed', '__captcha__' => 'xyz99']])->assertOk();
+    expect($row->fresh()->title)->toBe('Changed');
 });
 
 it('keeps the image behind the admin login', function () {

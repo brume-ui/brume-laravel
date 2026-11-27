@@ -31,7 +31,8 @@ class Captcha extends Field
 
     public static function installed(): bool
     {
-        return (self::$availability ?? fn () => class_exists(\Mews\Captcha\Captcha::class))();
+        // `bound` also tells whether the provider ran: without package discovery the `captcha` rule is missing.
+        return (self::$availability ?? fn () => class_exists(\Mews\Captcha\Captcha::class) && app()->bound('captcha'))();
     }
 
     public function type(): string

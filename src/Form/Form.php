@@ -591,7 +591,7 @@ class Form implements Renderable, Responsable
     public function captcha(?string $label = null): Fields\Captcha
     {
         if (! Fields\Captcha::installed()) {
-            throw new LogicException('captcha() needs the mews/captcha package: composer require mews/captcha (it also needs the GD extension).');
+            throw new LogicException('captcha() needs the mews/captcha package, installed with its service provider registered (package discovery): composer require mews/captcha (it also needs the GD extension).');
         }
         $root = $this->root ?? $this;
         if ($root->nested || $this->prefix !== '') {
