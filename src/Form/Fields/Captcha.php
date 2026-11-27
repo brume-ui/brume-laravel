@@ -35,6 +35,17 @@ class Captcha extends Field
         return (self::$availability ?? fn () => class_exists(\Mews\Captcha\Captcha::class) && app()->bound('captcha'))();
     }
 
+    /** The host switched captcha off (config('captcha.disable'), e.g. in tests): no field, no check. */
+    public static function switchedOff(): bool
+    {
+        return (bool) config('captcha.disable');
+    }
+
+    public function omittedFromSchema(?Model $record): bool
+    {
+        return self::switchedOff();
+    }
+
     public function type(): string
     {
         return 'captcha';
@@ -59,6 +70,9 @@ class Captcha extends Field
 
     public function assertAnswer(array $values): void
     {
+        if (self::switchedOff()) {
+            return;
+        }
         $answer = $values[self::NAME] ?? null;
         if (is_string($answer)) {
             $answer = trim($answer);

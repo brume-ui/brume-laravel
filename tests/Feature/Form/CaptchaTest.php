@@ -186,16 +186,22 @@ it('serves only image configs', function () {
     $this->get('/admin/_brume/captcha/nope')->assertNotFound();
 });
 
-it('answers 404 for the image when the host disabled captcha, and still emits the field', function () {
+it('omits the field and skips the check when the host disabled captcha, while the image route 404s', function () {
     $this->actingAs(brumeUser(), 'brume');
     config(['captcha.disable' => true]);
     $this->get('/admin/_brume/captcha')->assertNotFound();
     $form = captchaForm();
-    expect($form->toSchema(Request::create('/'))['form']['nodes'][1]['field'])->toMatchArray(['type' => 'captcha', 'required' => true]);
-    // mews' rule passes any answer, but an empty one is still refused here.
-    expect(fn () => captchaSave($form, null, ['title' => 'x', '__captcha__' => '']))->toThrow(ValidationException::class);
-    $result = captchaSave($form, null, ['title' => 'Off', '__captcha__' => 'anything']);
+    $page = $form->toSchema(Request::create('/'));
+    expect(array_column(array_column($page['form']['nodes'], 'field'), 'name'))->toBe(['title']);
+    $seen = null;
+    $form->saving(function ($record, array &$values) use (&$seen) {
+        $seen = $values;
+    });
+    $result = captchaSave($form, null, ['title' => 'Off']);
     expect(CaptchaPost::find($result['id'])->title)->toBe('Off');
+    $result = captchaSave($form, null, ['title' => 'Off2', '__captcha__' => 'anything']);
+    $row = CaptchaPost::find($result['id']);
+    expect($seen)->toBe(['title' => 'Off2'])->and($row->getAttributes())->not->toHaveKey('__captcha__');
 });
 
 it('throws at declaration when the provider never registered the captcha rule', function () {
