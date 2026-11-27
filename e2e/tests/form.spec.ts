@@ -232,7 +232,7 @@ test('showcase page uploads, sorting, extras, unique errors and all new inline e
   await page.getByRole('button', { name: '新增商品', exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/grid-showcase\/create$/);
   const toc = page.getByRole('navigation', { name: '本頁段落' });
-  await expect(toc.getByRole('link')).toHaveCount(4);
+  await expect(toc.getByRole('link')).toHaveCount(5);
   await fillProduct(page, existing.trim());
   await gallery(page);
   await page
