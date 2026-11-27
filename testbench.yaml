@@ -3,6 +3,8 @@ laravel: '@testbench'
 providers:
   - Workbench\App\Providers\WorkbenchServiceProvider
   - Brume\BrumeServiceProvider
+  # Dev-dependency providers are not auto-discovered by Testbench; the 驗證碼示範 page needs it.
+  - Mews\Captcha\CaptchaServiceProvider
 
 migrations:
   - workbench/database/migrations

@@ -125,6 +125,7 @@ class GridShowcaseController extends Resource
         $form->tabs()->viewUrl(fn (ShowcaseItem $item) => route('brume.grid-showcase.index', ['q' => $item->sku], false))
             ->after(['list', 'edit', 'create', 'view']);
         $form->section('基本資料', function (Form $form) {
+            $form->idField();
             $locked = fn (?ShowcaseItem $item) => $item?->is_featured ?? false;
             $form->text('name', '品名')->required()->maxLength(100)->readOnly($locked);
             $form->text('sku', '貨號')->required()->maxLength(50)->unique()->readOnly($locked);
@@ -145,6 +146,19 @@ class GridShowcaseController extends Resource
             $form->image('cover', '封面');
             $form->multipleImage('gallery', '相簿')->sortable()->max(6)->extra(fn (Form $form) => $form->url('link', '連結'));
             $form->multipleFile('documents', '文件')->accept(['application/pdf', 'text/plain'])->max(5);
+        });
+        $form->section('其他欄位', function (Form $form) {
+            $form->ip('server_ip', '伺服器 IP');
+            $form->rate('discount_rate', '折扣率')->decimals(2)->min(0)->max(100);
+            $form->slider('volume', '音量')->min(0)->max(100)->step(5);
+            $form->range('weight', '重量範圍（kg）', 'weight_min', 'weight_max')->decimals(2);
+            $form->icon('icon', '圖示');
+            $form->timeRange('business_hours', '營業時間', 'opens_at', 'closes_at');
+            $form->time('reminder_at', '提醒時間');
+            $form->month('birth_month', '生日月份');
+            $form->year('founded_year', '創立年份');
+            $form->timezone('timezone', '時區');
+            $form->button('查看商品列表', fn (?ShowcaseItem $item) => route('brume.grid-showcase.index', $item ? ['q' => $item->sku] : [], false));
         });
         $form->section('其他', function (Form $form) {
             $form->email('contact_email', '聯絡信箱');

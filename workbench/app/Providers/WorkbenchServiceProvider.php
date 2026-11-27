@@ -37,6 +37,13 @@ class WorkbenchServiceProvider extends ServiceProvider
             return;
         }
 
+        // 驗證碼示範: a one-character alphabet makes the answer fixed (7777), so the demo and the e2e
+        // suite can solve the captcha. Workbench only; the package never touches this config.
+        config(['captcha.characters' => ['7'], 'captcha.default.length' => 4]);
+        // mews/captcha keeps the answer in the cache between the image and the submit, and the
+        // Testbench skeleton's default store (array) forgets it after every request.
+        config(['cache.default' => 'file']);
+
         $this->loadTranslationsFrom(workbench_path('lang'), 'workbench');
         // Unnamespaced too, for lang/{zh_TW,zh_CN}/validation.php: Laravel ships English only.
         $this->app['translation.loader']->addPath(workbench_path('lang'));

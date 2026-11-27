@@ -74,6 +74,12 @@ class ShowcaseItem extends Model
             'is_featured' => 'boolean',
             'is_new' => 'boolean',
             'released_at' => 'date',
+            'discount_rate' => 'decimal:2',
+            'weight_min' => 'decimal:2',
+            'weight_max' => 'decimal:2',
+            'volume' => 'integer',
+            'birth_month' => 'integer',
+            'founded_year' => 'integer',
         ];
     }
 

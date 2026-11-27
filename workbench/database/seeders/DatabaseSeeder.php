@@ -100,6 +100,16 @@ class DatabaseSeeder extends Seeder
         foreach (['02-2345-6789#123', '(04)2345-6789', '+886 2 8765 4321'] as $index => $tel) {
             ShowcaseItem::query()->whereKey($ids[$index])->update(['contact_tel' => $tel]);
         }
+
+        // Fixed values for the small input fields on the same three items.
+        $small = [
+            ['server_ip' => '192.168.10.21', 'discount_rate' => '12.50', 'volume' => 35, 'weight_min' => '1.25', 'weight_max' => '3.50', 'icon' => 'package', 'opens_at' => '09:00:00', 'closes_at' => '18:30:00', 'reminder_at' => '08:45:00', 'birth_month' => 3, 'founded_year' => 1998, 'timezone' => 'Asia/Taipei'],
+            ['server_ip' => '2001:db8::8a2e:370:7334', 'discount_rate' => '5.00', 'volume' => 70, 'weight_min' => '0.50', 'weight_max' => '0.50', 'icon' => 'lamp', 'opens_at' => '22:00:00', 'closes_at' => '06:00:00', 'reminder_at' => '21:30:00', 'birth_month' => 11, 'founded_year' => 2005, 'timezone' => 'Europe/Berlin'],
+            ['server_ip' => '10.0.0.5', 'discount_rate' => '0.00', 'volume' => 0, 'weight_min' => '10.00', 'weight_max' => '25.75', 'icon' => 'coffee', 'opens_at' => '07:30:00', 'closes_at' => '15:00:00', 'reminder_at' => '07:00:00', 'birth_month' => 12, 'founded_year' => 2020, 'timezone' => 'America/New_York'],
+        ];
+        foreach ($small as $index => $values) {
+            ShowcaseItem::query()->whereKey($ids[$index])->update($values);
+        }
     }
 
     /**

@@ -69,13 +69,14 @@ it('offers cancellation in the reloaded quick-created row and persists its valid
         ->and($cancelled['_meta']['actions'])->not->toContain('cancel');
 });
 
-it('serves the four showcase sections and protects featured names and hidden passwords', function () {
+it('serves the five showcase sections and protects featured names and hidden passwords', function () {
     $create = $this->getJson('/admin/grid-showcase/create', ['X-Brume-Form' => '1'])->assertOk()->assertJsonPath('page.presentation', 'page');
-    expect(array_column($create->json('page.form.nodes'), 'title'))->toBe(['基本資料', '銷售', '媒體', '其他']);
+    expect(array_column($create->json('page.form.nodes'), 'title'))->toBe(['基本資料', '銷售', '媒體', '其他欄位', '其他']);
     $item = ShowcaseItem::factory()->create(['is_featured' => true, 'secret_note' => 'hidden secret']);
     $edit = $this->getJson("/admin/grid-showcase/{$item->id}/edit", ['X-Brume-Form' => '1'])->assertOk()->assertJsonPath('page.values.secret_note', '');
     expect($edit->getContent())->not->toContain('hidden secret');
-    expect($edit->json('page.form.nodes.0.children.0.field.readOnly'))->toBeTrue();
+    // children.0 is the read-only id; name follows it.
+    expect($edit->json('page.form.nodes.0.children.0.field.name'))->toBe('id')->and($edit->json('page.form.nodes.0.children.1.field.readOnly'))->toBeTrue();
     $this->putJson("/admin/grid-showcase/{$item->id}", ['values' => array_replace($edit->json('page.values'), ['name' => 'tamper', 'sku' => 'tamper', 'secret_note' => '', 'tags' => ['custom'], 'price' => '1280.50'])])->assertOk();
     expect($item->fresh()->name)->toBe($item->name)->and($item->fresh()->secret_note)->toBe('hidden secret')->and($item->fresh()->tags)->toBe(['custom'])->and($item->fresh()->price)->toBe('1280.50');
 });
