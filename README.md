@@ -824,7 +824,7 @@ inline styles will not survive the whitelist. Put such markup in a registered co
 | `$form->timeRange('hours', 'Hours', 'opens_at', 'closes_at')` | one `HH:mm:ss` per column | Two columns like `dateRange`. `start <= end` is **not** enforced: an overnight `22:00`-`06:00` saves. `->seconds()` as for `time`. |
 | `$form->month('birth_month', 'Birth month')` | an integer `1`-`12`, or `null` | A select; month names follow the locale. |
 | `$form->year('founded_year', 'Founded')` | an integer, or `null` | A number field with `min(1900)` and `max(2100)` unless you override them; digits are never grouped. |
-| `$form->timezone('timezone', 'Time zone')` | a PHP identifier such as `Asia/Taipei` | A searchable select over `DateTimeZone::listIdentifiers()`, validated on the server with `timezone:all`. |
+| `$form->timezone('timezone', 'Time zone')` | a PHP identifier such as `Asia/Taipei` | A searchable select over `DateTimeZone::listIdentifiers()`, validated on the server with `timezone:all`. Legacy aliases such as `US/Eastern` or `Asia/Calcutta` are not in that list: they are refused, and a stored one loads blank. |
 | `$form->idField()` | nothing (read-only) | Shows the record id on the edit page; on the create page the field is left out of the page entirely. Defaults to the name `id` and the label `ID`: `idField('uuid', 'Code')`. |
 | `$form->button('Label', $url)` | nothing | A link styled as a button, see below. |
 
@@ -855,11 +855,19 @@ options, so saving it unchanged is refused with a 422. Migrate such data to inte
 
 **Time storage and display.** `time` and `timeRange` always store `HH:mm:ss` (`09:05` is saved as
 `09:05:00`); the server accepts `HH:mm` and `HH:mm:ss` on either kind of field. A field without
-`->seconds()` shows `HH:mm`, but only shortens a value whose seconds are `:00`: a stored `09:05:30` is
-kept whole, so loading and saving it never changes it. `24:00` and `9:5` are rejected.
+`->seconds()` shows `HH:mm`, and that includes a stored `09:05:30`, which is displayed as `09:05`. The
+stored value is still kept whole: saving a record without touching the field writes `09:05:30` back, but
+editing the field stores `HH:mm:00`, so the seconds are lost. Use `->seconds()` to show and edit them.
+`24:00` and `9:5` are rejected.
 
 **`slider` with no value.** When the record has no value the thumb rests at `min`, but nothing is stored
-until the user moves it.
+until the user moves it. A **required** slider is the exception: the client adopts `min` when the form
+loads (the thumb cannot be "moved" onto it), so an untouched save stores `min`.
+
+**Conditions on a `rate` field.** An operand compared with a `rate` field
+(`Conditions::eq('discount', '5')`) is canonicalised by the server to the field's scale. With
+brume-ui up to `0.1.0-alpha.27` the client does not, so with that version write the operand at the
+field's scale (`'5.00'` for `->decimals(2)`).
 
 **`icon` names.** Names are lucide icon names in kebab-case (e.g. `shopping-bag`), the same as the menu.
 A stored name that lucide does not know is kept (it loads and saves) and is drawn with the menu's fallback

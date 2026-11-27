@@ -183,7 +183,10 @@ it('offers searchable time zone identifiers and checks them', function () {
     expect(sugarErrors($form, ['zone' => 'Asia/Taipei']))->toBe([])
         ->and(sugarErrors($form, ['zone' => 'UTC']))->toBe([])
         ->and(sugarErrors($form, ['zone' => 'Mars/Olympus']))->toHaveKey('zone')
-        ->and(sugarErrors($form, ['zone' => 'asia/taipei']))->toHaveKey('zone');
+        ->and(sugarErrors($form, ['zone' => 'asia/taipei']))->toHaveKey('zone')
+        // Legacy aliases are not in the option list, so they are refused too.
+        ->and(sugarErrors($form, ['zone' => 'US/Eastern']))->toHaveKey('zone')
+        ->and(sugarErrors($form, ['zone' => 'Asia/Calcutta']))->toHaveKey('zone');
     $result = sugarSave($form, null, ['zone' => 'Asia/Taipei']);
     expect(SugarPost::find($result['id'])->zone)->toBe('Asia/Taipei');
     $schema = ['schemaVersion' => BrumeManager::SCHEMA_VERSION, 'page' => $form->toSchema(Request::create('/'))];
