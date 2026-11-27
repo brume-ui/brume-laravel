@@ -121,6 +121,12 @@ class Field
         return $this->patternSource ?? ($this->type() === 'mobile' ? '^09[0-9]{8}$' : null);
     }
 
+    /** A field can leave the page schema altogether for a record state (the `id` display on create). */
+    public function omittedFromSchema(?Model $record): bool
+    {
+        return false;
+    }
+
     public function isEditable(?Model $record): bool
     {
         return $this->type() !== 'display' && ! $this->isReadOnly($record) && ! ($this->schema['disabled'] ?? false);

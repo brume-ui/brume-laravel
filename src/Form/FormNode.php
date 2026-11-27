@@ -33,7 +33,7 @@ class FormNode
 
             return ['type' => 'html', 'html' => $html instanceof Htmlable ? $html->toHtml() : (string) $html] + array_diff_key($this->attributes, ['html' => 1]);
         }
-        $children = array_map(fn (Field|self $node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->schemaFor($record, $root)] : $node->toSchema($record, $root), $this->children);
+        $children = array_map(fn (Field|self $node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->schemaFor($record, $root)] : $node->toSchema($record, $root), array_values(array_filter($this->children, fn ($node) => ! ($node instanceof Field && $node->omittedFromSchema($record)))));
         if ($this->type === 'column') {
             return $this->attributes + ['children' => $children];
         }

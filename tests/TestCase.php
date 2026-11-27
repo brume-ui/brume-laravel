@@ -5,6 +5,7 @@ namespace Brume\Tests;
 use Brume\BrumeServiceProvider;
 use Brume\Support\Assets;
 use Illuminate\Database\Migrations\Migrator;
+use Mews\Captcha\CaptchaServiceProvider;
 use Orchestra\Testbench\Concerns\WithWorkbench;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -21,7 +22,8 @@ abstract class TestCase extends Orchestra
 
     protected function getPackageProviders($app): array
     {
-        return [BrumeServiceProvider::class];
+        // A host app gets mews/captcha's provider by package discovery; Testbench does not discover dev packages.
+        return [BrumeServiceProvider::class, ...(class_exists(CaptchaServiceProvider::class) ? [CaptchaServiceProvider::class] : [])];
     }
 
     protected function defineEnvironment($app): void

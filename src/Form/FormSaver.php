@@ -2,6 +2,7 @@
 
 namespace Brume\Form;
 
+use Brume\Form\Fields\Captcha;
 use Brume\Form\Relations\RelationPlanner;
 use Brume\Form\Relations\RelationSynchronizer;
 use Brume\Grid\Actions\Feedback;
@@ -38,6 +39,11 @@ class FormSaver
             }
             $context = $creating ? null : $record;
             $form->forRecord($context)->initializeForSave();
+            // The answer is checked once and dropped: it is not a value, so nothing below ever sees it.
+            if (($captcha = $form->captchaField()) !== null) {
+                $captcha->assertAnswer($raw);
+                unset($raw[Captcha::NAME]);
+            }
             $feedback = $form->fire('submitted', $raw);
             if ($feedback instanceof Feedback) {
                 $connection->rollBack();

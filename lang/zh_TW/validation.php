@@ -28,4 +28,6 @@ return [
         'string' => ':attribute 不得超過 :max 個字元。',
         'array' => ':attribute 不得超過 :max 個項目。',
     ],
+    'captcha' => ':attribute 不正確。',
+    'timezone' => ':attribute 必須是有效的時區。',
 ];

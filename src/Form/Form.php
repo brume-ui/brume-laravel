@@ -106,6 +106,9 @@ class Form implements Renderable, Responsable
 
     protected string $context = 'root';
 
+    /** A repeater or relation picker row: fields that only make sense on the form page are refused here. */
+    protected bool $nested = false;
+
     protected int $sectionSequence = 0;
 
     protected array $embeds = [];
@@ -368,7 +371,19 @@ class Form implements Renderable, Responsable
             }
         }
 
-        return $this->fields;
+        return array_filter($this->fields, fn (Field $field) => ! $field instanceof Fields\Captcha);
+    }
+
+    /** The one captcha of this form page. It is never one of fields(): its answer is checked, then dropped. */
+    public function captchaField(): ?Fields\Captcha
+    {
+        foreach ($this->fields as $field) {
+            if ($field instanceof Fields\Captcha) {
+                return $field;
+            }
+        }
+
+        return null;
     }
 
     public function layout(string $layout): static
@@ -439,6 +454,7 @@ class Form implements Renderable, Responsable
     public function repeater(string $name, string $label, Closure $fields): Fields\Repeater
     {
         $row = new static($this->query);
+        $row->nested = true;
         $fields($row);
         $row->assertReservedFields(['_brume']);
 
@@ -447,7 +463,10 @@ class Form implements Renderable, Responsable
 
     public function relationPicker(string $name, string $label, OptionSource $source): Fields\RelationPicker
     {
-        return $this->add(new Fields\RelationPicker($name, $label, $source, new static($this->query)));
+        $row = new static($this->query);
+        $row->nested = true;
+
+        return $this->add(new Fields\RelationPicker($name, $label, $source, $row));
     }
 
     public function assertReservedFields(array $reserved): void
@@ -461,7 +480,9 @@ class Form implements Renderable, Responsable
 
     public function nodesSchema(?Model $record = null, ?Model $root = null): array
     {
-        return array_map(fn ($node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->schemaFor($record, $root)] : $node->toSchema($record, $root), $this->nodes);
+        $nodes = array_filter($this->nodes, fn ($node) => ! ($node instanceof Field && $node->omittedFromSchema($record)));
+
+        return array_values(array_map(fn ($node) => $node instanceof Field ? ['type' => 'field', 'field' => $node->schemaFor($record, $root)] : $node->toSchema($record, $root), $nodes));
     }
 
     public function valuesFor(?Model $record): array
@@ -543,6 +564,43 @@ class Form implements Renderable, Responsable
     public function time(string $name, ?string $label = null): Fields\Time
     {
         return $this->add(new Fields\Time($name, $label));
+    }
+
+    /** A read-only record id, shown on edit and left out of the schema while the record is new. */
+    public function idField(string $name = 'id', ?string $label = 'ID'): Fields\Display
+    {
+        return $this->add(new Fields\IdField($name, $label));
+    }
+
+    /** Options 1-12 with month names; the stored value is the integer (Dcat keeps a padded string: use saveUsing() for that). */
+    public function month(string $name, ?string $label = null): Fields\Select
+    {
+        return $this->add(new Fields\Month($name, $label));
+    }
+
+    /** An integer year, 1900-2100 unless min()/max() say otherwise. The number input never groups digits. */
+    public function year(string $name, ?string $label = null): Fields\Number
+    {
+        return $this->add((new Fields\Number($name, $label))->min(1900)->max(2100));
+    }
+
+    public function timezone(string $name, ?string $label = null): Fields\Select
+    {
+        return $this->add(new Fields\Timezone($name, $label));
+    }
+
+    /** The form page's captcha: image from mews/captcha, answer checked then discarded before anything is saved. */
+    public function captcha(?string $label = null): Fields\Captcha
+    {
+        if (! Fields\Captcha::installed()) {
+            throw new LogicException('captcha() needs the mews/captcha package: composer require mews/captcha (it also needs the GD extension).');
+        }
+        $root = $this->root ?? $this;
+        if ($root->nested || $this->prefix !== '') {
+            throw new InvalidArgumentException('A captcha belongs to the form page, not to a repeater row, relation picker or embeds.');
+        }
+
+        return $this->add(new Fields\Captcha($label));
     }
 
     public function password(string $name, ?string $label = null): Fields\Password

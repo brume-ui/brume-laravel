@@ -52,6 +52,21 @@ class Select extends Field
         return $this;
     }
 
+    /** A single select gets a search box over its options. */
+    public function searchable(bool $on = true): static
+    {
+        if ($this->type() !== 'select') {
+            throw new \InvalidArgumentException('Only a single select can be searchable.');
+        }
+        if ($on) {
+            $this->schema['searchable'] = true;
+        } else {
+            unset($this->schema['searchable']);
+        }
+
+        return $this;
+    }
+
     protected function normalizeValue(mixed $value): mixed
     {
         $value = parent::normalizeValue($value);

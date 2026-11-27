@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "0dea5bd61517645407becb40838d7b3c",
+    "content-hash": "cc080ee2c3d425dd44330d7550dbb04e",
     "packages": [
         {
             "name": "brick/math",
@@ -6762,6 +6762,149 @@
             "time": "2026-03-17T11:56:53+00:00"
         },
         {
+            "name": "intervention/gif",
+            "version": "5.0.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Intervention/gif.git",
+                "reference": "1a7ff8a0784a32d97f9374fbe625ea5db5f8ef12"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Intervention/gif/zipball/1a7ff8a0784a32d97f9374fbe625ea5db5f8ef12",
+                "reference": "1a7ff8a0784a32d97f9374fbe625ea5db5f8ef12",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "intervention/coding-standard": "^1",
+                "phpstan/phpstan": "^2.1",
+                "phpunit/phpunit": "^12.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Intervention\\Gif\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Oliver Vogel",
+                    "email": "oliver@intervention.io",
+                    "homepage": "https://intervention.io/"
+                }
+            ],
+            "description": "PHP GIF Encoder/Decoder",
+            "homepage": "https://github.com/intervention/gif",
+            "keywords": [
+                "animation",
+                "gd",
+                "gif",
+                "image"
+            ],
+            "support": {
+                "issues": "https://github.com/Intervention/gif/issues",
+                "source": "https://github.com/Intervention/gif/tree/5.0.2"
+            },
+            "funding": [
+                {
+                    "url": "https://paypal.me/interventionio",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/Intervention",
+                    "type": "github"
+                },
+                {
+                    "url": "https://ko-fi.com/interventionphp",
+                    "type": "ko_fi"
+                }
+            ],
+            "time": "2026-11-15T07:30:24+00:00"
+        },
+        {
+            "name": "intervention/image",
+            "version": "4.4.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Intervention/image.git",
+                "reference": "3a47838f2e0f4ec6c8c9b43a5d73ac985b975830"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Intervention/image/zipball/3a47838f2e0f4ec6c8c9b43a5d73ac985b975830",
+                "reference": "3a47838f2e0f4ec6c8c9b43a5d73ac985b975830",
+                "shasum": ""
+            },
+            "require": {
+                "ext-mbstring": "*",
+                "intervention/gif": "^5",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "intervention/coding-standard": "^1",
+                "mockery/mockery": "^1.6",
+                "phpstan/phpstan": "^2.1",
+                "phpunit/phpunit": "^12.0",
+                "psr/http-message": "^2"
+            },
+            "suggest": {
+                "ext-exif": "Recommended to be able to read EXIF data properly."
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Intervention\\Image\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Oliver Vogel",
+                    "email": "oliver@intervention.io",
+                    "homepage": "https://intervention.io"
+                }
+            ],
+            "description": "PHP Image Processing",
+            "homepage": "https://image.intervention.io",
+            "keywords": [
+                "gd",
+                "image",
+                "imagick",
+                "resize",
+                "thumbnail",
+                "watermark"
+            ],
+            "support": {
+                "issues": "https://github.com/Intervention/image/issues",
+                "source": "https://github.com/Intervention/image/tree/4.4.1"
+            },
+            "funding": [
+                {
+                    "url": "https://paypal.me/interventionio",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/Intervention",
+                    "type": "github"
+                },
+                {
+                    "url": "https://ko-fi.com/interventionphp",
+                    "type": "ko_fi"
+                }
+            ],
+            "time": "2026-10-30T13:38:01+00:00"
+        },
+        {
             "name": "jean85/pretty-package-versions",
             "version": "2.1.1",
             "source": {
@@ -7039,6 +7182,79 @@
                 "source": "https://github.com/laravel/tinker/tree/v3.0.2"
             },
             "time": "2026-03-17T14:54:13+00:00"
+        },
+        {
+            "name": "mews/captcha",
+            "version": "3.5.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/mewebstudio/captcha.git",
+                "reference": "7154a930e88bdb7b02630b14105c5b7b3ecc7fb4"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/mewebstudio/captcha/zipball/7154a930e88bdb7b02630b14105c5b7b3ecc7fb4",
+                "reference": "7154a930e88bdb7b02630b14105c5b7b3ecc7fb4",
+                "shasum": ""
+            },
+            "require": {
+                "ext-gd": "*",
+                "illuminate/config": "~5|^6|^7|^8|^9|^10|^11|^12|^13.0",
+                "illuminate/filesystem": "~5|^6|^7|^8|^9|^10|^11|^12|^13.0",
+                "illuminate/hashing": "~5|^6|^7|^8|^9|^10|^11|^12|^13.0",
+                "illuminate/session": "~5|^6|^7|^8|^9|^10|^11|^12|^13.0",
+                "illuminate/support": "~5|^6|^7|^8|^9|^10|^11|^12|^13.0",
+                "intervention/image": "^3.7|^4.0",
+                "php": "^7.2|^8.1|^8.2|^8.3"
+            },
+            "require-dev": {
+                "mockery/mockery": "^1.0",
+                "phpunit/phpunit": "^8.5|^9.5.10|^10.5|^11"
+            },
+            "type": "package",
+            "extra": {
+                "laravel": {
+                    "aliases": {
+                        "Captcha": "Mews\\Captcha\\Facades\\Captcha"
+                    },
+                    "providers": [
+                        "Mews\\Captcha\\CaptchaServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "files": [
+                    "src/helpers.php"
+                ],
+                "psr-4": {
+                    "Mews\\Captcha\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Muharrem ERİN",
+                    "email": "me@mewebstudio.com",
+                    "homepage": "https://github.com/mewebstudio",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Laravel 5/6/7/8/9/10/11/12 Captcha Package",
+            "homepage": "https://github.com/mewebstudio/captcha",
+            "keywords": [
+                "captcha",
+                "laravel12 Captcha",
+                "laravel12 Security",
+                "laravel5 Security"
+            ],
+            "support": {
+                "issues": "https://github.com/mewebstudio/captcha/issues",
+                "source": "https://github.com/mewebstudio/captcha/tree/3.5.1"
+            },
+            "time": "2026-08-28T22:05:37+00:00"
         },
         {
             "name": "mockery/mockery",
