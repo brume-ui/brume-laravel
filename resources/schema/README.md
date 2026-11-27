@@ -1,15 +1,15 @@
 # Vendored schema provenance
 
 The committed `v0.json` is copied byte-for-byte from the actual npm package
-`@brume-ui/brume-schema@0.1.0-alpha.27`, path `schema/v0.json`, installed using the
+`@brume-ui/brume-schema@0.1.0-alpha.28`, path `schema/v0.json`, installed using the
 frozen `frontend/pnpm-lock.yaml`. Its registry tarball is
-`https://registry.npmjs.org/@brume-ui/brume-schema/-/brume-schema-0.1.0-alpha.27.tgz`.
+`https://registry.npmjs.org/@brume-ui/brume-schema/-/brume-schema-0.1.0-alpha.28.tgz`.
 Registry integrity:
-`sha512-P680oTFc7Al+VrqjawZ5NPEKpX5CAYhdoiPiLltQFRnnG/3cM5wY5GJKm323OmSL9zNizjP35EmQKdJJ+aCpMQ==`.
+`sha512-ePNM4m6XLEDpOootcHJjr+iHskGk6dFlefh00C1ZSpnqRWqe1jumf/gKhAQbBgQCdyNCBjbAShYEheNls52eDg==`.
 Schema SHA-256: `c2fe3268438a7f0ac48cd5a40a59c0c8e23eddf4b0888c009beabc36cde93ade`.
 
 This is schema `0.4.0` (`BrumeManager::SCHEMA_VERSION`), published from UI commit
-`4b7632ca1566b076b373d6f34c7c578c1fa09a0d` by the `v0.1.0-alpha.27` release (the same
+`aaa39c68a1ab27856e795c7c4bddfe036cb9f68d` by the `v0.1.0-alpha.28` release (the same
 commit `.ci/ui-integration.json` pins). Since alpha.14 it has gained, among others, the
 `richText` form field (`height`, `contentCss`, `images { accept, maxSize }`; value
 `string | null`), which is not a plain field: it is rejected in Action forms, quick-create

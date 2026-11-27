@@ -176,7 +176,7 @@
     "src": "frontend/node_modules/@brume-ui/brume-react/dist/fonts/jf-openhuninn-41.woff2"
   },
   "frontend/node_modules/@brume-ui/brume-react/dist/jodit-editor-IFXWPJGI.js": {
-    "file": "assets/jodit-editor-IFXWPJGI-u4qpFIv-.js",
+    "file": "assets/jodit-editor-IFXWPJGI-NpFAIs1f.js",
     "name": "jodit-editor-IFXWPJGI",
     "src": "frontend/node_modules/@brume-ui/brume-react/dist/jodit-editor-IFXWPJGI.js",
     "isDynamicEntry": true,
@@ -188,7 +188,7 @@
     ]
   },
   "stubs/frontend/app.tsx": {
-    "file": "assets/app-it3uuG6U.js",
+    "file": "assets/app-DZsQh3sD.js",
     "name": "app",
     "src": "stubs/frontend/app.tsx",
     "isEntry": true,
