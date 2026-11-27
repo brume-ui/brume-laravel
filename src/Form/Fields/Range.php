@@ -60,6 +60,21 @@ class Range extends DateRange
         return is_string($item) ? (trim($item) === '' ? null : Decimal::canonical($item, $this->schema['decimals'])) : $item;
     }
 
+    /** The handler of an Action form receives the stored form of both bounds, as `fill` writes them. */
+    public function canonicalInput(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+        foreach (['start', 'end'] as $bound) {
+            if (array_key_exists($bound, $value)) {
+                $value[$bound] = $this->storedBound($value[$bound]);
+            }
+        }
+
+        return $value;
+    }
+
     protected function normalizeValue(mixed $value): mixed
     {
         return $value === null || $value === '' ? null : Decimal::canonical($value, $this->schema['decimals']);

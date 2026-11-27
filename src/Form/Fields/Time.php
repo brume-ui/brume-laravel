@@ -72,7 +72,8 @@ class Time extends Field
         if (! is_string($value)) {
             return null;
         }
-        if (! preg_match('/^([01][0-9]|2[0-3]):([0-5][0-9])(?::([0-5][0-9]))?$/D', $value, $parts)) {
+        // Some drivers return a TIME column as `09:05:00.000000`: an all-zero fraction is dropped.
+        if (! preg_match('/^([01][0-9]|2[0-3]):([0-5][0-9])(?::([0-5][0-9])(?:\.0+)?)?$/D', $value, $parts)) {
             return trim($value) === '' ? null : $value;
         }
         $rest = $parts[3] ?? '00';

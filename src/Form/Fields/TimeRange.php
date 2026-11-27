@@ -36,6 +36,21 @@ class TimeRange extends DateRange
         return Time::storage($item);
     }
 
+    /** The handler of an Action form receives the stored form of both bounds, as `fill` writes them. */
+    public function canonicalInput(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+        foreach (['start', 'end'] as $bound) {
+            if (array_key_exists($bound, $value)) {
+                $value[$bound] = $this->storedBound($value[$bound]);
+            }
+        }
+
+        return $value;
+    }
+
     protected function normalizeValue(mixed $value): mixed
     {
         return Time::display($value, $this->schema['seconds'] ?? false);

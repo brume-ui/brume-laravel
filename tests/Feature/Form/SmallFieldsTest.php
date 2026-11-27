@@ -665,8 +665,9 @@ it('accepts the plain new fields in an action form', function () {
     $body['input'] = ['host' => ' 10.0.0.1 ', 'share' => '1.5', 'level' => 0.3, 'glyph' => 'star', 'opens' => '09:05', 'span' => ['start' => '1', 'end' => '2'], 'hours' => ['start' => '22:00', 'end' => '06:00']];
     $this->postJson('/sm-items/_brume/actions/tune', $body)->assertOk();
     expect($seen->input)->toMatchArray(['host' => '10.0.0.1', 'share' => '1.5', 'level' => 0.3, 'glyph' => 'star', 'opens' => '09:05:00'])
-        ->and($seen->input['span'])->toBe(['start' => '1', 'end' => '2'])
-        ->and($seen->input['hours'])->toBe(['start' => '22:00', 'end' => '06:00']);
+        // The handler gets the stored form of the bounds: padded decimals, HH:mm:ss.
+        ->and($seen->input['span'])->toBe(['start' => '1.0', 'end' => '2.0'])
+        ->and($seen->input['hours'])->toBe(['start' => '22:00:00', 'end' => '06:00:00']);
 });
 
 it('passes null for blank action input of the new plain fields', function () {
@@ -690,6 +691,49 @@ it('passes null for blank action input of the new plain fields', function () {
     $this->postJson('/sm-blank/_brume/actions/tune', ['target' => 'row', 'ids' => [$item->id], 'input' => ['host' => '  ', 'glyph' => '   ', 'opens' => ' ', 'level' => '']])->assertOk();
     expect($seen->input)->toBe(['host' => null, 'glyph' => null, 'opens' => null, 'level' => null]);
 });
+
+it('keeps a blank range bound null in an action form and does not change the form save path', function () {
+    $this->actingAs(brumeUser(), 'brume');
+    $item = CellItem::create(['shop_id' => 1, 'customer' => 'Ada']);
+    $seen = (object) ['input' => null];
+    Route::middleware(['web', 'brume.auth', HandleBrumeRequests::class])->group(fn () => Route::brumeGrid('sm-bounds', function () use ($seen) {
+        $grid = Grid::make(CellItem::class);
+        $grid->column('customer');
+        $grid->rowActions(Action::make('tune', 'Tune')->form(function (Form $form) {
+            $form->range('span', 'Span', 'a', 'b')->decimals(2);
+            $form->timeRange('hours', 'Hours', 'c', 'd')->seconds();
+        })->handle(function ($models, $request, array $input) use ($seen) {
+            $seen->input = $input;
+        }));
+
+        return $grid;
+    }));
+    $this->postJson('/sm-bounds/_brume/actions/tune', ['target' => 'row', 'ids' => [$item->id], 'input' => ['span' => ['start' => '3', 'end' => ' '], 'hours' => ['start' => '', 'end' => '09:05']]])->assertOk();
+    expect($seen->input['span'])->toBe(['start' => '3.00', 'end' => null])
+        ->and($seen->input['hours'])->toBe(['start' => null, 'end' => '09:05:00']);
+    // Applying it twice, as the form path does inside fill(), changes nothing.
+    $form = Form::make(SmPost::class);
+    $span = $form->range('span', 'Span', 'low', 'high')->decimals(2);
+    $hours = $form->timeRange('hours', 'Hours', 'opens', 'closes');
+    expect($span->canonicalInput($span->canonicalInput(['start' => '1.5', 'end' => '2'])))->toBe(['start' => '1.50', 'end' => '2.00'])
+        ->and($hours->canonicalInput($hours->canonicalInput(['start' => '09:05', 'end' => null])))->toBe(['start' => '09:05:00', 'end' => null])
+        ->and($span->canonicalInput(null))->toBeNull();
+});
+
+it('displays a TIME column with an all-zero fraction like the plain time, and leaves other fractions alone', function (string $stored, bool $seconds, string $shown) {
+    $post = SmPost::create();
+    // A string column: MySQL refuses non-time values in a TIME column.
+    $post->forceFill(['address' => $stored])->saveQuietly();
+    $form = smForm($post->fresh());
+    $form->time('address')->seconds($seconds);
+    expect($form->toSchema(Request::create('/'))['values']['address'])->toBe($shown);
+})->with([
+    ['09:05:00.000000', false, '09:05'],
+    ['09:05:00.000000', true, '09:05:00'],
+    ['09:05:30.000', true, '09:05:30'],
+    ['09:05:00.500000', false, '09:05:00.500000'],
+    ['09:05:00.', false, '09:05:00.'],
+]);
 
 it('hands the client the same validation rules the server applies', function () {
     $form = Form::make(SmPost::class);
