@@ -52,13 +52,18 @@ class Decimal extends Number
     /** Round decimal strings without converting potentially large amounts to binary floats. */
     protected function normalizeValue(mixed $value): mixed
     {
+        return self::canonical($value, $this->schema['decimals']);
+    }
+
+    /** A decimal string with exactly `$scale` fraction digits (rounded half up), or null when it is not one. */
+    public static function canonical(mixed $value, int $scale): ?string
+    {
         if ($value === null) {
             return null;
         }
         if (! preg_match('/^([+-]?)([0-9]+)(?:\.([0-9]*))?$/D', (string) $value, $parts)) {
             return null;
         }
-        $scale = $this->schema['decimals'];
         $whole = ltrim($parts[2], '0') ?: '0';
         $fraction = str_pad($parts[3] ?? '', $scale + 1, '0');
         $digits = $whole.substr($fraction, 0, $scale);

@@ -29,9 +29,38 @@ class DateRange extends Date
                 if ($this->type() === 'datetimeRange' && is_string($item)) {
                     $item = str_replace('T', ' ', $item).':00';
                 }
-                (new Field($column))->fill($record, $item);
+                (new Field($column))->fill($record, $this->storedBound($item));
             }
         }
+    }
+
+    /** The form a validated bound is written in; the date ranges keep what was submitted. */
+    protected function storedBound(mixed $item): mixed
+    {
+        return $item;
+    }
+
+    /** Per-bound validation rules for the two-bound fields that declare any (`range`, `timeRange`). */
+    public function boundRules(string $bound, array $values, string $path): array
+    {
+        return [];
+    }
+
+    /** A required bounds field whose bounds are all blank counts as missing, as it does in the browser. */
+    protected function allBoundsBlankRule(): \Closure
+    {
+        return function ($attribute, $value, \Closure $fail) {
+            if (! is_array($value) || $value === []) {
+                return;
+            }
+            foreach (['start', 'end'] as $bound) {
+                $item = $value[$bound] ?? null;
+                if (! is_string($item) ? $item !== null : trim($item) !== '') {
+                    return;
+                }
+            }
+            $fail($this->validationMessages['required'] ?? __('validation.required'));
+        };
     }
 
     protected function extraAttributes(mixed $stored): array

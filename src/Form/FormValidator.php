@@ -3,6 +3,7 @@
 namespace Brume\Form;
 
 use Brume\Form\Fields\CustomField;
+use Brume\Form\Fields\DateRange;
 use Brume\Form\Fields\Field;
 use Brume\Form\Fields\RelationPicker;
 use Brume\Form\Fields\Repeater;
@@ -112,7 +113,7 @@ class FormValidator
         foreach ($fields as $path => $field) {
             if (Arr::has($values, $path)) {
                 $input = Arr::get($values, $path);
-                Arr::set($filtered, $path, in_array($field->type(), ['dateRange', 'datetimeRange', 'upload'], true) ? JsonValues::validationView($input) : $input);
+                Arr::set($filtered, $path, in_array($field->type(), ['dateRange', 'datetimeRange', 'range', 'timeRange', 'upload'], true) ? JsonValues::validationView($input) : $input);
             }
         }
         $values = $filtered;
@@ -148,6 +149,13 @@ class FormValidator
                 }
                 if (Arr::get($values, $path.'.start') !== null) {
                     $rules[$path.'.end'][] = 'after_or_equal:'.$path.'.start';
+                }
+            }
+            if ($field instanceof DateRange && in_array($field->type(), ['range', 'timeRange'], true)) {
+                foreach (['start', 'end'] as $bound) {
+                    $messagePaths[] = $path.'.'.$bound;
+                    $rules[$path.'.'.$bound] = $field->boundRules($bound, $values, $path);
+                    $labels[$path.'.'.$bound] = $field->validationLabel();
                 }
             }
             foreach ($messagePaths as $messagePath) {

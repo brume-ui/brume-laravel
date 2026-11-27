@@ -92,7 +92,7 @@ it('encodes empty component props as an omitted key, never as a list', function 
 it('validates complete create and edit forms against the emitted schema 0.3', function () {
     $form = Form::make(User::class)->id('users')->name('User')->description('All fields')->submitTo('post', '/users')->tabs();
     $form->section('Basics', function ($f) {
-        foreach (['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'image', 'multipleImage', 'file', 'multipleFile', 'editor', 'color', 'tel'] as $type) {
+        foreach (['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'image', 'multipleImage', 'file', 'multipleFile', 'editor', 'color', 'tel', 'ip', 'rate', 'slider', 'icon', 'time'] as $type) {
             $field = $f->$type($type);
             if (in_array($type, ['select', 'multipleSelect', 'radio', 'checkbox'])) {
                 $field->options([1 => 'One']);
@@ -100,6 +100,10 @@ it('validates complete create and edit forms against the emitted schema 0.3', fu
         }
         $f->dateRange('range', 'Range', 'start', 'end');
         $f->datetimeRange('moments', 'Moments', 'starts_at', 'ends_at');
+        $f->range('amounts', 'Amounts', 'min_amount', 'max_amount')->decimals(2);
+        $f->timeRange('hours', 'Hours', 'opens_at', 'closes_at')->seconds();
+        $f->button('Docs', '/docs')->newTab();
+        $f->button('Record', fn ($record) => $record ? '/users/'.$record->id : 'https://example.com/new')->secondary();
     });
     $form->section('Layouts', function ($f) {
         $f->row(function ($r) {
@@ -121,6 +125,8 @@ it('validates complete create and edit forms against the emitted schema 0.3', fu
         $f->repeater('stops', 'Stops', function ($r) {
             $r->color('tint');
             $r->tel('phone');
+            $r->slider('weight')->min(0)->max(1)->step(0.1);
+            $r->range('amounts', 'Amounts', 'low', 'high');
             $r->html('<p>row</p>');
         });
     });

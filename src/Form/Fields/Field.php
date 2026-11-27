@@ -130,12 +130,13 @@ class Field
     {
         $rules = match ($this->type()) {
             'email' => ['email'], 'url' => ['url:http,https'], 'number' => ['integer'],
-            'decimal', 'currency' => ['string', 'numeric'],
+            'decimal', 'currency', 'rate' => ['string', 'numeric'],
+            'slider' => ['numeric'],
             'select', 'radio' => ['string', ...(method_exists($this, 'optionSource') && $this->optionSource() !== null ? [] : [$this->choiceRule()])],
             'multipleSelect', 'checkbox', 'tags' => ['array', 'list'],
             'upload' => ($this->schema['multiple'] ?? false) ? ['array', 'list'] : [],
             'date' => ['date_format:Y-m-d'], 'datetime' => ['date_format:Y-m-d\\TH:i'],
-            'dateRange', 'datetimeRange' => ['array:start,end'], 'switch' => ['boolean'], default => [],
+            'dateRange', 'datetimeRange', 'range', 'timeRange' => ['array:start,end'], 'switch' => ['boolean'], default => [],
         };
         if ($this->attributeMap !== []) {
             $rules[] = 'array:'.implode(',', array_keys($this->attributeMap));
@@ -327,7 +328,7 @@ class Field
 
     public function isLong(): bool
     {
-        return ($this->schema['span'] ?? null) === 'full' || in_array($this->type(), ['textarea', 'richText', 'tags', 'upload', 'checkbox', 'dateRange', 'datetimeRange'], true);
+        return ($this->schema['span'] ?? null) === 'full' || in_array($this->type(), ['textarea', 'richText', 'tags', 'upload', 'checkbox', 'dateRange', 'datetimeRange', 'range', 'timeRange'], true);
     }
 
     public function attribute(string $attribute): static

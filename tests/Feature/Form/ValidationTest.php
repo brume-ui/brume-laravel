@@ -65,6 +65,10 @@ it('validates nested ranges and strict choice shapes', function ($method, $value
     $form = Form::make(User::class);
     if ($method === 'dateRange') {
         $form->dateRange('value', 'Period', 'start', 'end');
+    } elseif ($method === 'range') {
+        $form->range('value', 'Amounts', 'start', 'end');
+    } elseif ($method === 'timeRange') {
+        $form->timeRange('value', 'Hours', 'start', 'end');
     } else {
         $form->$method('value')->options(['a' => 'A', '1' => 'One']);
     }
@@ -80,6 +84,8 @@ it('validates nested ranges and strict choice shapes', function ($method, $value
     ['dateRange', ['start' => '2026-01-02', 'end' => '2026-01-01'], 'value.end'],
     ['dateRange', ['start' => '2026-02-31'], 'value.start'],
     ['dateRange', 'wrong', 'value'],
+    ['range', ['start' => '2', 'end' => '1'], 'value.end'], ['range', ['start' => 'x'], 'value.start'], ['range', 'wrong', 'value'],
+    ['timeRange', ['start' => '24:00'], 'value.start'], ['timeRange', ['end' => '9:5'], 'value.end'], ['timeRange', 'wrong', 'value'],
 ]);
 
 it('ignores the scoped editing record in unique validation', function () {

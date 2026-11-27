@@ -25,9 +25,9 @@ it('outputs nested values, date ranges and password without exposing hidden attr
 
 it('serializes every field variant exactly', function (string $method, array $extra) {
     $form = Form::make(User::class);
-    $field = in_array($method, ['dateRange', 'datetimeRange']) ? $form->$method('value', 'Value', 'starts_at', 'ends_at') : $form->$method('value', 'Value');
+    $field = in_array($method, ['dateRange', 'datetimeRange', 'range', 'timeRange']) ? $form->$method('value', 'Value', 'starts_at', 'ends_at') : $form->$method('value', 'Value');
     $default = match ($method) {
-        'password' => '', 'dateRange', 'datetimeRange' => ['start' => null, 'end' => null],
+        'password' => '', 'dateRange', 'datetimeRange', 'range', 'timeRange' => ['start' => null, 'end' => null],
         'multipleSelect', 'checkbox', 'tags', 'multipleImage', 'multipleFile' => [],
         'switch' => false, default => null,
     };
@@ -36,6 +36,7 @@ it('serializes every field variant exactly', function (string $method, array $ex
     }, 'name' => 'value', 'label' => 'Value'] + $extra);
 })->with([
     ['text', []], ['textarea', []], ['email', []], ['url', []], ['mobile', []], ['password', []], ['hidden', []], ['display', []], ['number', []], ['decimal', ['decimals' => 2]], ['currency', ['decimals' => 0, 'symbol' => 'NT$']], ['date', []], ['datetime', []], ['dateRange', []], ['datetimeRange', []], ['select', ['options' => []]], ['multipleSelect', ['options' => []]], ['radio', ['options' => []]], ['checkbox', ['options' => []]], ['switch', []], ['tags', []], ['color', []], ['tel', []],
+    ['ip', []], ['rate', ['decimals' => 0]], ['slider', ['min' => 0, 'max' => 100, 'step' => 1]], ['icon', []], ['time', []], ['range', ['decimals' => 0]], ['timeRange', []],
     ['image', ['kind' => 'image', 'multiple' => false, 'accept' => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], 'maxSize' => 10485760]],
     ['multipleImage', ['kind' => 'image', 'multiple' => true, 'accept' => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], 'maxSize' => 10485760]],
     ['file', ['kind' => 'file', 'multiple' => false, 'accept' => [], 'maxSize' => 10485760]],

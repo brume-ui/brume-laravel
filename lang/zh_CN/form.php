@@ -19,4 +19,6 @@ return [
     'rich_text_depth' => ':attribute 的内容嵌套过深，无法保存。',
     'rich_text_elements' => ':attribute 的内容元素过多，无法保存。',
     'rich_text_attributes' => ':attribute 的内容含有过长的属性值，或单个元素的 class 过多，无法保存。',
+    'slider_step' => ':attribute 必须是 :step 的倍数（自 :min 起算）。',
+    'range_order' => '结束值不可小于起始值。',
 ];

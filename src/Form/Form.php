@@ -520,6 +520,31 @@ class Form implements Renderable, Responsable
         return $this->add(new Fields\Tel($name, $label));
     }
 
+    public function ip(string $name, ?string $label = null): Fields\Ip
+    {
+        return $this->add(new Fields\Ip($name, $label));
+    }
+
+    public function rate(string $name, ?string $label = null): Fields\Rate
+    {
+        return $this->add(new Fields\Rate($name, $label));
+    }
+
+    public function slider(string $name, ?string $label = null): Fields\Slider
+    {
+        return $this->add(new Fields\Slider($name, $label));
+    }
+
+    public function icon(string $name, ?string $label = null): Fields\Icon
+    {
+        return $this->add(new Fields\Icon($name, $label));
+    }
+
+    public function time(string $name, ?string $label = null): Fields\Time
+    {
+        return $this->add(new Fields\Time($name, $label));
+    }
+
     public function password(string $name, ?string $label = null): Fields\Password
     {
         return $this->add(new Fields\Password($name, $label));
@@ -598,6 +623,16 @@ class Form implements Renderable, Responsable
     public function datetimeRange(string $name, string $label, string $startColumn, string $endColumn): Fields\DatetimeRange
     {
         return $this->add(new Fields\DatetimeRange($name, $label, $startColumn, $endColumn));
+    }
+
+    public function range(string $name, string $label, string $startColumn, string $endColumn): Fields\Range
+    {
+        return $this->add(new Fields\Range($name, $label, $startColumn, $endColumn));
+    }
+
+    public function timeRange(string $name, string $label, string $startColumn, string $endColumn): Fields\TimeRange
+    {
+        return $this->add(new Fields\TimeRange($name, $label, $startColumn, $endColumn));
     }
 
     public function image(string $name, ?string $label = null): Upload
@@ -704,6 +739,16 @@ class Form implements Renderable, Responsable
         return $this;
     }
 
+    /** A link styled as a button; $url is a string or Closure(?Model $record): string, checked when the page renders. */
+    public function button(string $label, string|Closure $url): ButtonNode
+    {
+        if (in_array($this->context, ['row', 'columns'], true)) {
+            throw new InvalidArgumentException('Button cannot be used here.');
+        }
+
+        return $this->nodes[] = new ButtonNode($label, $url);
+    }
+
     public function embeds(string $name, string $label, Closure $fields): static
     {
         Field::assertPath($name);
@@ -728,7 +773,7 @@ class Form implements Renderable, Responsable
     public function plainFields(): array
     {
         foreach ($this->nodes as $node) {
-            if (! $node instanceof Field || ! in_array($node->type(), ['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'dateRange', 'datetimeRange', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'color', 'tel'], true) || (method_exists($node, 'optionSource') && $node->optionSource() !== null) || isset($node->settings()['excludeSelectedIn']) || str_contains($node->name(), '.')) {
+            if (! $node instanceof Field || ! in_array($node->type(), ['text', 'textarea', 'email', 'url', 'mobile', 'password', 'hidden', 'display', 'number', 'decimal', 'currency', 'date', 'datetime', 'dateRange', 'datetimeRange', 'select', 'multipleSelect', 'radio', 'checkbox', 'switch', 'tags', 'color', 'tel', 'ip', 'rate', 'slider', 'icon', 'time', 'range', 'timeRange'], true) || (method_exists($node, 'optionSource') && $node->optionSource() !== null) || isset($node->settings()['excludeSelectedIn']) || str_contains($node->name(), '.')) {
                 throw new InvalidArgumentException('Upload extras must be flat non-upload fields.');
             }
         }

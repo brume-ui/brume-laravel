@@ -150,14 +150,20 @@ final readonly class Conditions implements JsonSerializable
             return [true, $value];
         }
         $type = $def['type'] ?? '';
-        if (in_array($type, ['decimal', 'currency'], true)) {
+        if (in_array($type, ['decimal', 'currency', 'rate'], true)) {
             $scale = $def['decimals'];
             $valid = is_string($value) && preg_match('/^[+-]?[0-9]+(?:\.[0-9]{0,'.$scale.'})?$/D', $value);
 
             return [(bool) $valid, $valid ? (new Decimal('v'))->decimals($scale)->default($value)->valueFor(null) : null];
         }
-        if ($type === 'number') {
+        if ($type === 'number' || $type === 'slider') {
             return [is_numeric($value) && ! is_bool($value) && is_finite((float) $value), is_numeric($value) ? $value + 0 : $value];
+        }
+        if (in_array($type, ['range', 'timeRange'], true)) {
+            $bounds = $value instanceof \stdClass ? get_object_vars($value) : $value;
+            $valid = is_array($bounds) && ! array_is_list($bounds) && count(array_filter($bounds, fn ($bound) => $bound === null || is_string($bound))) === count($bounds);
+
+            return [$valid, $value];
         }
         if ($type === 'switch') {
             return [is_bool($value), $value];
@@ -177,7 +183,7 @@ final readonly class Conditions implements JsonSerializable
         if (in_array($type, ['multipleSelect', 'checkbox', 'tags'], true)) {
             return [is_array($value) && array_is_list($value) && count(array_filter($value, 'is_string')) === count($value), $value];
         }
-        if (in_array($type, ['text', 'textarea', 'richText', 'email', 'url', 'mobile', 'tel', 'color', 'password', 'select', 'radio', 'date', 'datetime'], true)) {
+        if (in_array($type, ['text', 'textarea', 'richText', 'email', 'url', 'mobile', 'tel', 'color', 'ip', 'icon', 'time', 'captcha', 'password', 'select', 'radio', 'date', 'datetime'], true)) {
             return [is_string($value), $value];
         }
 
@@ -227,7 +233,7 @@ final readonly class Conditions implements JsonSerializable
             }
             $def = $defs[$path] ?? [];
             $value = self::canonical($def, $raw)[1];
-            $operand = fn ($v) => in_array($def['type'] ?? '', ['decimal', 'currency'], true) && is_string($v) ? (self::canonical($def, $v)[1] ?? $v) : $v;
+            $operand = fn ($v) => in_array($def['type'] ?? '', ['decimal', 'currency', 'rate'], true) && is_string($v) ? (self::canonical($def, $v)[1] ?? $v) : $v;
             if ($op === 'in') {
                 foreach ($ast['values'] as $v) {
                     if ($equal($value, $operand($v))) {
