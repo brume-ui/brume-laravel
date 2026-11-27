@@ -7,6 +7,7 @@ use Brume\Form\Form;
 use Brume\Form\FormSaver;
 use Brume\Grid\Actions\Action;
 use Brume\Grid\Grid;
+use Brume\Http\Controllers\CaptchaController;
 use Brume\Http\Middleware\HandleBrumeRequests;
 use Brume\Options\OptionSource;
 use Brume\Tests\Support\JsonSchema;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -175,6 +177,30 @@ it('serves the image under the admin prefix with the session and tolerates the r
     foreach (['nope', 'disable', 'characters', 'fontsDirectory', 'bgsDirectory'] as $name) {
         $this->get('/admin/_brume/captcha/'.$name)->assertNotFound();
     }
+});
+
+it('reports a cache store that cannot keep the answer, once per request, and still serves the image', function (string $driver, bool $reported) {
+    Exceptions::fake();
+    $this->actingAs(brumeUser(), 'brume');
+    config(['cache.stores.volatile' => ['driver' => $driver, 'path' => sys_get_temp_dir().'/brume-captcha-cache'], 'cache.default' => 'volatile']);
+    CaptchaController::$checkCacheWhileTesting = true;
+    try {
+        $this->get('/admin/_brume/captcha')->assertOk()->assertHeader('Content-Type', 'image/jpeg');
+    } finally {
+        CaptchaController::$checkCacheWhileTesting = false;
+    }
+    $reported ? Exceptions::assertReportedCount(1) : Exceptions::assertNothingReported();
+    if ($reported) {
+        Exceptions::assertReported(fn (RuntimeException $e) => str_contains($e->getMessage(), 'does not keep anything between requests'));
+    }
+})->with([['array', true], ['null', true], ['file', false]]);
+
+it('skips the cache check under unit tests by default', function () {
+    Exceptions::fake();
+    $this->actingAs(brumeUser(), 'brume');
+    config(['cache.stores.volatile' => ['driver' => 'array'], 'cache.default' => 'volatile']);
+    $this->get('/admin/_brume/captcha')->assertOk();
+    Exceptions::assertNothingReported();
 });
 
 it('serves only image configs', function () {
